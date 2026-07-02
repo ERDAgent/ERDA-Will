@@ -2,12 +2,15 @@
 
 **From:** planning session on claude.ai (June–July 2026, Claude Fable 5)
 **To:** Claude Code, working in this repo
-**Status:** Phase 0 is complete (items 1–4, see §4c, §4d, §4e). Repo is public at
-https://github.com/ERDAgent/ERDA-Will (flipped from private in this session so
-keel.yaml can `git clone` over plain HTTPS with no baked-in credentials — secrets never
-live in git anyway, that's what strongbox is for). Next: Phase 1/2 work — DeepInfra
-wiring is the big unblock (pi has no model provider configured yet, see §4e), then the
-pi extension / officer agents.
+**Status:** Phase 0 is complete (items 1–4, see §4c, §4d, §4e). DeepInfra wiring is
+also done and verified end-to-end with a real crew agent completing real work (see
+§4f) — pi → GLM-5.2 via the Trade Winds is no longer the blocker. Repo is public at
+https://github.com/ERDAgent/ERDA-Will (flipped from private so keel.yaml can `git
+clone` over plain HTTPS with no baked-in credentials — secrets never live in git
+anyway, that's what strongbox is for). Strongbox has a real, working
+`DEEPINFRA_API_KEY` committed (encrypted; `strongbox/ship.key`, the private half,
+stays local — see strongbox/README.md for the per-ship copy step). Next: x86_64
+validation, then the pi extension / officer agents.
 
 Claude.ai chats cannot be resumed as Claude Code sessions — this file and `docs/agentic-engineering-plan.md` ARE the session transfer. Read the plan in full once before writing anything.
 
@@ -216,39 +219,119 @@ Windows/Hyper-V or OVHcloud), DeepInfra wiring (Phase 2 — is the actual blocke
 crew agents completing real work), and the Chartroom Fresh plugin / officer agents
 (Phase 5+).
 
+## 4f. DeepInfra wiring done (July 2, 2026) — verified with a real crew agent completing real work
+
+Resolved the model-slug open question directly against DeepInfra's live models API
+(`api.deepinfra.com/v1/openai/models`), not a cached doc page: `zai-org/GLM-5.2`, no
+separate `[1m]`-context variant. Pulled pi's actual `models.json`/`providers.md` docs
+from source (`raw.githubusercontent.com/badlogic/pi-mono`) rather than trust a
+summarizer's paraphrase of them, which materially differed on a couple of points.
+
+Built: `ship/pi/models.json` (registers DeepInfra as an `openai-completions` provider,
+GLM-5.2 with `thinkingLevelMap` restricted to high/xhigh — matching the verified fact
+that this model only supports High/Max reasoning), symlinked into
+`~/.pi/agent/models.json` by `fitout.sh`. `muster`'s default `AGENT_CMD` now actually
+routes to it (`pi -p --provider deepinfra --model zai-org/GLM-5.2 --thinking high`,
+still overridable via `SHIP_AGENT`).
+
+Generated the ship's `age` keypair locally (`strongbox/ship.key`, gitignored) and
+walked Eric through getting `DEEPINFRA_API_KEY` into the encrypted strongbox — this
+took two failed attempts worth recording since they'll recur for any future secret:
+1. First attempt silently encrypted an **empty** value. Root cause: Eric's login shell
+   is zsh, and zsh's `read -p` flag means "read from a coprocess," not "show this
+   prompt text" like bash — the `read` errored, left the variable empty, and nothing
+   downstream checked. Numeric proof this even happened at all only came from checking
+   decrypted byte-length, not just key presence — checking a secret's *name* decrypts
+   without checking it has a non-empty *value* is not real verification.
+2. Second attempt hit an `age` flag mistake on my end (`-f` means "recipients file" in
+   `age`, not "force overwrite" — unrelated, invalid file-path handling error).
+   Fixed both by wrapping the capture in an explicit `bash -c '...'` (shell-agnostic
+   regardless of the operator's login shell) and dropping the bad flag.
+
+Then found and fixed three more real bugs, each only surfacing by actually running a
+crew agent against a real model — none were guessable from docs:
+
+1. **422 from DeepInfra**: `messages.0 ... Input should be <ChatMessageRole.TOOL:
+   'tool'>` — a deeply confusing error that has nothing to do with tool messages. Root
+   cause: pi defaults to sending the system prompt with `role: "developer"` for
+   reasoning-capable models (an OpenAI o1-style convention); DeepInfra's endpoint
+   doesn't recognize that role, so its Pydantic message-type union match fails for
+   every variant, and the reported error is just whichever variant was checked last.
+   Fixed: `compat.supportsDeveloperRole: false` in `models.json` — exactly the fix
+   pi's own docs describe for this class of provider, just not obvious from the error
+   text alone.
+2. **`muster` never actually loaded the strongbox.** `.crew-run.sh` ran the agent
+   directly with no `unlock` call anywhere, so `DEEPINFRA_API_KEY` would never reach
+   `pi` in a real headless crew window even with everything else correctly wired — an
+   oversight that (2) below made worse: `unlock` itself wasn't even on `PATH` yet.
+   Fixed: `.crew-run.sh` now calls `unlock` (no-op if absent) before invoking the
+   agent; `ship/bin/*` (charter/sail/muster/unlock) are now symlinked into
+   `/usr/local/bin` by `fitout.sh`, same rationale as the agent-CLI symlinks in §4e.
+3. **`crew.md`'s role contract was never actually passed to `pi`.** `muster` only ever
+   sent the order text as the prompt — pi had no idea it was supposed to commit or
+   write a report. Fixed with `--append-system-prompt ship/prompts/crew.md`, which
+   needed `muster` to resolve its own real location for the first time (`readlink -f
+   "${BASH_SOURCE[0]}"`, not `dirname` alone — muster is invoked through the
+   `/usr/local/bin` symlink, and `dirname` on an unresolved symlink path returns the
+   wrong directory).
+
+With all of the above fixed, the first genuinely successful crew run also surfaced a
+fourth bug: `crew.md` says "write `.ship/reports/<TASK-ID>.report.md`" without saying
+relative to what. pi's cwd is the berth, so — completely reasonably — it created a
+stray `.ship/` *inside* the berth and wrote the report there, instead of the charter's
+real bus one level up. This is a prompt-wording bug, not an agent mistake: a relative
+path is inherently ambiguous once cwd differs from what the prose writer had in mind.
+Fixed by having `muster` append the exact absolute report path to each order at muster
+time (it already knows `$BUS` and `$TASK`), rather than trusting relative-path
+inference that would also break if the berths/charter nesting ever changed.
+
+**Final verified run**, real ship, real credentials, real model, no stubs anywhere:
+`charter` → `sail` → hand-written order → `muster` → `pi`/GLM-5.2 reads the order,
+writes `hello.txt` with the exact required content, commits it as `feat: add
+hello.txt` (crew.md's commit-style convention, followed correctly), writes a properly
+structured report to the correct path, exits 0. `roster.json` shows `status: "done"`.
+Merged through the full pipeline for the first time with genuine content: dry-dock
+(`integration`) merge → fast-forward `home-port` (`main`) → `hello.txt` present and
+correct in the home-port checkout. Test ship destroyed after (`multipass delete
+--purge`) — no ship left running.
+
+Resolves HANDOFF open question #5 (exact DeepInfra model slug). Open question #4
+(whether Quartermaster review ever routes to a stronger model) is now answerable in
+principle — `models.json` supports multiple providers/models simultaneously — but not
+decided; still a Phase 3 drill question, not a Phase-0/2 one.
+
 ## 5. NEXT TASK — Phase 1/2
 
-Phase 0 (lay the keel) is done — see §4c, §4d, §4e. Multipass is installed on this
-host (`brew install --cask multipass`).
+Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
+§4f. Multipass is installed on this host (`brew install --cask multipass`).
 
 Next up, in rough priority order:
 
-1. **DeepInfra wiring** (deferred from every prior item in this phase, and the actual
-   blocker on `muster` completing real crew work — see §4e's `pi` failure). Verify the
-   exact model slug / `[1m]`-context variant against DeepInfra's catalog (open question
-   #5 below), wire `pi`'s provider config, populate the strongbox with a real
-   `DEEPINFRA_API_KEY` (`strongbox/README.md` has the `age` flow), and re-run the §4e
-   muster drill end-to-end to confirm a crew agent can actually complete a work order,
-   not just fail gracefully.
-2. **x86_64 validation** of `fitout.sh`/`keel.yaml` — needs a non-Apple-Silicon host
-   (Windows/Hyper-V per D1, or an OVHcloud instance).
-3. Move aboard: once DeepInfra is wired, install Claude Code on a real ship and work
-   as shipwright from there — Phase 2 onward assumes you live on the ship, per the
-   original Phase 0 exit criterion.
-4. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
+1. **x86_64 validation** of `fitout.sh`/`keel.yaml` — needs a non-Apple-Silicon host
+   (Windows/Hyper-V per D1, or an OVHcloud instance). Eric has a Windows machine ready
+   for this when it's time.
+2. Move aboard: install Claude Code on a real ship and work as shipwright from
+   there — Phase 2 onward assumes you live on the ship, per the original Phase 0 exit
+   criterion. DeepInfra being wired removes the last blocker for this.
+3. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
    plugin — Phase 5+, not before the above.
+4. Worth a look before scaling up real usage: the crew.md/muster report-path fix in
+   §4f was found on the very FIRST successful real run — a good reminder that prompt
+   wording bugs are highly plausible elsewhere in `ship/prompts/*.md` (captain.md,
+   order-template.md haven't been drilled with a real agent yet at all) and won't
+   surface until actually exercised, not from reading them.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
 1. Crew revision loops: fresh agent per revision vs resumed session — start fresh-per-revision.
 2. Long missions on the VPS ship: does the Bosun become a daemon that pages Eric? (Forced by Phase 6.)
 3. Real task-size ceiling for GLM-5.2 reliability.
-4. Whether Quartermaster reviews ever route to a stronger model via pi's multi-provider support.
-5. Exact DeepInfra model slug / `[1m]` variant — verify at Phase 2 wiring time.
+4. Whether Quartermaster reviews ever route to a stronger model via pi's multi-provider support. (`models.json` can hold multiple providers/models at once — mechanically possible now per §4f — but not decided.)
+5. ~~Exact DeepInfra model slug / `[1m]` variant — verify at Phase 2 wiring time.~~ **Resolved — see §4f: `zai-org/GLM-5.2`, no separate `[1m]` variant.**
 
 ## 7. Session log
 
 - v1: initial plan (VM strategy, tooling, orchestration, worktrees, phases).
 - v2: OVHcloud; skeuomorphic naming pass (manifest); pi-primary decision; Purser added.
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
-- v4 (Claude Code, July 1, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e.
+- v4 (Claude Code, July 1–2, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e. DeepInfra wiring done and verified with a real crew agent completing real work end-to-end (model slug, `models.json`, strongbox populated, four more real bugs found and fixed: DeepInfra's 422 on the `developer` role, `muster` never loading the strongbox, `crew.md` never reaching `pi`, and the ambiguous report path) — see §4f.
