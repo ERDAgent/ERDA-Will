@@ -1,0 +1,42 @@
+#cloud-config
+# keel.yaml — the first thing laid down. Creates the ship's user, clones the
+# shipyard repo, and hands off to fitout.sh for everything else. One keel,
+# three harbors: this file is passed as-is to Multipass (Mac/Windows) and to
+# OVHcloud Public Cloud (native cloud-init, OpenStack-backed).
+#
+# Fill in ssh_authorized_keys below with your own public key before launching
+# (cat ~/.ssh/id_ed25519.pub) — this is the one manual per-operator step, same
+# spirit as dropping an age key into the strongbox per-ship.
+
+users:
+  - default   # keep the distro's default user so host tooling (e.g. Multipass) still works
+  - name: eric
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - REPLACE-ME-with-your-ssh-public-key
+
+package_update: true
+packages:
+  - git
+
+write_files:
+  - path: /usr/local/sbin/lay-the-keel.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      REPO_URL="https://github.com/ERDAgent/ERDA-Will.git"
+      SHIPYARD_DIR="/home/eric/shipyard"
+      if [[ -d "$SHIPYARD_DIR/.git" ]]; then
+        git -C "$SHIPYARD_DIR" pull --ff-only
+      else
+        git clone "$REPO_URL" "$SHIPYARD_DIR"
+      fi
+      chown -R eric:eric "$SHIPYARD_DIR"
+      chmod +x "$SHIPYARD_DIR/fitout.sh"
+      su - eric -c "$SHIPYARD_DIR/fitout.sh"
+
+runcmd:
+  - bash -c 'set -o pipefail; /usr/local/sbin/lay-the-keel.sh 2>&1 | tee -a /var/log/fitout.log'
