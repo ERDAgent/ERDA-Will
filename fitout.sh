@@ -25,24 +25,21 @@ git config --global rerere.enabled true
 git config --global fetch.prune true
 
 # --- fnm + Node LTS ---
-FNM_DIR="$HOME/.fnm"
+# mirrors fnm's own install-dir selection (install.sh): ~/.fnm if it already
+# exists, else $XDG_DATA_HOME/fnm, else ~/.local/share/fnm on Linux.
+if [[ -d "$HOME/.fnm" ]]; then
+  FNM_DIR="$HOME/.fnm"
+elif [[ -n "${XDG_DATA_HOME:-}" ]]; then
+  FNM_DIR="$XDG_DATA_HOME/fnm"
+else
+  FNM_DIR="$HOME/.local/share/fnm"
+fi
 if [[ ! -x "$FNM_DIR/fnm" ]]; then
   log "installing fnm"
   curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
 fi
 export PATH="$FNM_DIR:$PATH"
 eval "$(fnm env --shell bash)"
-
-FNM_MARK="# fitout: fnm"
-if ! grep -qF "$FNM_MARK" "$HOME/.bashrc" 2>/dev/null; then
-  {
-    echo "$FNM_MARK"
-    # shellcheck disable=SC2016  # written literally, expanded on future shell startup
-    echo 'export PATH="$HOME/.fnm:$PATH"'
-    # shellcheck disable=SC2016
-    echo 'eval "$(fnm env --shell bash)"'
-  } >> "$HOME/.bashrc"
-fi
 
 if ! fnm list 2>/dev/null | grep -q 'v[0-9]'; then
   log "installing Node LTS"
@@ -97,6 +94,20 @@ if ! command -v opencode >/dev/null 2>&1; then
   curl -fsSL https://opencode.ai/install | bash
 fi
 export PATH="$HOME/.opencode/bin:$PATH"
+
+# System-wide login-shell PATH for fnm-managed Node + the agent CLIs.
+# Sourced by /etc/profile for every login shell (ssh, `multipass shell`), so
+# tmux — and anything it spawns, including muster's headless crew scripts,
+# which exec .crew-run.sh directly with no shell-rc sourcing of their own —
+# inherits the right PATH by ordinary process inheritance.
+sudo tee /etc/profile.d/shipyard.sh > /dev/null <<EOF
+#!/bin/sh
+if [ -n "\$BASH_VERSION" ]; then
+  export PATH="$FNM_DIR:\$HOME/.opencode/bin:\$PATH"
+  eval "\$(fnm env --shell bash)"
+fi
+EOF
+sudo chmod 644 /etc/profile.d/shipyard.sh
 
 # --- the strongbox: decrypt if the age key is already on this ship ---
 STRONGBOX="$SHIPYARD_DIR/strongbox/keys.env.age"
