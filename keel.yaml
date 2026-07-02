@@ -23,7 +23,11 @@ packages:
 
 write_files:
   - path: /usr/local/sbin/lay-the-keel.sh
-    permissions: '0755'
+    # permissions deliberately omitted: some cloud-init front ends
+    # (observed via Multipass) re-serialize a quoted octal string like
+    # '0755' as the integer 493 — numerically identical (chmod still
+    # applies the right mode) but fails strict schema validation. chmod
+    # explicitly in runcmd instead of depending on write_files' typing.
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
@@ -39,4 +43,5 @@ write_files:
       su - eric -c "$SHIPYARD_DIR/fitout.sh"
 
 runcmd:
+  - chmod 0755 /usr/local/sbin/lay-the-keel.sh
   - bash -c 'set -o pipefail; /usr/local/sbin/lay-the-keel.sh 2>&1 | tee -a /var/log/fitout.log'
