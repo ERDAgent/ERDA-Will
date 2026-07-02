@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# sail — open (or reattach) the deck for a charter
+# usage: sail <charter>
+# One tmux session per charter: ship-<charter>, windows 0-6 = roles, 7+ = crew.
+set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
+NAME="${1:?usage: sail <charter>}"
+DIR="$FLEET/$NAME"
+SES="ship-$NAME"
+GLYPHS="${SHIP_GLYPHS:-1}"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ -d "$DIR/.ship" ]] || { echo "no such charter: $NAME (run: charter $NAME [git-url])" >&2; exit 1; }
+
+g() { [[ "$GLYPHS" == "1" ]] && printf '%s ' "$1" || true; }
+
+if ! tmux has-session -t "=$SES" 2>/dev/null; then
+  # window 0 — bridge: the Captain (interactive pi). Falls back to a shell if pi absent.
+  BRIDGE_CMD="bash -lc 'cd \"$DIR/berths/home-port\" 2>/dev/null || cd \"$DIR\"; \
+    echo \"[bridge] charter: $NAME — start the Captain with: pi\"; exec bash'"
+  tmux new-session -d -s "$SES" -c "$DIR" -n "$(g ⚓)bridge" "$BRIDGE_CMD"
+
+  # window 1 — chartroom: Scuttlebutt on .ship/ (falls back to watching the bus)
+  if command -v fresh >/dev/null; then
+    tmux new-window -t "$SES:1" -c "$DIR/.ship" -n "$(g 🗺)chartroom" "fresh mission.md"
+  else
+    tmux new-window -t "$SES:1" -c "$DIR/.ship" -n "$(g 🗺)chartroom" \
+      "watch -t -n 5 'echo == mission ==; cat mission.md; echo; echo == orders ==; ls -1 orders 2>/dev/null; echo; echo == reports ==; ls -1 reports 2>/dev/null'"
+  fi
+
+  # window 2 — first-mate: plan critique station (dashboard until Phase 5)
+  tmux new-window -t "$SES:2" -c "$DIR/.ship" -n "$(g 🧭)first-mate" \
+    "bash -lc 'echo \"[first-mate] plan critique station — review mission.md before approving muster\"; exec bash'"
+
+  # window 3 — bosun: roster watch
+  tmux new-window -t "$SES:3" -c "$DIR/.ship" -n "$(g 📣)bosun" \
+    "watch -t -n 5 'echo == roster ==; jq -r \".[] | [.task,.status,.branch] | @tsv\" roster.json 2>/dev/null || cat roster.json; echo; echo == last events ==; tail -n 8 log/events.log'"
+
+  # window 4 — quartermaster: review station
+  tmux new-window -t "$SES:4" -c "$DIR" -n "$(g ⚖)quartermaster" \
+    "watch -t -n 10 'echo == branches ==; git -C .hold.git branch -a; echo; echo == recent ==; git -C .hold.git log --oneline --all -n 10'"
+
+  # window 5 — purser: ledger tail
+  tmux new-window -t "$SES:5" -c "$DIR/.ship" -n "$(g 🪙)purser" \
+    "bash -lc 'echo \"[purser] ledger (tokens/cost land here in Phase 2+)\"; tail -F log/ledger.tsv'"
+
+  # window 6 — engine-room
+  ER="top"; command -v htop >/dev/null && ER="htop"
+  tmux new-window -t "$SES:6" -c "$DIR" -n "$(g ⚙)engine-room" "$ER"
+
+  tmux select-window -t "$SES:0"
+fi
+
+# attach (or switch, if already inside tmux). SHIP_NO_ATTACH=1 for scripts/CI.
+if [[ "${SHIP_NO_ATTACH:-0}" == "1" ]]; then
+  echo "deck open: $SES (not attaching)"
+elif [[ -n "${TMUX:-}" ]]; then
+  exec tmux switch-client -t "$SES"
+else
+  exec tmux attach -t "$SES"
+fi

@@ -1,0 +1,6 @@
+.DS_Store
+
+# strongbox: only the encrypted bundle is ever committed
+strongbox/*.key
+strongbox/keys.env
+!strongbox/keys.env.age

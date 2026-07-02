@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# muster — spawn a crew member for one work order
+# usage: muster <charter> <task-id> <order-file>
+#   muster royal-guest T-014 ~/fleet/royal-guest/.ship/orders/T-014-booking-dates.md
+# Creates: berth (worktree) + branch crew/<task-id>-<slug> + tmux window running
+# the agent headless on the order. Registers in roster.json and the event log.
+set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
+AGENT_CMD="${SHIP_AGENT:-pi -p}"    # override for tests or relief vessel: SHIP_AGENT="opencode run"
+
+NAME="${1:?usage: muster <charter> <task-id> <order-file>}"
+TASK="${2:?usage: muster <charter> <task-id> <order-file>}"
+ORDER="${3:?usage: muster <charter> <task-id> <order-file>}"
+
+DIR="$FLEET/$NAME"
+SES="ship-$NAME"
+HOLD="$DIR/.hold.git"
+BERTH="$DIR/berths/$TASK"
+BUS="$DIR/.ship"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ "$TASK" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid task id: '$TASK' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ -d "$HOLD" ]] || { echo "no hold for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
+[[ -f "$ORDER" ]] || { echo "order file not found: $ORDER" >&2; exit 1; }
+tmux has-session -t "=$SES" 2>/dev/null || { echo "deck not open — run: sail $NAME" >&2; exit 1; }
+[[ -e "$BERTH" ]] && { echo "berth already occupied: $BERTH" >&2; exit 1; }
+
+# slug from order filename: T-014-booking-dates.md -> booking-dates
+BASE="$(basename "$ORDER" .md)"
+SLUG="${BASE#"$TASK"-}"; [[ "$SLUG" == "$BASE" ]] && SLUG="task"
+BRANCH="crew/$TASK-$SLUG"
+
+log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
+
+# --- berth + branch ---
+git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" main >/dev/null
+cp "$ORDER" "$BERTH/.order.md"
+[[ -f "$DIR/charter.md" ]] && cp "$DIR/charter.md" "$BERTH/.charter.md"
+# berth scaffolding must never be committed, even via `git add -A`.
+# info/exclude is shared across all worktrees of the hold, so guard against
+# appending these lines again on every muster.
+EXCL="$(git -C "$BERTH" rev-parse --git-path info/exclude)"
+grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n.crew-run.sh\n' >> "$EXCL"
+
+# --- roster entry ---
+(
+  flock 9
+  TMPJ="$(mktemp)"
+  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "crew-$TASK" --arg s "$(date -Is)" \
+     '. += [{task:$t, branch:$b, window:$w, started:$s, status:"working"}]' \
+     "$BUS/roster.json" > "$TMPJ" && mv "$TMPJ" "$BUS/roster.json"
+) 9>"$BUS/.roster.lock"
+log "muster" "$TASK $BRANCH"
+
+# --- crew window: run agent, then report status and hold the pane for inspection ---
+RUNNER="$BERTH/.crew-run.sh"
+cat > "$RUNNER" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$BERTH"
+echo "[crew $TASK] agent: $AGENT_CMD · branch: $BRANCH"
+$AGENT_CMD "\$(cat .order.md)"
+RC=\$?
+STATUS=done; [[ \$RC -ne 0 ]] && STATUS=failed
+(
+  flock 9
+  TMPJ="\$(mktemp)"
+  jq --arg t "$TASK" --arg s "\$STATUS" \
+     '(.[] | select(.task==\$t) | .status) = \$s' \
+     "$BUS/roster.json" > "\$TMPJ" && mv "\$TMPJ" "$BUS/roster.json"
+) 9>"$BUS/.roster.lock"
+printf '%s\t%s\t%s\n' "\$(date -Is)" "crew-\$STATUS" "$TASK rc=\$RC" >> "$BUS/log/events.log"
+echo; echo "[crew $TASK] \$STATUS (rc=\$RC) — report expected in .ship/reports/$TASK.report.md"
+echo "[crew $TASK] press enter to close this window"
+read -r
+EOF
+chmod +x "$RUNNER"
+
+WIN="crew-$TASK"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="⚒$WIN"
+tmux new-window -t "$SES" -n "$WIN" "$RUNNER"
+echo "mustered $TASK on $BRANCH → window crew-$TASK (deck: $SES)"

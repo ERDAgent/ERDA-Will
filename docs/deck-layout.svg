@@ -1,0 +1,128 @@
+<svg viewBox="0 0 920 700" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, monospace">
+  <title>The Deck — tmux layout, one window per role (session: ship-royal-guest)</title>
+  <desc>Nine tmux windows: bridge, chartroom, first-mate, bosun, quartermaster, purser, engine-room, and two crew windows, with a tmux status bar and the fleet board of parallel charter sessions.</desc>
+
+  <!-- terminal frame -->
+  <rect x="10" y="10" width="900" height="610" rx="12" fill="#17181c" stroke="#2c2f36"/>
+  <!-- title bar -->
+  <rect x="10" y="10" width="900" height="36" rx="12" fill="#1d1f24"/>
+  <rect x="10" y="30" width="900" height="16" fill="#1d1f24"/>
+  <circle cx="34" cy="28" r="6" fill="#e24b4a"/>
+  <circle cx="54" cy="28" r="6" fill="#ef9f27"/>
+  <circle cx="74" cy="28" r="6" fill="#1d9e75"/>
+  <text x="94" y="33" font-size="13" fill="#8b8f98">tmux — session: ship-royal-guest — the deck (one window per role)</text>
+
+  <!-- ===== row 1 ===== -->
+  <!-- 0 bridge (current) -->
+  <g>
+    <rect x="24" y="58" width="284" height="152" rx="6" fill="#1f2126" stroke="#7f77dd" stroke-width="1.5"/>
+    <text x="38" y="82" font-size="13" fill="#afa9ec">⚓ 0 · bridge</text>
+    <text x="150" y="82" font-size="12" fill="#8b8f98">(you are here)</text>
+    <text x="38" y="110" font-size="12" fill="#d6d8de">CAPTAIN: plan drafted —</text>
+    <text x="38" y="130" font-size="12" fill="#d6d8de">3 orders, est. $1.20</text>
+    <text x="38" y="156" font-size="12" fill="#8b8f98">approve muster? (y/n)</text>
+    <rect x="200" y="146" width="8" height="14" fill="#d6d8de"/>
+  </g>
+  <!-- 1 chartroom -->
+  <g>
+    <rect x="318" y="58" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="332" y="82" font-size="13" fill="#9aa0aa">🗺 1 · chartroom (Scuttlebutt)</text>
+    <text x="332" y="110" font-size="12" fill="#8b8f98">.ship/</text>
+    <text x="332" y="130" font-size="12" fill="#8b8f98">├ mission.md</text>
+    <text x="332" y="150" font-size="12" fill="#8b8f98">├ orders/  <tspan fill="#d6d8de">3</tspan></text>
+    <text x="332" y="170" font-size="12" fill="#8b8f98">└ reports/ <tspan fill="#d6d8de">1</tspan></text>
+  </g>
+  <!-- 2 first-mate -->
+  <g>
+    <rect x="612" y="58" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="626" y="82" font-size="13" fill="#9aa0aa">🧭 2 · first-mate</text>
+    <text x="626" y="110" font-size="12" fill="#8b8f98">plan critique:</text>
+    <text x="626" y="130" font-size="12" fill="#8b8f98">T-014 scope <tspan fill="#5dcaa5">ok</tspan></text>
+    <text x="626" y="150" font-size="12" fill="#8b8f98">T-015 scope <tspan fill="#5dcaa5">ok</tspan></text>
+    <text x="626" y="170" font-size="12" fill="#8b8f98">T-016 <tspan fill="#ef9f27">too broad</tspan> → split</text>
+  </g>
+
+  <!-- ===== row 2 ===== -->
+  <!-- 3 bosun -->
+  <g>
+    <rect x="24" y="222" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="38" y="246" font-size="13" fill="#9aa0aa">📣 3 · bosun</text>
+    <text x="38" y="274" font-size="12" fill="#8b8f98">roster:</text>
+    <text x="38" y="294" font-size="12" fill="#8b8f98">T-014 <tspan fill="#5dcaa5">working 12m</tspan></text>
+    <text x="38" y="314" font-size="12" fill="#8b8f98">T-015 <tspan fill="#5dcaa5">working 4m</tspan></text>
+    <text x="38" y="334" font-size="12" fill="#8b8f98">T-016 <tspan fill="#d6d8de">queued</tspan></text>
+  </g>
+  <!-- 4 quartermaster -->
+  <g>
+    <rect x="318" y="222" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="332" y="246" font-size="13" fill="#9aa0aa">⚖ 4 · quartermaster</text>
+    <text x="332" y="274" font-size="12" fill="#8b8f98">review crew/T-013 (Fresh git):</text>
+    <text x="332" y="294" font-size="12" fill="#8b8f98">dates.js <tspan fill="#5dcaa5">+48</tspan> <tspan fill="#f09595">−12</tspan></text>
+    <text x="332" y="314" font-size="12" fill="#8b8f98">2 hunks · tests <tspan fill="#5dcaa5">pass</tspan></text>
+    <text x="332" y="334" font-size="12" fill="#8b8f98">→ dry dock on approve</text>
+  </g>
+  <!-- 5 purser -->
+  <g>
+    <rect x="612" y="222" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="626" y="246" font-size="13" fill="#9aa0aa">🪙 5 · purser</text>
+    <text x="626" y="274" font-size="12" fill="#8b8f98">mission spend <tspan fill="#d6d8de">$0.84</tspan></text>
+    <text x="626" y="294" font-size="12" fill="#8b8f98">T-014 $0.31 · T-015 $0.22</text>
+    <text x="626" y="314" font-size="12" fill="#8b8f98">cache hits <tspan fill="#5dcaa5">78%</tspan></text>
+    <text x="626" y="334" font-size="12" fill="#8b8f98">budget ok · cap $3.00</text>
+  </g>
+
+  <!-- ===== row 3 ===== -->
+  <!-- 6 engine-room -->
+  <g>
+    <rect x="24" y="386" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="38" y="410" font-size="13" fill="#9aa0aa">⚙ 6 · engine-room</text>
+    <text x="38" y="438" font-size="12" fill="#8b8f98">cpu <tspan fill="#d6d8de">▓▓▓▓░░░░ 47%</tspan></text>
+    <text x="38" y="458" font-size="12" fill="#8b8f98">mem <tspan fill="#d6d8de">▓▓▓░░░░░ 39%</tspan></text>
+    <text x="38" y="478" font-size="12" fill="#8b8f98">net <tspan fill="#d6d8de">▂▄▂▆▄▂▄</tspan></text>
+    <text x="38" y="498" font-size="12" fill="#8b8f98">journald: clean</text>
+  </g>
+  <!-- 7 crew-T014 (activity) -->
+  <g>
+    <rect x="318" y="386" width="284" height="152" rx="6" fill="#1f2126" stroke="#ef9f27" stroke-width="1.5"/>
+    <text x="332" y="410" font-size="13" fill="#fac775">⚒ 7 · crew-T014</text>
+    <circle cx="500" cy="405" r="4" fill="#ef9f27"/>
+    <text x="510" y="410" font-size="12" fill="#ef9f27">activity</text>
+    <text x="332" y="438" font-size="12" fill="#8b8f98">pi · GLM-5.2 (High)</text>
+    <text x="332" y="458" font-size="12" fill="#8b8f98">tests <tspan fill="#5dcaa5">12/12 pass</tspan></text>
+    <text x="332" y="478" font-size="12" fill="#8b8f98">writing report…</text>
+    <text x="332" y="498" font-size="12" fill="#8b8f98">berths/T-014 · turn 18/25</text>
+  </g>
+  <!-- 8 crew-T015 -->
+  <g>
+    <rect x="612" y="386" width="284" height="152" rx="6" fill="#1f2126" stroke="#2c2f36"/>
+    <text x="626" y="410" font-size="13" fill="#9aa0aa">⚒ 8 · crew-T015</text>
+    <text x="626" y="438" font-size="12" fill="#8b8f98">pi · GLM-5.2 (High)</text>
+    <text x="626" y="458" font-size="12" fill="#8b8f98">edit booking-widget.js</text>
+    <text x="626" y="478" font-size="12" fill="#8b8f98">berths/T-015 · turn 9/25</text>
+  </g>
+
+  <!-- ===== tmux status bar ===== -->
+  <rect x="10" y="556" width="900" height="30" fill="#0f6e56"/>
+  <rect x="10" y="574" width="900" height="12" fill="#0f6e56"/>
+  <rect x="22" y="561" width="150" height="20" rx="3" fill="#085041"/>
+  <text x="30" y="575" font-size="12" fill="#e1f5ee">ship-royal-guest</text>
+  <text x="186" y="575" font-size="12" fill="#9fe1cb">0:bridge*</text>
+  <text x="268" y="575" font-size="12" fill="#e1f5ee">1:chart  2:mate  3:bosun  4:qm  5:purser  6:engine</text>
+  <text x="672" y="575" font-size="12" fill="#fac775">7:T014!</text>
+  <text x="738" y="575" font-size="12" fill="#e1f5ee">8:T015</text>
+  <text x="808" y="575" font-size="12" fill="#9fe1cb">14:32 woodland</text>
+
+  <!-- rounded bottom mask -->
+  <rect x="10" y="586" width="900" height="34" rx="12" fill="#17181c"/>
+  <rect x="10" y="586" width="900" height="12" fill="#0f6e56"/>
+  <path d="M10 598 q0 -12 12 -12 h-12 z" fill="#17181c"/>
+
+  <!-- ===== fleet board ===== -->
+  <text x="24" y="648" font-size="13" fill="#5f5e5a">Fleet board (prefix+s) — one deck per active charter:</text>
+  <rect x="24" y="660" width="240" height="28" rx="6" fill="#e6f1fb" stroke="#378add"/>
+  <text x="38" y="679" font-size="12" fill="#0c447c">ship-royal-guest · attached</text>
+  <rect x="276" y="660" width="200" height="28" rx="6" fill="none" stroke="#b4b2a9"/>
+  <text x="290" y="679" font-size="12" fill="#5f5e5a">ship-meshmon · 2 crew</text>
+  <rect x="488" y="660" width="190" height="28" rx="6" fill="none" stroke="#b4b2a9"/>
+  <text x="502" y="679" font-size="12" fill="#5f5e5a">ship-shipyard · idle</text>
+</svg>

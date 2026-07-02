@@ -1,0 +1,69 @@
+flowchart TB
+    YOU(["You — Admiralty<br/>the only human aboard"])
+    FB["Fleet Board (prefix+s)<br/>every deck at a glance"]
+    YOU <--> FB
+
+    subgraph SHIP["THE SHIP — one VM (Multipass / OVHcloud), project-agnostic infrastructure"]
+        direction TB
+
+        subgraph FLEET["~/fleet/ — one directory per CHARTER (a repo/project under standing contract)"]
+            direction LR
+
+            subgraph RG["Charter: royal-guest (client work)"]
+                RG_C["charter.md<br/>stack, conventions,<br/>test cmds, no-touch paths"]
+                RG_H[".hold.git (bare repo)"]
+                RG_B["berths/ (worktrees)"]
+                RG_S[".ship/ (orders, reports,<br/>roster, ledger)"]
+            end
+
+            subgraph MM["Charter: meshmon (personal — LoRa mesh monitor)"]
+                MM_C["charter.md"]
+                MM_H[".hold.git"]
+                MM_B["berths/"]
+                MM_S[".ship/"]
+            end
+
+            subgraph SY["Charter: shipyard (the ship improves itself)"]
+                SY_C["charter.md"]
+                SY_H[".hold.git"]
+                SY_B["berths/"]
+                SY_S[".ship/"]
+            end
+        end
+
+        subgraph DECKS["Active decks — one tmux session per charter, full window-per-role layout each"]
+            D1["Deck: ship-royal-guest<br/>CAPTAIN A on the bridge"]
+            D2["Deck: ship-meshmon<br/>CAPTAIN B on the bridge"]
+            D3["Deck: ship-shipyard<br/>(no deck open — charter idle,<br/>no captain, no cost)"]
+        end
+
+        D1 ==>|"works ONLY this charter"| RG
+        D2 ==>|"works ONLY this charter"| MM
+        D3 -.->|"opens on demand: sail shipyard"| SY
+    end
+
+    FB <--> D1
+    FB <--> D2
+
+    subgraph VOYAGES["VOYAGES under one charter — sequential missions, one captain session each"]
+        direction LR
+        V1["Voyage 1<br/>'fix booking widget dates'<br/>3 orders · $1.20 · merged"]
+        V2["Voyage 2<br/>'spring copy refresh'<br/>5 orders · $2.10 · merged"]
+        V3["Voyage 3 (today)<br/>brief → plan → muster →<br/>work → review → integrate → debrief"]
+        V1 --> V2 --> V3
+    end
+
+    RG ---|"its mission history"| VOYAGES
+
+    subgraph REMOTE["Remote origins (GitHub etc.)"]
+        R1[("royal-guest-site.git")]
+        R2[("meshmon.git")]
+        R3[("shipyard.git")]
+    end
+
+    RG_H <-->|"fetch / push from home port"| R1
+    MM_H <--> R2
+    SY_H <--> R3
+
+    NOTE["Rules of the fleet:<br/>1 charter = 1 repo = 1 .ship bus = clean per-project cost<br/>1 captain per charter, never across charters<br/>parallel projects = parallel decks, not a bigger captain<br/>a charter with no open deck costs nothing"]
+    FLEET -.-> NOTE

@@ -1,0 +1,77 @@
+flowchart TB
+    subgraph HOSTS["Layer 0 — Hosts (one cloud-init, three harbors)"]
+        MAC["macOS<br/>Multipass / QEMU"]
+        WIN["Windows<br/>Multipass / Hyper-V"]
+        VPS["VPS<br/>OVHcloud Public Cloud<br/>cloud-init (OpenStack)"]
+    end
+
+    HOSTS --> VM["Ubuntu 24.04 VM — 'The Ship'<br/>keel.yaml + fitout.sh"]
+
+    subgraph TOOLS["Layers 1–2 — Toolbelt"]
+        NVIM["The Scuttlebutt<br/>Fresh editor (daemon mode,<br/>SSH remote, TS plugins)"]
+        TMUX["tmux — one deck (session) per charter,<br/>one window per role"]
+        CC["Claude Code<br/>(shipwright)"]
+        CX["Codex CLI<br/>(shipwright)"]
+        HOST_AGENT["pi (host)<br/>OpenCode (relief vessel)"]
+    end
+
+    VM --> TOOLS
+
+    YOU(["You — Admiralty"]) <-->|"interactive bridge session"| CAPT
+
+    subgraph SHIP["Layer 4 — Ship & Crew Orchestration"]
+        CAPT["CAPTAIN<br/>mission planning, debrief"]
+        FM["First Mate<br/>plan critique"]
+        BOSUN["Bosun<br/>spawn + watchdog"]
+        QM["Quartermaster<br/>diff review, merge gate"]
+        CAPT --> FM
+        CAPT --> BOSUN
+        PURSER["Purser<br/>cost ledger (script)"]
+        CAPT --> QM
+        CAPT --> PURSER
+        BOSUN -->|"muster: tmux + worktree"| C1["Crew T-014<br/>berth berths/T-014<br/>branch crew/T-014"]
+        BOSUN --> C2["Crew T-015<br/>berth berths/T-015<br/>branch crew/T-015"]
+        BOSUN --> C3["Crew T-016<br/>berth berths/T-016<br/>branch crew/T-016"]
+    end
+
+    HOST_AGENT --> SHIP
+
+    subgraph BUS[".ship/ — file message bus"]
+        MISSION["mission.md"]
+        ORDERS["orders/*.md"]
+        REPORTS["reports/*.md"]
+        LOG["log/ + roster.json"]
+    end
+
+    CAPT -.writes.-> MISSION
+    CAPT -.writes.-> ORDERS
+    C1 -.write reports.-> REPORTS
+    C2 -.-> REPORTS
+    C3 -.-> REPORTS
+    BOSUN -.tracks.-> LOG
+    PURSER -.tallies.-> LOG
+    QM -.reads.-> REPORTS
+
+    subgraph GIT["Git integration flow"]
+        BR1["crew/T-014"] --> INT["Dry Dock (integration)<br/>full test suite"]
+        BR2["crew/T-015"] --> INT
+        BR3["crew/T-016"] --> INT
+        INT --> MAIN["Home Port (main)"]
+    end
+
+    C1 --> BR1
+    C2 --> BR2
+    C3 --> BR3
+    QM -->|"review gate"| INT
+
+    subgraph MODEL["Layer 3 — Model backend"]
+        DI["The Trade Winds — DeepInfra<br/>OpenAI-compatible API"]
+        GLM["GLM-5.2<br/>1M ctx · thinking High/Max<br/>~$1.4 in / $4.4 out per M<br/>cached in ~$0.26/M"]
+        DI --- GLM
+    end
+
+    CAPT -.->|"thinking: High"| DI
+    C1 -.-> DI
+    C2 -.-> DI
+    C3 -.-> DI
+    QM -.-> DI

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# charter — register a repo as a charter in the fleet
+# usage: charter <name> [git-url]
+#   charter royal-guest git@github.com:eric/royal-guest-site.git
+#   charter scratchpad                  (local-only charter, empty hold)
+set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
+NAME="${1:?usage: charter <name> [git-url]}"
+URL="${2:-}"
+DIR="$FLEET/$NAME"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+
+if [[ -e "$DIR/.hold.git" ]]; then
+  echo "charter '$NAME' already exists at $DIR" >&2
+  exit 1
+fi
+
+mkdir -p "$DIR"/{berths,.ship/orders,.ship/reports,.ship/log}
+cd "$DIR"
+
+# --- the hold: bare repo all berths hang off ---
+if [[ -n "$URL" ]]; then
+  git clone --bare "$URL" .hold.git
+else
+  git init --bare -b main .hold.git
+  # an empty bare repo has no commits; give it a home-port root commit
+  TMP="$(mktemp -d)"
+  git -C "$TMP" init -b main -q
+  git -C "$TMP" -c user.name=shipyard -c user.email=shipyard@local \
+    commit --allow-empty -q -m "lay the keel: charter $NAME"
+  git -C "$TMP" push -q "$DIR/.hold.git" main
+  rm -rf "$TMP"
+fi
+
+# home-port berth: a plain checkout of main for browsing / manual work
+git -C .hold.git worktree add "$DIR/berths/home-port" main >/dev/null
+
+# --- standing orders ---
+if [[ ! -f charter.md ]]; then
+  cat > charter.md <<EOF
+# Charter: $NAME
+
+## Repo
+- origin: ${URL:-"(local only)"}
+- home port: main · dry dock: integration
+
+## Stack & conventions
+- (fill in: languages, frameworks, formatter, lint)
+
+## Test commands
+- (fill in: how crew prove their work, e.g. \`npm test\`)
+
+## No-touch paths
+- (paths crew may never modify, e.g. deploy configs, secrets)
+
+## Notes for the Captain
+- (standing context worth having in every mission)
+EOF
+fi
+
+# --- ship's bus ---
+[[ -f .ship/roster.json ]] || echo "[]" > .ship/roster.json
+touch .ship/log/events.log .ship/log/ledger.tsv
+[[ -f .ship/mission.md ]] || printf '# Mission\n\n(no active voyage)\n' > .ship/mission.md
+
+echo "chartered: $NAME"
+echo "  hold:    $DIR/.hold.git"
+echo "  berths:  $DIR/berths/ (home-port checked out)"
+echo "  bus:     $DIR/.ship/"
+echo "next: edit $DIR/charter.md, then 'sail $NAME'"

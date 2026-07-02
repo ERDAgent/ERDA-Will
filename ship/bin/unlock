@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# unlock — decrypt the strongbox and print export lines for the current shell
+# usage: eval "$(unlock)"        or:  set -a; source <(unlock); set +a
+set -euo pipefail
+BOX="${STRONGBOX:-$HOME/shipyard/strongbox/keys.env.age}"
+KEY="${AGE_KEY:-$HOME/.config/age/ship.key}"
+[[ -f "$BOX" ]] || { echo "echo 'strongbox not found: $BOX' >&2" ; exit 1; }
+[[ -f "$KEY" ]] || { echo "echo 'age key not found: $KEY (drop your private key there)' >&2"; exit 1; }
+age -d -i "$KEY" "$BOX" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=/export \1=/'
