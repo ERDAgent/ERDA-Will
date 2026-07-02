@@ -4,6 +4,9 @@
       "baseUrl": "https://api.deepinfra.com/v1/openai",
       "api": "openai-completions",
       "apiKey": "$DEEPINFRA_API_KEY",
+      "compat": {
+        "supportsDeveloperRole": false
+      },
       "models": [
         {
           "id": "zai-org/GLM-5.2",
