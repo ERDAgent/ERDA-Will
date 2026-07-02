@@ -2,7 +2,11 @@
 
 **From:** planning session on claude.ai (June–July 2026, Claude Fable 5)
 **To:** Claude Code, working in this repo
-**Status:** Planning complete. Phase 0 item 1 done (shellcheck-clean, hardened, regression-drilled — see §4c). Next task: `fitout.sh` + `keel.yaml` + real-VM validation (items 2–4 below).
+**Status:** Planning complete. Phase 0 items 1–3 done (see §4c, §4d). Repo is public at
+https://github.com/ERDAgent/ERDA-Will (flipped from private this session so keel.yaml
+can `git clone` over plain HTTPS with no baked-in credentials — secrets never live in
+git anyway, that's what strongbox is for). Next task: item 4, validating the deck on a
+real ship (needs `sail`/`muster` moved aboard and driven with real `pi`, not a stub).
 
 Claude.ai chats cannot be resumed as Claude Code sessions — this file and `docs/agentic-engineering-plan.md` ARE the session transfer. Read the plan in full once before writing anything.
 
@@ -99,6 +103,60 @@ into this repo this session; it's now tracked source, not a bundle.
   `SHIP_GLYPHS=0` locally), real `pi` instead of a stub agent, and validating on an
   actual Ubuntu ship — all deferred to item 4 below, which needs Multipass.
 
+## 4d. Phase 0 items 2–3 done (July 1, 2026) — fitout.sh, keel.yaml, real Multipass validation
+
+Multipass was missing on this host; user installed it via `brew install --cask
+multipass` (needed an interactive terminal for the sudo prompt — not scriptable from
+this session). Repo was pushed and flipped from private to public so `keel.yaml` can
+`git clone` over plain HTTPS with no credentials baked in (user's explicit choice among
+several options offered — see the private-repo tradeoff this raised).
+
+Wrote `fitout.sh` and `keel.yaml` from the design doc's specs (§3–4 of
+`agentic-engineering-plan.md`), researched the exact install mechanics that weren't
+pinned down during planning (Fresh's actual repo is `github.com/sinelaw/fresh`, `.deb`
+assets are named `fresh-editor_<ver>-1_<arch>.deb`; fnm's install script is at
+`fnm.vercel.app/install`), and validated on a real ARM64 Ubuntu 24.04 Multipass VM
+(this host is Apple Silicon — **x86_64 is still untested**, needs a Windows/Hyper-V or
+OVHcloud run). Three real bugs surfaced only by actually launching a VM, not by
+reading docs:
+
+1. **fnm's actual install directory.** Assumed `~/.fnm` (from a web search that turned
+   out to be stale/wrong); on a real fresh Ubuntu 24.04 image with no pre-existing
+   `~/.fnm` and no `$XDG_DATA_HOME`, fnm's own installer picks `~/.local/share/fnm`.
+   Fixed by mirroring the installer's own directory-selection logic instead of
+   hardcoding a path — `fnm: command not found` immediately after "installing fnm"
+   was the tell.
+2. **PATH never reached anything outside the install shell.** This image's
+   `~/.profile` doesn't source `~/.bashrc` (don't assume it does on a minimal cloud
+   image), so appending PATH exports to `.bashrc` alone left `pi`/`claude`/`codex`
+   unreachable from `ssh`/login shells — and critically, `muster`'s crew windows
+   `exec` `.crew-run.sh` directly (§4c), which sources no shell rc file at all, so a
+   per-dotfile fix wouldn't have reached the one place that matters most for the
+   whole orchestration system to function. Fixed by writing PATH once to
+   `/etc/profile.d/shipyard.sh`, sourced by every login shell (ssh, `multipass
+   shell`), so tmux and everything it spawns inherits it by ordinary process
+   inheritance — no per-tool, per-shell-type patching needed.
+3. **`keel.yaml` schema validation.** Multipass's cloud-init passthrough
+   re-serializes a quoted `write_files` permissions string like `'0755'` as the bare
+   integer `493` — numerically identical (493 decimal *is* 0o755, so `chmod` still
+   applied the right mode and the ship provisioned successfully regardless) but fails
+   strict schema validation (`cloud-init status --wait` exits 2, "degraded"). Fixed by
+   dropping the `permissions:` field and `chmod`-ing explicitly in `runcmd` instead,
+   sidestepping the type coercion. `cloud-init status --wait` now exits 0 clean.
+
+Final validated run (`multipass launch 24.04 --cloud-init keel.yaml`, arm64): cloud-init
+exits 0; `pi --version`, `opencode --version`, `claude --version`, `codex --version`,
+`fresh --version` all succeed from a fresh login shell; a second `fitout.sh` run on the
+same ship completes in ~1.75s doing nothing (true idempotency, not just "didn't
+crash"). Test VMs destroyed after each run (`multipass delete --purge`) — no ship left
+running.
+
+Not built this session (out of scope for items 2–3, callable out for item 4 / Phase 2):
+the Chartroom Fresh plugin, `scuttlebutt/` theme (only `config.json` with
+`check_for_updates: false` exists — created because `fitout.sh`'s telemetry-off
+requirement needed real content to symlink, not because the full scuttlebutt/ layer was
+in scope), DeepInfra wiring, officer agents.
+
 ## 5. NEXT TASK — remaining Phase 0
 
 Where to run: **on the host OS (Mac or Windows), in this repo** — Phase 0's acceptance
@@ -107,15 +165,15 @@ only possible from OUTSIDE the ship. Once a ship provisions cleanly twice in a r
 move aboard (install Claude Code on the ship) and work as shipwright from there for
 everything after — Phase 2 onward assumes you live on the ship.
 
-Multipass is not yet installed on this host — available via `brew install --cask
-multipass` (confirmed present in brew's cask catalog, not yet installed).
+Multipass is now installed on this host (`brew install --cask multipass`, done this
+session).
 
 Build, in this order, with acceptance criteria:
 
 1. ~~**shellcheck + harden the drafted scripts** in `ship/bin/` and regression-test the two fixed bugs above. AC: shellcheck clean; 3-concurrent-crew drill passes with a stub agent.~~ **DONE — see §4c.**
-2. **`fitout.sh`** — idempotent bash (`set -euo pipefail`). Installs: apt basics (build-essential, ripgrep, fd-find, fzf, jq, unzip, curl, age, htop, tmux, git), fnm + Node LTS, Fresh (latest release .deb by arch; set `git config --global core.editor "fresh --wait"`; telemetry off), Claude Code, Codex CLI, OpenCode, pi (`--ignore-scripts`), symlinks `scuttlebutt/` → `~/.config/fresh/` and `dotfiles/tmux/ship.tmux.conf` → `~/.tmux.conf`, decrypts strongbox if age key present (skip gracefully if not). AC: runs clean twice in a row on fresh Ubuntu 24.04 ARM64 and x86_64.
-3. **`keel.yaml`** — cloud-init: user `eric` w/ ssh key + sudo, git install, clone this repo to `~/shipyard`, run `fitout.sh` as the user, log to `/var/log/fitout.log`. AC: `multipass launch 24.04 --cloud-init keel.yaml` yields a ship where `pi --version`, `opencode --version`, `claude --version`, `codex --version`, `fresh --version` all succeed.
-4. **Validate the drafted deck on a real ship**: `sail` matches `docs/deck-layout.svg`, glyphs render, two decks concurrently, muster drill with REAL pi against a scratch charter. AC: plan Phase 3 manual drill passes on-ship.
+2. ~~**`fitout.sh`** — idempotent bash (`set -euo pipefail`). Installs: apt basics (build-essential, ripgrep, fd-find, fzf, jq, unzip, curl, age, htop, tmux, git), fnm + Node LTS, Fresh (latest release .deb by arch; set `git config --global core.editor "fresh --wait"`; telemetry off), Claude Code, Codex CLI, OpenCode, pi (`--ignore-scripts`), symlinks `scuttlebutt/` → `~/.config/fresh/` and `dotfiles/tmux/ship.tmux.conf` → `~/.tmux.conf`, decrypts strongbox if age key present (skip gracefully if not). AC: runs clean twice in a row on fresh Ubuntu 24.04 ARM64 and x86_64.~~ **DONE on ARM64 — see §4d. x86_64 still untested, needs Windows/Hyper-V or OVHcloud.**
+3. ~~**`keel.yaml`** — cloud-init: user `eric` w/ ssh key + sudo, git install, clone this repo to `~/shipyard`, run `fitout.sh` as the user, log to `/var/log/fitout.log`. AC: `multipass launch 24.04 --cloud-init keel.yaml` yields a ship where `pi --version`, `opencode --version`, `claude --version`, `codex --version`, `fresh --version` all succeed.~~ **DONE on ARM64 — see §4d.**
+4. **Validate the drafted deck on a real ship**: `sail` matches `docs/deck-layout.svg`, glyphs render, two decks concurrently, muster drill with REAL pi against a scratch charter. AC: plan Phase 3 manual drill passes on-ship. Note: `keel.yaml`'s `ssh_authorized_keys` still has the `REPLACE-ME-with-your-ssh-public-key` placeholder — substitute a real key (not committed) before launching a ship meant to be kept around, same one-manual-step spirit as the strongbox age key.
 
 Defer: pi extension, officer agents, DeepInfra wiring test (Phase 2), chartroom Fresh plugin.
 
@@ -132,4 +190,4 @@ Defer: pi extension, officer agents, DeepInfra wiring test (Phase 2), chartroom 
 - v1: initial plan (VM strategy, tooling, orchestration, worktrees, phases).
 - v2: OVHcloud; skeuomorphic naming pass (manifest); pi-primary decision; Purser added.
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
-- v4 (Claude Code, July 1, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c.
+- v4 (Claude Code, July 1, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d.
