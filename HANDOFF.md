@@ -2,11 +2,12 @@
 
 **From:** planning session on claude.ai (June–July 2026, Claude Fable 5)
 **To:** Claude Code, working in this repo
-**Status:** Planning complete. Phase 0 items 1–3 done (see §4c, §4d). Repo is public at
-https://github.com/ERDAgent/ERDA-Will (flipped from private this session so keel.yaml
-can `git clone` over plain HTTPS with no baked-in credentials — secrets never live in
-git anyway, that's what strongbox is for). Next task: item 4, validating the deck on a
-real ship (needs `sail`/`muster` moved aboard and driven with real `pi`, not a stub).
+**Status:** Phase 0 is complete (items 1–4, see §4c, §4d, §4e). Repo is public at
+https://github.com/ERDAgent/ERDA-Will (flipped from private in this session so
+keel.yaml can `git clone` over plain HTTPS with no baked-in credentials — secrets never
+live in git anyway, that's what strongbox is for). Next: Phase 1/2 work — DeepInfra
+wiring is the big unblock (pi has no model provider configured yet, see §4e), then the
+pi extension / officer agents.
 
 Claude.ai chats cannot be resumed as Claude Code sessions — this file and `docs/agentic-engineering-plan.md` ARE the session transfer. Read the plan in full once before writing anything.
 
@@ -151,31 +152,91 @@ same ship completes in ~1.75s doing nothing (true idempotency, not just "didn't
 crash"). Test VMs destroyed after each run (`multipass delete --purge`) — no ship left
 running.
 
-Not built this session (out of scope for items 2–3, callable out for item 4 / Phase 2):
+Not built this session (out of scope for items 2–3, called out for item 4 / Phase 2):
 the Chartroom Fresh plugin, `scuttlebutt/` theme (only `config.json` with
 `check_for_updates: false` exists — created because `fitout.sh`'s telemetry-off
 requirement needed real content to symlink, not because the full scuttlebutt/ layer was
 in scope), DeepInfra wiring, officer agents.
 
-## 5. NEXT TASK — remaining Phase 0
+## 4e. Phase 0 item 4 done (July 1, 2026) — real-ship deck + muster drill with real pi
 
-Where to run: **on the host OS (Mac or Windows), in this repo** — Phase 0's acceptance
-test is launching fresh VMs from keel.yaml via Multipass and destroying them, which is
-only possible from OUTSIDE the ship. Once a ship provisions cleanly twice in a row,
-move aboard (install Claude Code on the ship) and work as shipwright from there for
-everything after — Phase 2 onward assumes you live on the ship.
+Launched a fresh, persistent ship (`ship-drill`, arm64 Multipass) with a real SSH key
+substituted into `keel.yaml`'s `REPLACE-ME` placeholder (a scratch, uncommitted copy —
+the tracked `keel.yaml` still carries the placeholder, same one-manual-step spirit as
+the strongbox age key) and drove it entirely over real `ssh eric@<ship-ip>`, not
+`multipass exec`, specifically to exercise the actual login/non-login shell paths a
+real operator (or an automated caller) would hit.
 
-Multipass is now installed on this host (`brew install --cask multipass`, done this
-session).
+**Found a fourth real bug, worse than the first three**: `ssh ship 'pi --version'` —
+an ordinary non-login SSH command, exactly the shape `ssh host 'command'` always takes
+— came back `command not found`, even after §4d's `/etc/profile.d` fix. OpenSSH runs a
+supplied command through the login shell *non-login* by default; `/etc/profile.d` is
+only sourced by login shells. That's the identical invocation shape to `muster`'s crew
+windows, which `exec` `.crew-run.sh` directly with no shell-rc sourcing of any kind —
+so the previous fix covered interactive `ssh` sessions and `bash -lc` but silently
+missed the one path that actually matters for the orchestration system to run
+headlessly. Root-caused and fixed by symlinking the agent CLIs into `/usr/local/bin`
+(on every shell's PATH unconditionally — login or not, interactive or not), targeting
+fnm's real, stable per-version install directory
+(`$FNM_DIR/node-versions/$NODE_LTS/installation/bin`) rather than `command -v`'s
+result, which resolves through fnm's ephemeral per-shell "multishell" symlink and goes
+stale the moment that shell exits. Verified: `ssh ship 'pi --version'` (and
+opencode/claude/codex) all resolve cleanly now, non-login, no tmux or login shell
+involved. `/etc/profile.d/shipyard.sh` still stands, narrowed to just making `fnm`
+itself usable interactively.
 
-Build, in this order, with acceptance criteria:
+Drill results, all against the real ship (not simulated):
+- `charter royal-guest` + `sail royal-guest` (`SHIP_NO_ATTACH=1`, driven over ssh):
+  all 7 windows (0–6) alive, correct glyphs (⚓🗺🧭📣⚖🪙⚙ — real UTF-8 rendering on a
+  real terminal, not the `SHIP_GLYPHS=0` workaround the macOS drill needed), and pane
+  content matches intent per window: bridge shows the berth prompt, chartroom is
+  running the *real Fresh editor* rendering `mission.md`, bosun's `watch` loop is live,
+  quartermaster shows real `git -C .hold.git` branch/log output, engine-room is running
+  real `htop`.
+- Second charter (`scratch`) chartered and sailed concurrently — `ship-royal-guest`
+  and `ship-scratch` coexist as two independent tmux sessions with zero collision
+  (matches the Fleet Board / D8 design intent).
+- Wrote two work orders by hand (`T-001` add a README, `T-002` add a `.gitignore`) on
+  `scratch`, per the plan's Phase 3 description ("you are the Captain... by hand").
+  `muster`'d both with the real `pi` binary (`SHIP_AGENT` unset, so the actual default
+  `pi -p`) — no stub. Both crews correctly hit `pi`'s real, expected failure: `No API
+  key found for the selected model` (DeepInfra wiring is explicit Phase 2 scope, not
+  done yet). Confirmed this is handled exactly as designed, not just "didn't crash":
+  `roster.json` shows `status: "failed"` for both tasks, `events.log` has
+  `crew-failed ... rc=1` for both, and both crew worktrees are completely clean — no
+  partial commits, no dirty state — since `pi` errored before any tool use. `.crew-run.sh`'s
+  `set -uo pipefail` (deliberately no `-e`) did its job: let the failure be captured
+  and reported rather than aborting the harness.
+- Test ship destroyed after the drill (`multipass delete --purge`) — no ship left
+  running, matching this session's practice throughout.
 
-1. ~~**shellcheck + harden the drafted scripts** in `ship/bin/` and regression-test the two fixed bugs above. AC: shellcheck clean; 3-concurrent-crew drill passes with a stub agent.~~ **DONE — see §4c.**
-2. ~~**`fitout.sh`** — idempotent bash (`set -euo pipefail`). Installs: apt basics (build-essential, ripgrep, fd-find, fzf, jq, unzip, curl, age, htop, tmux, git), fnm + Node LTS, Fresh (latest release .deb by arch; set `git config --global core.editor "fresh --wait"`; telemetry off), Claude Code, Codex CLI, OpenCode, pi (`--ignore-scripts`), symlinks `scuttlebutt/` → `~/.config/fresh/` and `dotfiles/tmux/ship.tmux.conf` → `~/.tmux.conf`, decrypts strongbox if age key present (skip gracefully if not). AC: runs clean twice in a row on fresh Ubuntu 24.04 ARM64 and x86_64.~~ **DONE on ARM64 — see §4d. x86_64 still untested, needs Windows/Hyper-V or OVHcloud.**
-3. ~~**`keel.yaml`** — cloud-init: user `eric` w/ ssh key + sudo, git install, clone this repo to `~/shipyard`, run `fitout.sh` as the user, log to `/var/log/fitout.log`. AC: `multipass launch 24.04 --cloud-init keel.yaml` yields a ship where `pi --version`, `opencode --version`, `claude --version`, `codex --version`, `fresh --version` all succeed.~~ **DONE on ARM64 — see §4d.**
-4. **Validate the drafted deck on a real ship**: `sail` matches `docs/deck-layout.svg`, glyphs render, two decks concurrently, muster drill with REAL pi against a scratch charter. AC: plan Phase 3 manual drill passes on-ship. Note: `keel.yaml`'s `ssh_authorized_keys` still has the `REPLACE-ME-with-your-ssh-public-key` placeholder — substitute a real key (not committed) before launching a ship meant to be kept around, same one-manual-step spirit as the strongbox age key.
+**Phase 0 is now complete.** The remaining named gaps are explicitly out of Phase 0's
+scope, not overlooked: x86_64 validation (this dev machine is Apple Silicon; needs
+Windows/Hyper-V or OVHcloud), DeepInfra wiring (Phase 2 — is the actual blocker for
+crew agents completing real work), and the Chartroom Fresh plugin / officer agents
+(Phase 5+).
 
-Defer: pi extension, officer agents, DeepInfra wiring test (Phase 2), chartroom Fresh plugin.
+## 5. NEXT TASK — Phase 1/2
+
+Phase 0 (lay the keel) is done — see §4c, §4d, §4e. Multipass is installed on this
+host (`brew install --cask multipass`).
+
+Next up, in rough priority order:
+
+1. **DeepInfra wiring** (deferred from every prior item in this phase, and the actual
+   blocker on `muster` completing real crew work — see §4e's `pi` failure). Verify the
+   exact model slug / `[1m]`-context variant against DeepInfra's catalog (open question
+   #5 below), wire `pi`'s provider config, populate the strongbox with a real
+   `DEEPINFRA_API_KEY` (`strongbox/README.md` has the `age` flow), and re-run the §4e
+   muster drill end-to-end to confirm a crew agent can actually complete a work order,
+   not just fail gracefully.
+2. **x86_64 validation** of `fitout.sh`/`keel.yaml` — needs a non-Apple-Silicon host
+   (Windows/Hyper-V per D1, or an OVHcloud instance).
+3. Move aboard: once DeepInfra is wired, install Claude Code on a real ship and work
+   as shipwright from there — Phase 2 onward assumes you live on the ship, per the
+   original Phase 0 exit criterion.
+4. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
+   plugin — Phase 5+, not before the above.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
@@ -190,4 +251,4 @@ Defer: pi extension, officer agents, DeepInfra wiring test (Phase 2), chartroom 
 - v1: initial plan (VM strategy, tooling, orchestration, worktrees, phases).
 - v2: OVHcloud; skeuomorphic naming pass (manifest); pi-primary decision; Purser added.
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
-- v4 (Claude Code, July 1, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d.
+- v4 (Claude Code, July 1, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e.
