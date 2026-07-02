@@ -54,6 +54,13 @@ log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; 
 # --- berth + branch ---
 git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" main >/dev/null
 cp "$ORDER" "$BERTH/.order.md"
+# crew.md says "write .ship/reports/<TASK-ID>.report.md" without saying
+# relative to what -- the agent's cwd is the berth, and a real run wrote a
+# stray .ship/ *inside* the berth instead of the charter's actual bus.
+# Make the path unambiguous per-order instead of trusting relative-path
+# inference (which also breaks if the berths/charter nesting ever changes).
+printf '\n## Report path\nWrite your report to exactly this absolute path: %s/reports/%s.report.md\n' \
+  "$BUS" "$TASK" >> "$BERTH/.order.md"
 [[ -f "$DIR/charter.md" ]] && cp "$DIR/charter.md" "$BERTH/.charter.md"
 # berth scaffolding must never be committed, even via `git add -A`.
 # info/exclude is shared across all worktrees of the hold, so guard against
