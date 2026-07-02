@@ -75,6 +75,14 @@ fi
 # dotfiles/tmux/ship.tmux.conf → ~/.tmux.conf (deck behavior/looks)
 ln -sfn "$SHIPYARD_DIR/dotfiles/tmux/ship.tmux.conf" "$HOME/.tmux.conf"
 
+# ship/pi/models.json → ~/.pi/agent/models.json (wires pi's DeepInfra/GLM-5.2 provider)
+mkdir -p "$HOME/.pi/agent"
+if [[ -e "$HOME/.pi/agent/models.json" && ! -L "$HOME/.pi/agent/models.json" ]]; then
+  log "warning: ~/.pi/agent/models.json exists and isn't a symlink — leaving it alone"
+else
+  ln -sfn "$SHIPYARD_DIR/ship/pi/models.json" "$HOME/.pi/agent/models.json"
+fi
+
 # --- Layer 2: the agent CLIs ---
 install_npm_global() {
   local bin="$1" pkg="$2"; shift 2

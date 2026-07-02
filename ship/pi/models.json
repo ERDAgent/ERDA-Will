@@ -1,0 +1,27 @@
+{
+  "providers": {
+    "deepinfra": {
+      "baseUrl": "https://api.deepinfra.com/v1/openai",
+      "api": "openai-completions",
+      "apiKey": "$DEEPINFRA_API_KEY",
+      "models": [
+        {
+          "id": "zai-org/GLM-5.2",
+          "name": "GLM-5.2 (Trade Winds)",
+          "reasoning": true,
+          "contextWindow": 1000000,
+          "maxTokens": 131000,
+          "cost": { "input": 0.93, "output": 3.0, "cacheRead": 0.18, "cacheWrite": 0 },
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": null,
+            "medium": null,
+            "high": "high",
+            "xhigh": "max"
+          }
+        }
+      ]
+    }
+  }
+}

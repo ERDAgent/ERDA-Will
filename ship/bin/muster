@@ -7,7 +7,11 @@
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
-AGENT_CMD="${SHIP_AGENT:-pi -p}"    # override for tests or relief vessel: SHIP_AGENT="opencode run"
+# Crew default per the plan's model routing policy: GLM-5.2 High via the
+# Trade Winds (DeepInfra) -- see ship/pi/models.json. Override for tests or
+# the relief vessel: SHIP_AGENT="opencode run", or escalate a stuck task with
+# SHIP_AGENT="pi -p --provider deepinfra --model zai-org/GLM-5.2 --thinking xhigh"
+AGENT_CMD="${SHIP_AGENT:-pi -p --provider deepinfra --model zai-org/GLM-5.2 --thinking high}"
 
 NAME="${1:?usage: muster <charter> <task-id> <order-file>}"
 TASK="${2:?usage: muster <charter> <task-id> <order-file>}"
