@@ -95,15 +95,26 @@ if ! command -v opencode >/dev/null 2>&1; then
 fi
 export PATH="$HOME/.opencode/bin:$PATH"
 
-# System-wide login-shell PATH for fnm-managed Node + the agent CLIs.
-# Sourced by /etc/profile for every login shell (ssh, `multipass shell`), so
-# tmux — and anything it spawns, including muster's headless crew scripts,
-# which exec .crew-run.sh directly with no shell-rc sourcing of their own —
-# inherits the right PATH by ordinary process inheritance.
+# Symlink the agent CLIs into /usr/local/bin, which is on every shell's PATH
+# regardless of login/interactive status. Neither ~/.bashrc (interactive-only)
+# nor /etc/profile.d (login-only, below) covers everything that has to find
+# these headlessly: `ssh ship 'pi ...'` is non-login by default, and muster's
+# crew windows exec .crew-run.sh directly with no shell-rc sourcing at all.
+# Target the fnm-managed Node version's real install dir, not `command -v`'s
+# result — that resolves through fnm's per-shell "multishell" symlink, which
+# is torn down when the shell exits, so a symlink to it would go stale.
+FNM_BIN="$FNM_DIR/node-versions/$NODE_LTS/installation/bin"
+for bin in node npm npx claude codex pi; do
+  [[ -x "$FNM_BIN/$bin" ]] && sudo ln -sfn "$FNM_BIN/$bin" "/usr/local/bin/$bin"
+done
+[[ -x "$HOME/.opencode/bin/opencode" ]] && sudo ln -sfn "$HOME/.opencode/bin/opencode" /usr/local/bin/opencode
+
+# fnm itself (for interactive Node-version switching) still needs a login
+# shell's PATH — /usr/local/bin above only covers the fixed set of CLIs.
 sudo tee /etc/profile.d/shipyard.sh > /dev/null <<EOF
 #!/bin/sh
 if [ -n "\$BASH_VERSION" ]; then
-  export PATH="$FNM_DIR:\$HOME/.opencode/bin:\$PATH"
+  export PATH="$FNM_DIR:\$PATH"
   eval "\$(fnm env --shell bash)"
 fi
 EOF
