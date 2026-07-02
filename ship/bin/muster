@@ -88,7 +88,16 @@ cd "$BERTH" || exit 1
 # (prints a stderr note, sets nothing) when the strongbox or key is missing,
 # so this is a no-op for stub agents that don't need DEEPINFRA_API_KEY.
 command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
-echo "[crew $TASK] agent: $AGENT_CMD · branch: $BRANCH"
+# AGENT_CMD is spliced below as raw shell source (not a quoted string) so
+# operators can override SHIP_AGENT with a command that itself needs internal
+# quoting (e.g. a multi-statement stub, or a flag value with spaces). That
+# means it must never be embedded a second time inside an already-quoted
+# string -- an AGENT_CMD containing a literal '"' would prematurely close the
+# surrounding quotes, corrupt this line's word boundaries, and silently run
+# the wrong commands. printf %q here produces a single shell-safe token that
+# reconstructs the exact original string at runtime for display only; the
+# real invocation below is unaffected.
+printf '[crew %s] agent: %s · branch: %s\n' "$TASK" $(printf '%q' "$AGENT_CMD") "$BRANCH"
 $AGENT_CMD "\$(cat .order.md)"
 RC=\$?
 # shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword

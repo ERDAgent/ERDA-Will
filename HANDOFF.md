@@ -300,26 +300,111 @@ Resolves HANDOFF open question #5 (exact DeepInfra model slug). Open question #4
 principle — `models.json` supports multiple providers/models simultaneously — but not
 decided; still a Phase 3 drill question, not a Phase-0/2 one.
 
-## 5. NEXT TASK — Phase 1/2
+## 4g. x86_64 validation done (July 2, 2026) — real Windows/Hyper-V ship, two more bugs found and fixed
+
+Ran on the Windows machine Eric set aside for this (Windows 11 Pro, admin rights,
+Hyper-V already enabled). Installed Multipass via `winget install --id
+Canonical.Multipass` (not available before this session); confirmed `multipass get
+local.driver` → `hyperv`, matching D1's intent. First `multipass launch` failed with
+an image hash mismatch (`Verifying image` step) — a corrupted/partial download in
+`C:\ProgramData\Multipass\cache\vault\images\`, not a repo issue; deleting that cache
+subfolder and relaunching fixed it immediately.
+
+**Methodology note confirmed from §4e, worth restating**: `multipass exec` on this
+Windows/Hyper-V backend is unreliable for anything beyond trivial one-shot commands —
+a `bash -lc` login-shell invocation through it hung the *client* indefinitely (`timeout
+20` on the `multipass exec` call itself expired) even though the guest-side command
+had already completed in-session (confirmed by wrapping the same command in a guest-
+side `timeout`, which returned instantly). Root cause not pinned down (likely a
+PTY/exec-channel quirk of Multipass's Hyper-V backend, not a keel/fitout bug) — not
+investigated further since §4e already established the right tool for this class of
+check is real `ssh eric@<ship-ip>`, which is unaffected and was used for the rest of
+this drill.
+
+Validated via SSH against a real x86_64 (amd64) Ubuntu 24.04 Multipass/Hyper-V VM,
+same drill shape as §4e: `cloud-init status --wait` exits 0; all five agent CLIs
+(`pi`, `opencode`, `claude`, `codex`, `fresh`) resolve over plain non-login `ssh host
+'cmd'`; a second `fitout.sh` run completes in ~1.9s doing nothing (idempotent, matches
+ARM64's ~1.75s); `charter` → `sail` (`SHIP_NO_ATTACH=1`) → `muster` (stub agent) →
+dry-dock (`integration`) → fast-forward `main` all worked, including the info/exclude
+idempotency guard and roster locking from §4c. UTF-8 glyph window names rendered
+correctly (`⚓🗺🧭📣⚖🪙⚙⚒`), same as the real-terminal ARM64 run.
+
+Two real bugs found and fixed, both from the class "only surfaces when actually
+exercised, not from reading the script":
+
+1. **`fd` unreachable from any non-login context.** `fitout.sh` symlinks `fdfind` to
+   `~/.local/bin/fd`, but `~/.local/bin` only reaches PATH via `~/.profile`, which
+   login shells source and non-login ones (plain `ssh host 'fd ...'`, and critically
+   `muster`'s crew windows, which `exec` `.crew-run.sh` directly with no shell-rc
+   sourcing at all) don't — identical shape to the agent-CLI PATH bugs in §4d/§4e,
+   just never hit before because nothing had exercised `fd` specifically in a
+   non-login context. Fixed the same way: also symlink `fdfind` into
+   `/usr/local/bin/fd`.
+2. **`muster` corrupted its own generated crew-run script when `AGENT_CMD` contained a
+   literal `"`.** `$AGENT_CMD` is spliced into the `.crew-run.sh` heredoc twice: once
+   raw as the actual invocation (correct and necessary — this is what lets an operator
+   override `SHIP_AGENT` with a command that itself needs internal quoting), and once
+   inside an already-double-quoted diagnostic `echo` line. The real default
+   `AGENT_CMD` (`pi -p --provider deepinfra ...`) never contains a `"`, so this never
+   surfaced in any prior drill. It surfaced immediately when this session's x86_64
+   regression drill used a compound stub (`SHIP_AGENT='bash -c "echo ...; git commit
+   -q -m stub"'`, deliberately close in shape to a real multi-step agent action): the
+   embedded `"` prematurely closed the echo's quoting, which split the rest of that
+   line into several unquoted commands (an errant `touch`/`git add`/`git commit` ran
+   *from the diagnostic line*, with a garbled commit message), and the real invocation
+   line then failed on "nothing to commit" — reported as `status: "failed", rc=1` for
+   a completely different reason than the actual defect. Root-caused by reading the
+   literal generated `.crew-run.sh` byte-for-byte, not by reasoning about muster's
+   source. Fixed by rendering the diagnostic line with `printf '%s' $(printf '%q'
+   "$AGENT_CMD")` instead of raw interpolation inside a quoted string; the real
+   invocation line is untouched. Re-verified: stub run now reports `status: "done",
+   rc=0`, single correct commit, and the diagnostic line displays the full original
+   command correctly.
+
+Both fixes committed after a manual `shellcheck -x` pass (no shellcheck on this host by
+default; spun up a throwaway scratch VM just to run it, then destroyed it) — clean, no
+findings on either changed file. Test VMs (`ship-x86-drill`, `shellcheck-scratch`)
+destroyed after use, no ship left running, matching every prior session's practice.
+
+**Not investigated, out of scope for this item**: git commit identity. A completely
+fresh ship (and, separately, this Windows dev host) has no `git config --global
+user.name/user.email` set anywhere, so a stub crew agent's `git commit` fails with
+"Author identity unknown" until an operator sets one. `charter`'s own bootstrap commit
+already sidesteps this with an explicit `-c user.name=shipyard -c
+user.email=shipyard@local`, but crew agents commit via plain `git commit`, relying on
+whatever identity the ship happens to have. Every prior drill's dev machine apparently
+already had a global identity set, which is why this never surfaced before. Worth a
+decision before scaling up real crew usage: does `fitout.sh` set a default identity
+(and if so, what should commits from GLM-5.2 crew look like — "eric", "shipyard",
+something crew/task-specific?), or is this explicitly an operator setup step to
+document in `HANDOFF.md`/`charter.md`? Not decided; flagging rather than guessing at a
+default.
+
+Resolves HANDOFF §5 item 1 (x86_64 validation).
+
+## 5. NEXT TASK — Phase 2+
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
-§4f. Multipass is installed on this host (`brew install --cask multipass`).
+§4f. x86_64 validation is done — see §4g. Both ARM64 (Multipass/macOS) and x86_64
+(Multipass/Windows-Hyper-V) are now confirmed working; OVHcloud (the third harbor)
+has not been tried yet.
 
 Next up, in rough priority order:
 
-1. **x86_64 validation** of `fitout.sh`/`keel.yaml` — needs a non-Apple-Silicon host
-   (Windows/Hyper-V per D1, or an OVHcloud instance). Eric has a Windows machine ready
-   for this when it's time.
-2. Move aboard: install Claude Code on a real ship and work as shipwright from
+1. Move aboard: install Claude Code on a real ship and work as shipwright from
    there — Phase 2 onward assumes you live on the ship, per the original Phase 0 exit
    criterion. DeepInfra being wired removes the last blocker for this.
-3. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
+2. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
    plugin — Phase 5+, not before the above.
-4. Worth a look before scaling up real usage: the crew.md/muster report-path fix in
-   §4f was found on the very FIRST successful real run — a good reminder that prompt
-   wording bugs are highly plausible elsewhere in `ship/prompts/*.md` (captain.md,
-   order-template.md haven't been drilled with a real agent yet at all) and won't
-   surface until actually exercised, not from reading them.
+3. Worth a look before scaling up real usage: two independent sessions now (§4f, §4g)
+   have found a real, previously-invisible bug on the very first drill that actually
+   exercised a new code path — a good reminder that `ship/prompts/*.md` (captain.md,
+   order-template.md haven't been drilled with a real agent at all yet) and the
+   git-identity question above (§4g) are both live risks, not resolved by inspection.
+4. OVHcloud harbor (D2) is still completely untried — `keel.yaml` is written to be
+   portable to it (native cloud-init, OpenStack-backed) but has only ever run under
+   Multipass so far.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
@@ -335,3 +420,4 @@ Next up, in rough priority order:
 - v2: OVHcloud; skeuomorphic naming pass (manifest); pi-primary decision; Purser added.
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
 - v4 (Claude Code, July 1–2, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e. DeepInfra wiring done and verified with a real crew agent completing real work end-to-end (model slug, `models.json`, strongbox populated, four more real bugs found and fixed: DeepInfra's 422 on the `developer` role, `muster` never loading the strongbox, `crew.md` never reaching `pi`, and the ambiguous report path) — see §4f.
+- v5 (Claude Code, July 2, 2026): x86_64 validation done on Eric's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.

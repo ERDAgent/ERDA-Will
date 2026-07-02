@@ -14,11 +14,15 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq \
   build-essential ripgrep fd-find fzf jq unzip curl age htop tmux git
 
-# fd-find's binary is `fdfind` on Debian/Ubuntu (name clash with another package)
+# fd-find's binary is `fdfind` on Debian/Ubuntu (name clash with another package).
+# Also symlinked into /usr/local/bin (same rationale as the agent CLIs below):
+# ~/.local/bin is only added to PATH by ~/.profile, which login shells source
+# and non-login ones (plain `ssh host 'fd ...'`, muster's crew windows) don't.
 mkdir -p "$HOME/.local/bin"
 if [[ ! -e "$HOME/.local/bin/fd" ]] && command -v fdfind >/dev/null 2>&1; then
   ln -s "$(command -v fdfind)" "$HOME/.local/bin/fd"
 fi
+command -v fdfind >/dev/null 2>&1 && sudo ln -sfn "$(command -v fdfind)" /usr/local/bin/fd
 
 # --- git: worktree-friendly defaults ---
 git config --global rerere.enabled true
