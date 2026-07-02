@@ -35,6 +35,8 @@ A portable Linux dev environment (VM bootable identically on macOS, Windows, and
 | D9 | No Commodore (captain-of-captains) | Premature; Eric is the Admiralty; revisit only if cross-deck context copying becomes frequent |
 | D10 | Git: bare hold + berths (worktrees), branches `crew/<task-id>-<slug>`, crew never merge, Quartermaster gates dry dock (`integration`) → home port (`main`) | Parallel-agent collision avoidance; decompose by file ownership |
 | D11 | Naming: full nautical vocabulary is load-bearing (see CLAUDE.md table) | Self-documenting system; Eric explicitly wants it leaned into |
+| D12 | OVHcloud (D2) deferred; local Multipass only until Eric has manually confirmed reproducibility on both Harbors himself | Eric's explicit call (July 2, 2026): wants to get comfortable deploying/destroying the tooled ship on his own — via `docs/vm-cheatsheet.md`, no Claude Code required — before spending on real cloud infra. Both Harbors are already validated (macOS: §4d/§4e; Windows: §4g); this is about Eric's own hands-on confirmation, not a technical gap |
+| D13 | Ship's automated/crew git identity = `ERDAgent` / `agentic@ericrose.dev`, set unconditionally by `fitout.sh` | Eric's explicit call (July 2, 2026): keep the ship's own commits (crew agents, and anything Claude Code commits while working aboard) under the dedicated ERDAgentic GitHub account, separate from his personal EricRoseDev identity. Resolves the gap flagged in §4g (no ship had *any* default git identity, so crew commits failed outright) |
 
 ## 3. Facts verified during planning (with as-of dates)
 
@@ -383,28 +385,59 @@ default.
 
 Resolves HANDOFF §5 item 1 (x86_64 validation).
 
-## 5. NEXT TASK — Phase 2+
+## 4h. Manual-ops cheatsheet + git-identity fix (July 2, 2026)
+
+Eric's direction (D12, D13): confirm reproducibility on both local Harbors himself
+before any OVHcloud spend, and be able to deploy/destroy the tooled ship without
+Claude Code on the bare-metal host at all (plans to uninstall Claude Code from this
+machine once he's confirmed that himself; may reinstall later for maintenance).
+
+Wrote `docs/vm-cheatsheet.md` — plain `multipass`/`ssh` commands only, no
+`ship/bin/*` or Claude Code required: launch, start/stop/suspend/restart, SSH access
+(and why `multipass exec` should be avoided for anything beyond a one-liner — see
+§4g), snapshot/restore/clone (same-host only — different backends' disk formats don't
+transfer between Harbors, so cross-platform "reproducibility" is `keel.yaml` +
+`fitout.sh` re-provisioning, not image export), file transfer (including the Windows
+drive-letter-colon gotcha that broke `multipass transfer` during this session's own
+testing), and destroy/purge. Verified every command in it against `multipass help`
+output from the real 1.16.3 install, not from memory.
+
+Also implemented D13: `fitout.sh` now sets `git config --global user.name/email` to
+`ERDAgent` / `agentic@ericrose.dev` unconditionally (idempotent by nature — plain
+`git config --global` set, not a conditional guard). Verified on a fresh ship: a
+clean `multipass launch --cloud-init keel.yaml` first showed the identity missing
+(expected — that ship had cloned the pre-fix commit); deploying the updated
+`fitout.sh` directly and re-running it set the identity correctly and the `fd` fix
+from §4g still held. Test ship destroyed after.
+
+## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
 §4f. x86_64 validation is done — see §4g. Both ARM64 (Multipass/macOS) and x86_64
-(Multipass/Windows-Hyper-V) are now confirmed working; OVHcloud (the third harbor)
-has not been tried yet.
+(Multipass/Windows-Hyper-V) are confirmed working from this side; per D12, Eric wants
+to confirm that himself, hands-on, using `docs/vm-cheatsheet.md`, before OVHcloud
+(the third harbor) is tried at all.
 
 Next up, in rough priority order:
 
-1. Move aboard: install Claude Code on a real ship and work as shipwright from
-   there — Phase 2 onward assumes you live on the ship, per the original Phase 0 exit
-   criterion. DeepInfra being wired removes the last blocker for this.
-2. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
+1. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+   use, destroy, relaunch — to confirm reproducibility without Claude Code's
+   involvement. This is the actual gate on everything below; nothing here should
+   assume it's done until Eric says so.
+2. Re-examine "move aboard" (install Claude Code on a real persistent ship, work as
+   shipwright from there) in light of D12/D13 — Eric's current intent runs the other
+   direction (minimize Claude Code's footprint on any given machine, treat ships as
+   disposable/reproducible). Not abandoned, just resequenced behind item 1, and
+   possibly reshaped: "aboard" may end up meaning "reprovision on demand," not "one
+   long-lived ship Claude Code lives on."
+3. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
    plugin — Phase 5+, not before the above.
-3. Worth a look before scaling up real usage: two independent sessions now (§4f, §4g)
+4. Worth a look before scaling up real usage: two independent sessions now (§4f, §4g)
    have found a real, previously-invisible bug on the very first drill that actually
    exercised a new code path — a good reminder that `ship/prompts/*.md` (captain.md,
-   order-template.md haven't been drilled with a real agent at all yet) and the
-   git-identity question above (§4g) are both live risks, not resolved by inspection.
-4. OVHcloud harbor (D2) is still completely untried — `keel.yaml` is written to be
-   portable to it (native cloud-init, OpenStack-backed) but has only ever run under
-   Multipass so far.
+   order-template.md haven't been drilled with a real agent at all yet) is a live risk,
+   not resolved by inspection.
+5. OVHcloud harbor (D2) — deferred per D12, not before item 1.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
@@ -421,3 +454,4 @@ Next up, in rough priority order:
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
 - v4 (Claude Code, July 1–2, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e. DeepInfra wiring done and verified with a real crew agent completing real work end-to-end (model slug, `models.json`, strongbox populated, four more real bugs found and fixed: DeepInfra's 422 on the `developer` role, `muster` never loading the strongbox, `crew.md` never reaching `pi`, and the ambiguous report path) — see §4f.
 - v5 (Claude Code, July 2, 2026): x86_64 validation done on Eric's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.
+- v6 (Claude Code, July 2, 2026): Eric set direction — D12 (local Multipass only, OVHcloud deferred until he's confirmed reproducibility himself) and D13 (ship git identity = ERDAgent/agentic@ericrose.dev, separate from his personal account). Implemented D13 in `fitout.sh`, verified on a fresh ship. Wrote `docs/vm-cheatsheet.md`: full manual Multipass lifecycle (launch/stop/start/suspend/snapshot/restore/clone/transfer/destroy) with no Claude Code or `ship/bin/*` dependency, verified against real `multipass help` output — supports Eric's stated goal of being able to run this without Claude Code on the bare-metal host. See §4h.

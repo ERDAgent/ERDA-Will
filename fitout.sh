@@ -28,6 +28,19 @@ command -v fdfind >/dev/null 2>&1 && sudo ln -sfn "$(command -v fdfind)" /usr/lo
 git config --global rerere.enabled true
 git config --global fetch.prune true
 
+# --- crew git identity: the ERDAgentic account, kept separate from the operator's own ---
+# charter's own bootstrap commit already sidesteps identity with an explicit
+# -c user.name=shipyard, but crew agents commit via plain `git commit`, which
+# fails with "Author identity unknown" on a fresh ship with no global identity
+# set at all -- found during x86_64 validation (HANDOFF.md §4g), flagged there
+# rather than fixed blind. Setting it here, unconditionally, is safe: it's the
+# ship's own persona (matches the ERDAgent GitHub account `gh auth status`
+# already authenticates as), separate from whatever identity the operator uses
+# for their own manual commits on the ship. Override with your own
+# `git config --global user.name/email` if you want something else.
+git config --global user.name "ERDAgent"
+git config --global user.email "agentic@ericrose.dev"
+
 # --- fnm + Node LTS ---
 # mirrors fnm's own install-dir selection (install.sh): ~/.fnm if it already
 # exists, else $XDG_DATA_HOME/fnm, else ~/.local/share/fnm on Linux.
