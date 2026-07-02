@@ -75,6 +75,13 @@ fi
 # dotfiles/tmux/ship.tmux.conf → ~/.tmux.conf (deck behavior/looks)
 ln -sfn "$SHIPYARD_DIR/dotfiles/tmux/ship.tmux.conf" "$HOME/.tmux.conf"
 
+# ship/bin/* on PATH everywhere (same /usr/local/bin rationale as the agent
+# CLIs above): muster's crew windows call `unlock` by name, and charter/sail/
+# muster themselves should be callable without the full repo path.
+for bin in charter sail muster unlock; do
+  sudo ln -sfn "$SHIPYARD_DIR/ship/bin/$bin" "/usr/local/bin/$bin"
+done
+
 # ship/pi/models.json → ~/.pi/agent/models.json (wires pi's DeepInfra/GLM-5.2 provider)
 mkdir -p "$HOME/.pi/agent"
 if [[ -e "$HOME/.pi/agent/models.json" && ! -L "$HOME/.pi/agent/models.json" ]]; then

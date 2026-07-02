@@ -68,11 +68,17 @@ RUNNER="$BERTH/.crew-run.sh"
 cat > "$RUNNER" <<EOF
 #!/usr/bin/env bash
 set -uo pipefail
-cd "$BERTH"
+cd "$BERTH" || exit 1
+# load the strongbox if a key is present; unlock itself degrades gracefully
+# (prints a stderr note, sets nothing) when the strongbox or key is missing,
+# so this is a no-op for stub agents that don't need DEEPINFRA_API_KEY.
+command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
 echo "[crew $TASK] agent: $AGENT_CMD · branch: $BRANCH"
 $AGENT_CMD "\$(cat .order.md)"
 RC=\$?
-STATUS=done; [[ \$RC -ne 0 ]] && STATUS=failed
+# shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
+STATUS=done
+[[ \$RC -ne 0 ]] && STATUS=failed
 (
   flock 9
   TMPJ="\$(mktemp)"
