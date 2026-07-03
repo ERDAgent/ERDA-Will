@@ -37,6 +37,8 @@ A portable Linux dev environment (VM bootable identically on macOS, Windows, and
 | D11 | Naming: full nautical vocabulary is load-bearing (see CLAUDE.md table) | Self-documenting system; Eric explicitly wants it leaned into |
 | D12 | OVHcloud (D2) deferred; local Multipass only until Eric has manually confirmed reproducibility on both Harbors himself | Eric's explicit call (July 2, 2026): wants to get comfortable deploying/destroying the tooled ship on his own — via `docs/vm-cheatsheet.md`, no Claude Code required — before spending on real cloud infra. Both Harbors are already validated (macOS: §4d/§4e; Windows: §4g); this is about Eric's own hands-on confirmation, not a technical gap |
 | D13 | Ship's automated/crew git identity = `ERDAgent` / `agentic@ericrose.dev`, set unconditionally by `fitout.sh` | Eric's explicit call (July 2, 2026): keep the ship's own commits (crew agents, and anything Claude Code commits while working aboard) under the dedicated ERDAgentic GitHub account, separate from his personal EricRoseDev identity. Resolves the gap flagged in §4g (no ship had *any* default git identity, so crew commits failed outright) |
+| D14 | GitHub access via gh CLI + `GH_TOKEN` fine-grained PAT (ERDAgent account) in the strongbox; NO `gh auth login` state on disk | Eric's call (July 2, 2026), from the Captain's maiden-voyage review. Env-var auth is headless, rotates by re-encrypting one file, and inherits the strongbox's existing trust model. PAT scoped to charter repos only, Contents RW (see strongbox/README.md) |
+| D15 | Two-compartment strongbox: `keys.env.age` (crew scope: model keys) + `captain.env.age` (captain scope: GH_TOKEN). `unlock` defaults to crew; only sail's bridge window loads `unlock captain` | Push credentials must never reach crew agents — D10's "crew never push" becomes a capability boundary instead of a prompt rule. Muster's crew windows call plain `unlock` (unchanged, back-compatible) and get model keys only |
 
 ## 3. Facts verified during planning (with as-of dates)
 
@@ -409,6 +411,56 @@ clean `multipass launch --cloud-init keel.yaml` first showed the identity missin
 (expected — that ship had cloned the pre-fix commit); deploying the updated
 `fitout.sh` directly and re-running it set the identity correctly and the `fd` fix
 from §4g still held. Test ship destroyed after.
+
+## 4i. gh CLI + captain-scoped GitHub access (July 2, 2026) — WRITTEN OFF-SHIP, NEEDS ON-SHIP VALIDATION
+
+Origin: the Captain's maiden-voyage review ("the outstanding charter change I have
+clearance for but couldn't execute: GitHub origin... I'll wire the origin: line and any
+push-on-integrate behavior on the next voyage once auth exists"). The other half of
+that review (headless browser) was already provisioned in 68418aa — gh was the only gap.
+
+Changes (authored in the claude.ai planning session against a clone; syntax-checked
+with `bash -n` only — the session container has no network route to cli.github.com, so
+NOTHING here has run on a real ship yet):
+
+- `fitout.sh`: installs gh from GitHub's official apt repo (keyring + sources guards,
+  idempotent, arch-correct via `dpkg --print-architecture`); sets git's credential
+  helper for github.com/gist.github.com to `!gh auth git-credential` directly
+  (equivalent to `gh auth setup-git` without its authenticated-already requirement at
+  fitout time); gh added to the end-of-run report list.
+- `ship/bin/unlock`: now takes a scope arg — `unlock` (crew, default: keys.env.age
+  only) or `unlock captain` (adds captain.env.age). Missing captain.env.age is not an
+  error for captain scope (crew keys still emit). `STRONGBOX` env override replaced by
+  `STRONGBOX_DIR` (compartments made a single-file override obsolete) — grep for any
+  operator scripts using the old var.
+- `ship/bin/sail`: bridge window loads `unlock captain` (was plain `unlock`). Crew
+  windows are untouched — muster's `.crew-run.sh` still calls plain `unlock`, so crew
+  agents can never hold GH_TOKEN (D15).
+- `strongbox/README.md`: compartment table + exact PAT-minting/encrypt/verify steps,
+  carrying forward both §4f lessons (zsh `read -p`; verify byte-length not presence).
+
+**Operator (Eric) side, blocking first use** (strongbox/README.md has the details):
+mint the fine-grained PAT on ERDAgent (charter repos only, Contents RW), grant
+ERDAgent write on charter repos not already under the org, encrypt to
+`captain.env.age`, commit.
+
+**On-ship validation checklist (Claude Code, next session aboard):**
+1. Fresh ship from keel: gh installs on both arches; `fitout.sh` still idempotent
+   (second run fast, no-op); shellcheck the three touched scripts.
+2. `eval "$(unlock)"` in a crew-shaped context: DEEPINFRA_API_KEY present, GH_TOKEN
+   ABSENT. `eval "$(unlock captain)"`: both present; `gh auth status` reports ERDAgent.
+3. Real push: scratch charter cloned from a real ERDAgent repo, crew work through dry
+   dock, then from the bridge push `integration` — verify the push authenticates via
+   the credential helper with no interactive prompt.
+4. Negative test: from a crew window (crew scope), `git push` must FAIL auth. If it
+   somehow succeeds, something is leaking the token — stop and find it.
+
+**Deferred to the Captain's next voyage (per its own review):** wiring `origin:` into
+charter.md for existing charters and any push-on-integrate behavior. One policy
+decision for Eric before enabling auto-push of `main` on client charters (e.g. Royal
+Guest): auto-push both integration and main post-gate, or main-via-PR for
+client-facing repos? Branch protection on GitHub is also worth setting either way
+(at minimum: no force pushes). Not decided — flagged, not guessed.
 
 ## 5. NEXT TASK
 

@@ -39,10 +39,12 @@ if ! tmux has-session -t "=$SES" 2>/dev/null; then
   # Captain never writes code itself (crew.md's job) — so there's no berth to
   # be in. Same class of relative-path bug as crew.md's report path (§4f),
   # just never exercised here until a real Captain session hit it. Loads the
-  # strongbox first, same as muster's crew windows. Falls back to a plain
-  # shell if pi or captain.md are missing.
+  # strongbox at CAPTAIN scope (model keys + captain.env.age: GH_TOKEN etc.)
+  # — the bridge is the one window entitled to push credentials. Crew windows
+  # load crew scope via muster's plain `unlock`. Falls back to a plain shell
+  # if pi or captain.md are missing.
   if command -v pi >/dev/null 2>&1 && [[ -f "$CAPTAIN_PROMPT" ]]; then
-    BRIDGE_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock)\"; \
+    BRIDGE_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock captain)\"; \
       echo \"[bridge] charter: $NAME — starting the Captain\"; exec $CAPTAIN_CMD'"
   else
     BRIDGE_CMD="bash -lc 'echo \"[bridge] charter: $NAME — pi or captain.md not found, dropping to a shell\"; exec bash'"

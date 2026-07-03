@@ -127,6 +127,32 @@ if ! command -v opencode >/dev/null 2>&1; then
 fi
 export PATH="$HOME/.opencode/bin:$PATH"
 
+# --- GitHub CLI: the ship's hands on GitHub (push, PRs) as ERDAgent ---
+# Auth is deliberately NOT `gh auth login` state on disk: gh reads $GH_TOKEN
+# from the environment, and GH_TOKEN lives in the strongbox's CAPTAIN
+# compartment (captain.env.age), loaded only by `unlock captain` — the bridge
+# and integration contexts. Crew windows load crew scope (keys.env.age) and
+# never see push credentials: "crew never push" (D10) is a capability
+# boundary here, not just a line in crew.md. See strongbox/README.md for the
+# fine-grained-PAT scoping and encryption steps (operator-side, one time).
+if ! command -v gh >/dev/null 2>&1; then
+  log "installing GitHub CLI"
+  sudo install -dm755 /etc/apt/keyrings
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+  sudo chmod 644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq gh
+fi
+# git pushes over HTTPS authenticate through gh's credential helper, which
+# supplies $GH_TOKEN when present (and cleanly fails auth when it isn't —
+# i.e. in any crew context). Equivalent to `gh auth setup-git`, minus that
+# command's requirement to already be authenticated at fitout time.
+git config --global "credential.https://github.com.helper" '!gh auth git-credential'
+git config --global "credential.https://gist.github.com.helper" '!gh auth git-credential'
+
 # --- headless browser for UI verification (Playwright + Chromium) ---
 # Real Captain feedback after the first live mission (a Vue app): install/
 # test/lint/build all green doesn't confirm a UI actually renders correctly
@@ -188,6 +214,6 @@ else
 fi
 
 log "fitout complete"
-for bin in pi opencode claude codex fresh tmux jq rg fd fzf age playwright; do
+for bin in pi opencode claude codex fresh gh tmux jq rg fd fzf age playwright; do
   printf '  %-8s %s\n' "$bin" "$(command -v "$bin" 2>/dev/null || echo 'NOT FOUND')"
 done

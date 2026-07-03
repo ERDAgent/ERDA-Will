@@ -1,9 +1,29 @@
 #!/usr/bin/env bash
 # unlock — decrypt the strongbox and print export lines for the current shell
-# usage: eval "$(unlock)"        or:  set -a; source <(unlock); set +a
+# usage: eval "$(unlock)"            # crew scope: model keys only (keys.env.age)
+#        eval "$(unlock captain)"    # bridge/integration scope: adds captain.env.age
+#
+# Two compartments on purpose: crew agents need model keys to work, but must
+# never hold push/publish credentials — "crew never push" (D10) is enforced
+# here as a capability boundary, not just a line in crew.md. GH_TOKEN and any
+# future publish credentials live only in captain.env.age.
 set -euo pipefail
-BOX="${STRONGBOX:-$HOME/shipyard/strongbox/keys.env.age}"
+SCOPE="${1:-crew}"
+BOXDIR="${STRONGBOX_DIR:-$HOME/shipyard/strongbox}"
 KEY="${AGE_KEY:-$HOME/.config/age/ship.key}"
-[[ -f "$BOX" ]] || { echo "echo 'strongbox not found: $BOX' >&2" ; exit 1; }
 [[ -f "$KEY" ]] || { echo "echo 'age key not found: $KEY (drop your private key there)' >&2"; exit 1; }
-age -d -i "$KEY" "$BOX" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=/export \1=/'
+
+case "$SCOPE" in
+  crew)    FILES=("$BOXDIR/keys.env.age") ;;
+  captain) FILES=("$BOXDIR/keys.env.age" "$BOXDIR/captain.env.age") ;;
+  *) echo "echo 'unlock: unknown scope: $SCOPE (crew|captain)' >&2"; exit 1 ;;
+esac
+
+FOUND=0
+for f in "${FILES[@]}"; do
+  if [[ -f "$f" ]]; then
+    age -d -i "$KEY" "$f" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=/export \1=/'
+    FOUND=1
+  fi
+done
+[[ "$FOUND" -eq 1 ]] || { echo "echo 'strongbox: no compartments found in $BOXDIR' >&2"; exit 1; }
