@@ -15,8 +15,36 @@
   than duplicating it.
 .EXAMPLE
   .\harbor\install.ps1
+  # or, on a fresh machine where this script itself can't run yet (see below):
+  harbor\install.cmd
 #>
 $ErrorActionPreference = "Stop"
+
+# On a fresh Windows account, PowerShell's default execution policy
+# (Restricted, when every scope shows Undefined) blocks *any* local .ps1
+# file, including christen.ps1 and, on some paths to get here, this script
+# itself -- install.cmd exists specifically to bootstrap around that
+# chicken-and-egg case via a one-time -ExecutionPolicy Bypass, since batch
+# files aren't subject to PowerShell's execution policy at all. This section
+# is what makes the fix permanent: RemoteSigned at CurrentUser scope, so
+# every later `christen` call (and this script, if re-run) works normally
+# without needing Bypass again. Scoped to CurrentUser only -- doesn't touch
+# other accounts or require admin rights.
+$CurrentUserPolicy = Get-ExecutionPolicy -Scope CurrentUser
+if ($CurrentUserPolicy -in @("Restricted", "AllSigned", "Undefined")) {
+  Write-Host "setting your execution policy to RemoteSigned (needed to run local scripts like christen)..."
+  try {
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+  } catch {
+    Write-Warning "couldn't set execution policy automatically: $($_.Exception.Message)"
+    Write-Warning "if this machine is managed by Group Policy, ask an admin to allow RemoteSigned (or less restrictive) for your account."
+  }
+}
+$EffectivePolicy = Get-ExecutionPolicy
+if ($EffectivePolicy -in @("Restricted", "AllSigned")) {
+  Write-Warning "effective execution policy is still $EffectivePolicy -- christen may not run yet."
+  Write-Warning "run 'Get-ExecutionPolicy -List' to see what's overriding CurrentUser (likely MachinePolicy or UserPolicy via Group Policy)."
+}
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ChristenPath = Join-Path $RepoRoot "harbor\christen.ps1"
