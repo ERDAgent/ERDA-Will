@@ -35,11 +35,12 @@ shipyard/
 ├── HANDOFF.md           # state + next task (keep updated as you complete work)
 ├── keel.yaml
 ├── fitout.sh
+├── harbor/              # host-side tooling (runs before a ship exists): christen.sh/.ps1
 ├── scuttlebutt/         # Fresh config.json (JSONC), theme, chartroom plugin (.ts)
 ├── dotfiles/tmux/       # ship.tmux.conf + deck-layout.svg (reference image)
 ├── strongbox/           # keys.env.age — NEVER commit plaintext keys
 ├── ship/
-│   ├── bin/             # muster, sail, harbor-report (bash)
+│   ├── bin/             # charter, sail, muster, unlock (bash) — deployed onto the ship
 │   ├── prompts/         # captain.md, crew.md, officer prompts
 │   └── plugin/          # pi extension (TypeScript)
 └── docs/                # plan + diagrams

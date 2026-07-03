@@ -63,6 +63,35 @@ Never commit either substituted copy — both write outside the repo (`/tmp` or
 
 ## 1. Launch (first provisioning)
 
+### The easy way: `christen`
+
+`harbor/christen.sh` (bash/git-bash) and `harbor/christen.ps1` (PowerShell) do §0's
+key substitution and this section's launch-and-wait in one command — "christen" means
+the ship is actually ready to use when it returns, not just that the instance exists:
+
+```bash
+harbor/christen.sh [name] [cpus] [memory] [disk]     # any/all args optional
+harbor/christen.sh resolve                           # named, defaults for the rest
+harbor/christen.sh resolve 4 8G 40G                   # fully custom
+```
+```powershell
+harbor\christen.ps1 [-Name <name>] [-Cpus <n>] [-Memory <size>] [-Disk <size>]
+harbor\christen.ps1 -Name resolve
+harbor\christen.ps1 -Name resolve -Cpus 4 -Memory 8G -Disk 40G
+```
+
+Defaults (no args at all): name `ship`, 2 cpus, 4G memory, 20G disk — matching every
+manual example in this file. Both scripts read your key from
+`~/.ssh/id_ed25519[.pub]` and this repo's own `keel.yaml`, so run them from inside the
+repo (or symlink/alias them somewhere on PATH). Verified end-to-end on this Harbor,
+both shells: launch → IP → SSH up → `cloud-init status --wait: done` → ready message,
+then torn down again with `delete --purge`.
+
+The rest of this section is what `christen` is actually doing under the hood — useful
+if you want to understand it, adapt it, or it ever needs debugging.
+
+### By hand
+
 Bash / git-bash:
 ```bash
 multipass launch 24.04 \
