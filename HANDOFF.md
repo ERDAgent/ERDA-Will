@@ -563,6 +563,25 @@ command from a totally unrelated directory in a fresh (non-inherited) PowerShell
 session and it launched a real ship end to end, re-ran the installer and confirmed the
 block was replaced rather than duplicated. Shellcheck clean on `install.sh`.
 
+**Found after the fact, when Eric asked directly whether this would actually
+reproduce on a new machine — it wouldn't have, fully.** A fresh Windows account's
+default execution policy (`Restricted`, when every scope shows `Undefined`) blocks
+*any* local `.ps1` file, including `install.ps1` itself, before it ever gets a chance
+to fix that same policy — confirmed this is exactly what Eric hit dot-sourcing his
+profile, since my own tooling's PowerShell invocations always run with a
+`Bypass`-scoped process override a real user session doesn't have, silently masking
+the gap during earlier testing. Fixed with `harbor/install.cmd`: a batch wrapper
+(never subject to PowerShell's execution policy at all) that invokes `install.ps1`
+with a one-time `-ExecutionPolicy Bypass`; `install.ps1` itself now also sets a real,
+permanent `RemoteSigned` policy at `CurrentUser` scope as its first action (no admin
+rights, doesn't touch other accounts), warning rather than silently failing if a
+Group-Policy-managed scope is overriding it. `install.cmd` is now the documented
+Windows entry point in `docs/vm-cheatsheet.md`, not `install.ps1` directly. Could not
+fully simulate a genuinely fresh Restricted-policy account from within this session's
+own tooling (same masking issue) — verified by code correctness and by fixing Eric's
+real system with the identical commands, not by reproducing the exact fresh-machine
+scenario end-to-end.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -612,3 +631,4 @@ Next up, in rough priority order:
 - v8 (Claude Code, July 2, 2026): applied a second off-ship patch, `fleet-naming.patch` (D16: Will-class flagship naming, skiffs, named vessels, the one-charter-one-ship residency rule) — verified its two factual claims directly (no hardcoded instance-name dependency anywhere in `keel.yaml`/`fitout.sh`; the guest hostname genuinely matches the Multipass instance name) before trusting it. Eric decided the deferred push policy: auto-push both `integration` and `main` on every mission, no PR-gating — wired into `captain.md`'s INTEGRATE step, which also now fixes the maiden-voyage review's home-port resync bug (verified the fix mechanically by reproducing the staleness for real). Walked Eric through minting and encrypting the GH_TOKEN PAT; first attempt (interactive paste in the SSH session) silently produced a length-1 token, caught by the same byte-length-not-presence verification discipline as §4f — retried via file transfer instead, which worked. Ran the full §4i validation checklist for real: `gh auth status` confirms ERDAgent, a real push (a disposable branch, not the live repo's actual history) succeeded with no prompt, and the negative test confirmed crew-scope pushes fail cleanly. GitHub push access is now fully live and empirically proven correctly scoped.
 - v9 (Claude Code, July 2, 2026): built `harbor/christen.{sh,ps1}` at Eric's request — one friendly command (`christen [name] [cpus] [memory] [disk]`, all optional) replacing the raw `multipass launch` + manual key-substitution dance. Found and fixed a real PowerShell 5.1 gotcha while testing (`$ErrorActionPreference = "Stop"` + redirected native stderr turning a harmless ssh notice into a fatal error). Verified end-to-end with two real launches, both shells. See §4k.
 - v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. Eric confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against Eric's actual PowerShell profile. See the note in §4k and §4l.
+- v11 (Claude Code, July 2, 2026): Eric hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for Eric that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
