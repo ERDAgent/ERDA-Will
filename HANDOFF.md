@@ -698,13 +698,109 @@ substantially stale — it predated both the `gh-captain-access` wiring (§4i) a
 push-on-integrate policy decision (§4h), so its original "no, the system never creates
 repos / nothing pushes" framing was no longer true on two separate counts.
 
+## 4o. macOS re-drill after the erda/gh/fleet-naming/auto-create wave (July 3, 2026)
+
+Eric asked to re-run the full drill on this Mac, since a lot had landed (§4g–§4n)
+since the last real ARM64/macOS test.
+
+Full drill, real ship, this Mac: `harbor/install.sh` → `erda` works globally from a
+fresh shell in an unrelated directory. `erda christen` → real ARM64 Ubuntu 24.04 ship,
+`cloud-init status` clean, all agent CLIs (`pi`/`opencode`/`claude`/`codex`/`fresh`/
+`gh`) resolve over non-login ssh, git identity correctly `ERDAgent`/
+`agentic@ericrose.dev`, `fd` present, `fitout.sh` re-run is a true ~1s no-op. `erda
+view`/`suspend`/`sail`/`anchor`/`resail` all functioned. `open lockbox` confirmed (over
+plain ssh, not `-t`, since piped/non-interactive `-t` sessions don't surface output in
+this test harness — a harness limitation already noted in §4m, not a script bug):
+`DEEPINFRA_API_KEY` len 32, `GH_TOKEN` len 93, `gh auth status` shows ERDAgent.
+Chartered a local test project, sailed the deck headlessly (all 7 windows), hand-wrote
+an order, `muster`'d it with real `pi`/GLM-5.2 (no stub) — read the order, wrote the
+exact file, committed it, filed a correct report. Manually walked the INTEGRATE step's
+git sequence (dry-dock merge → fast-forward `main` → sync `berths/home-port`) since
+that step normally runs inside a live Captain conversation, not a standalone script —
+confirmed the file lands correctly in the home-port checkout. Shellcheck clean on all
+touched files.
+
+Found and fixed a real bug in `erda.sh`'s `ship_ip()` (and the equivalent in
+`erda.ps1`, plus both `christen` wait-loops as a defensive match): it only checked that
+`multipass info`'s IPv4 field was non-empty. Multipass prints the literal string `--`
+for that field whenever an instance is between states (stopped, or mid-restart) —
+non-empty, so the old check accepted it as a real IP, and `board`/`open lockbox` would
+then hand `ssh` the literal host `--`, failing with a confusing `hostname contains
+invalid characters` instead of erda's own clear "isn't running yet" message.
+Reproduced directly (watched `--` appear in `multipass info` output for a restarting
+ship), fixed by requiring the value to match an actual dotted-quad
+(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$`) in all four spots.
+
+Found a real environment issue, not a script bug: mid-drill, `multipassd` itself hung
+completely (even `multipass version`, which touches no VM state, blocked indefinitely)
+after a `resail` (restart) request appears to have stalled inside the guest's own
+`sudo reboot` — the daemon's log shows it issued the reboot and then never logged
+anything else for 15+ minutes until an external kill. Recovered by having Eric run
+`sudo launchctl kickstart -k system/com.canonical.multipassd` (needs a real TTY for the
+password, which this tool doesn't have), which then spun at ~400% CPU because the old,
+now-orphaned qemu process still held the disk image's write lock; killing that orphan
+(`sudo kill -9`, also needed Eric directly) and kickstarting once more fully recovered
+the daemon. The wedged test VM was purged and redrilled clean rather than debugged
+further — matches this project's own established practice of treating test ships as
+disposable. Not investigated further since it looks like a Multipass/qemu-on-macOS
+reboot-handling quirk, not anything in this repo's own scripts; worth knowing that
+back-to-back `erda anchor`/`sail`/`resail` calls in quick succession can wedge
+multipassd on this host, and that recovering from it needs a real terminal (sudo can't
+be driven through this tool).
+
+## 4p. Harbor command-surface consolidation: one `.sh`, one `.ps1`, one `.cmd` (July 3, 2026)
+
+Eric asked for two things: (1) confirm the project only exposes `erda <command>` as a
+host-side entry point, and (2) once that was confirmed already true (`install.sh` only
+ever wired up `erda()`; `christen.{sh,ps1}` were internal, exec'd via `erda christen`),
+consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, and one `.cmd` file —
+folding `christen` and `install` in as `erda` subcommands rather than separate scripts.
+
+Merged `harbor/christen.sh` + `harbor/install.sh` into `harbor/erda.sh` (`christen` and
+`install` are now `cmd_christen`/`cmd_install` functions, dispatched from the same
+`case` statement as `board`/`anchor`/etc.), and the PowerShell equivalents
+(`christen.ps1` + `install.ps1`) into `harbor/erda.ps1` (`Invoke-Christen`/
+`Invoke-Install` functions). Deleted all four now-merged files. `install`'s chicken-
+and-egg property (it needs to run *before* `erda` exists as a shell function) still
+works fine merged in — it's just invoked by full path the first time
+(`./harbor/erda.sh install`), same as it always was. `harbor/install.cmd` (the
+execution-policy bootstrap for fresh Windows accounts, §4l) stays as its own file since
+it fundamentally can't be merged into a `.ps1` — its whole purpose is running *before*
+PowerShell's execution policy allows any local `.ps1` to run at all — but its target
+changed from `install.ps1` to `erda.ps1 install`.
+
+**Found and fixed a real bug in the merge itself before it shipped**: the install
+marker text changed (`managed by harbor/install.sh` → `managed by harbor/erda.sh
+install`), and both scripts' upgrade-detection matched that marker by *exact* string.
+Tested the upgrade path over the actual pre-existing installed block from earlier in
+this session and confirmed it would have silently duplicated the `erda()` definition
+in `~/.zshrc` instead of replacing the stale one — caught before landing, not after.
+Fixed by matching on a stable prefix (`# --- ERDA-Will harbor commands`) in both the
+bash (`awk`) and PowerShell (`.StartsWith()`) stripping logic, so any older marker
+variant gets replaced correctly regardless of its exact "(managed by ...)" suffix.
+Verified for real: ran the new `erda.sh install` directly over the session's existing
+old-marker block in `~/.zshrc` — replaced cleanly, exactly one `erda()` definition
+afterward, no duplication.
+
+Re-verified the merged `erda christen` end-to-end on a real ship (launch → IP → SSH →
+cloud-init → ready), confirmed `erda` still resolves globally from a fresh shell after
+the upgrade, shellcheck clean on the new `erda.sh`, correct executable bit tracked in
+git (`100755`, learned the hard way in §4n's v14 filemode bug). Updated
+`CLAUDE.md`'s repo layout and `docs/vm-cheatsheet.md` throughout to reference
+`harbor/erda.{sh,ps1}`'s `install`/`christen` subcommands instead of the now-deleted
+standalone scripts; confirmed no other doc had stale references. `harbor/` is now
+exactly `erda.sh`, `erda.ps1`, `install.cmd` — three files instead of seven.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
-§4f. x86_64 validation is done — see §4g. Both ARM64 (Multipass/macOS) and x86_64
-(Multipass/Windows-Hyper-V) are confirmed working from this side; per D12, Eric wants
-to confirm that himself, hands-on, using `docs/vm-cheatsheet.md`, before OVHcloud
-(the third harbor) is tried at all.
+§4f. x86_64 validation is done — see §4g. macOS/ARM64 was re-confirmed fully working
+end-to-end after the erda/gh/fleet-naming/auto-create wave, and `harbor/` was
+consolidated down to one script per shell (`erda.sh`/`erda.ps1`/`install.cmd`) — see
+§4o, §4p. Both ARM64 (Multipass/macOS) and x86_64 (Multipass/Windows-Hyper-V) are
+confirmed working from this side; per D12, Eric wants to confirm that himself,
+hands-on, using `docs/vm-cheatsheet.md`, before OVHcloud (the third harbor) is tried at
+all.
 
 Next up, in rough priority order:
 
@@ -751,3 +847,5 @@ Next up, in rough priority order:
 - v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at Eric's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with Eric's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.
 - v13 (Claude Code, July 3, 2026): built `captain charter`/`captain work` and made `charter` auto-create a GitHub repo when none is given (reusing one if it already exists), at Eric's request; dropped `captain toss` (repo deletion) after Eric called it off mid-investigation. Found before writing code that the existing push-only PAT can't create repos at all (`Resource not accessible by personal access token`) — repo creation needs a structurally broader scope (`All repositories` + `Administration: RW`), documented as a deliberate tradeoff rather than silently widening the token. The feature works correctly end-to-end via its fallback path but isn't actually usable for real auto-creation until Eric mints that broader token. Verified all three charter paths (auto-create-fallback, `--local`, reuse-existing) against the live ship, and `captain work`'s delegation to `sail`. Rewrote `docs/git-and-github.md`, which had gone stale across two separate earlier changes (gh wiring, push-on-integrate policy) this update needed to account for anyway. See §4n.
 - v14 (Claude Code, July 3, 2026): Eric hit "Permission denied" on `captain` from a freshly christened ship — found the real cause (`ship/bin/captain` and three `harbor/*.sh` files were committed with mode 644, not 755, since this repo has `core.fileMode=false` and `chmod +x` on a brand-new file before `git add` has no effect under that setting), fixed with `git update-index --chmod=+x` on all four, and hotfixed Eric's live ship directly so he didn't need to re-christen. Then walked Eric through minting the broader-scoped GH_TOKEN for real: he considered a two-token split to protect ERDA-Will from the creation-scoped token, which turned out not to actually work (fine-grained PATs' repo list can't be updated by automation, so a creation token needs content access too) — he chose the single broader token knowingly once that was clear. First live test with the working token immediately surfaced a second real bug (freshly created GitHub repos are empty, `charter` assumed otherwise) — fixed and verified end-to-end, including a regression check against the real non-empty ERDA-Will repo. `captain charter` with auto-create is now genuinely fully working. See §4n.
+- v15 (Claude Code, July 3, 2026): Eric asked to re-drill the whole system on this Mac since a lot had landed since the last real macOS test. Full drill passed end-to-end: `erda` global install, `christen`, all agent CLIs + `fitout.sh` idempotency + git identity, the rest of the `erda` command surface, and a real charter → sail → hand-written order → `muster` with real `pi`/GLM-5.2 → manual dry-dock merge → fast-forward `main`, all against a real ship. Found and fixed a real bug: `ship_ip()` in `erda.sh`/`erda.ps1` (and, defensively, both `christen` wait-loops) accepted multipass's `--` placeholder (shown for a stopped/mid-restart instance) as a valid IP, since it only checked non-empty — caused a confusing `ssh: hostname contains invalid characters` instead of erda's own clear not-running message; fixed by requiring a real dotted-quad match in all four spots, shellcheck clean. Also hit a real `multipassd` hang on this host (stuck mid-`resail`/restart, needed two rounds of `sudo launchctl kickstart` plus killing an orphaned qemu process holding a disk lock — all needed Eric directly, since sudo needs a real TTY this tool doesn't have) — root-caused to a Multipass/qemu-on-macOS quirk, not a repo bug; the wedged test VM was purged and redrilled clean rather than debugged further, matching this project's own disposable-ship convention. See §4o.
+- v16 (Claude Code, July 3, 2026): Eric asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.

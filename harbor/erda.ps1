@@ -1,10 +1,13 @@
 <#
 .SYNOPSIS
-  erda — command-line entry point for Harbor-side ship operations.
+  erda — single entry point for all Harbor-side ship operations.
 .DESCRIPTION
   usage: erda <command> [ship] [args...]
 
-    christen [name] [cpus] [memory] [disk]   launch a new ship (see christen.ps1)
+    install                                  wire up `erda` as a global shell
+                                              command (run once per machine, or
+                                              again after moving/updating the repo)
+    christen [name] [cpus] [memory] [disk]   launch a new ship
     board [ship]                             connect: multipass info + ssh in
     open lockbox [ship]                      deploy the age key if needed, connect
                                               with the strongbox already unlocked
@@ -18,12 +21,17 @@
     sink [ship]                              multipass delete --purge
                                               (asks to confirm; -y/-Force skips)
 
-  [ship] defaults to "ship" everywhere it's optional, matching christen's own default.
+  [ship] defaults to "ship" everywhere it's optional.
 
-  Note: `erda sail` (start a stopped VM, this script) and `ship/bin/sail <charter>`
-  (open the tmux deck, runs ON the ship) share a name but never actually collide --
-  different sides of the SSH connection -- worth knowing so "sail" isn't confusing
-  when you're used to the other one.
+  Before `erda` is a shell function, run this once by its full path:
+    .\harbor\erda.ps1 install
+  On a fresh Windows account, PowerShell's default execution policy blocks
+  any local .ps1 (including this one) -- use harbor\install.cmd instead,
+  which bypasses that policy just long enough to run this same install.
+
+  Note: `erda sail` (start a stopped VM, this command) and `ship/bin/sail
+  <charter>` (open the tmux deck, runs ON the ship) share a name but never
+  actually collide -- different sides of the SSH connection.
 #>
 param(
   [Parameter(Position=0)] [string]$Command,
@@ -46,27 +54,204 @@ function Get-Arg0([string]$Default = "ship") {
 
 function Get-ShipIp([string]$Name) {
   $IpLine = & $MP info $Name | Select-String "IPv4"
-  if (-not $IpLine) {
+  $Ip = if ($IpLine) { ($IpLine -split '\s+')[1] } else { $null }
+  if (-not $Ip -or $Ip -notmatch '^\d+\.\d+\.\d+\.\d+$') {
     Write-Error "erda: couldn't get an IP for '$Name' -- is it running? (erda sail $Name)"
     exit 1
   }
-  return ($IpLine -split '\s+')[1]
+  return $Ip
 }
 
 $Usage = @"
 usage: erda <command> [ship] [args...]
-  christen [name] [cpus] [memory] [disk]   launch a new ship
-  board [ship]                             connect (multipass info + ssh)
-  open lockbox [ship]                      deploy the age key if needed, connect unlocked
-  anchor [ship]                            stop
-  force-anchor [ship]                      stop --force
-  sail [ship]                              start
-  resail [ship]                            restart
-  suspend [ship]                           suspend
-  view [ship]                              list (no ship) / info <ship>
-  sink [ship]                              delete --purge (asks to confirm; -y/-Force skips)
+  install                                   wire up `erda` as a global command (run once)
+  christen [name] [cpus] [memory] [disk]    launch a new ship
+  board [ship]                              connect (multipass info + ssh)
+  open lockbox [ship]                       deploy the age key if needed, connect unlocked
+  anchor [ship]                             stop
+  force-anchor [ship]                       stop --force
+  sail [ship]                               start
+  resail [ship]                             restart
+  suspend [ship]                            suspend
+  view [ship]                               list (no ship) / info <ship>
+  sink [ship]                               delete --purge (asks to confirm; -y/-Force skips)
 [ship] defaults to "ship" everywhere it's optional.
 "@
+
+# install — wire up `erda` as a global PowerShell function. Profile/PATH
+# state is per-machine and can't live in git, so the setup step lives here
+# instead of a manual profile edit. Idempotent: re-running (e.g. after moving
+# the repo, or pulling an updated harbor/) replaces the previously-installed
+# block rather than duplicating it.
+function Invoke-Install {
+  # On a fresh Windows account, PowerShell's default execution policy
+  # (Restricted, when every scope shows Undefined) blocks any local .ps1,
+  # including this one on some paths to get here -- install.cmd exists
+  # specifically to bootstrap around that chicken-and-egg case via a
+  # one-time -ExecutionPolicy Bypass. This makes the fix permanent:
+  # RemoteSigned at CurrentUser scope, so every later `erda` call (or this
+  # install, if re-run) works normally without needing Bypass again.
+  # Scoped to CurrentUser only -- doesn't touch other accounts or require
+  # admin rights.
+  $CurrentUserPolicy = Get-ExecutionPolicy -Scope CurrentUser
+  if ($CurrentUserPolicy -in @("Restricted", "AllSigned", "Undefined")) {
+    Write-Host "setting your execution policy to RemoteSigned (needed to run local scripts like erda)..."
+    try {
+      Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+    } catch {
+      Write-Warning "couldn't set execution policy automatically: $($_.Exception.Message)"
+      Write-Warning "if this machine is managed by Group Policy, ask an admin to allow RemoteSigned (or less restrictive) for your account."
+    }
+  }
+  $EffectivePolicy = Get-ExecutionPolicy
+  if ($EffectivePolicy -in @("Restricted", "AllSigned")) {
+    Write-Warning "effective execution policy is still $EffectivePolicy -- erda may not run yet."
+    Write-Warning "run 'Get-ExecutionPolicy -List' to see what's overriding CurrentUser (likely MachinePolicy or UserPolicy via Group Policy)."
+  }
+
+  $ErdaPath = Join-Path $PSScriptRoot "erda.ps1"
+
+  if (-not (Test-Path $PROFILE)) {
+    New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+  }
+
+  $MarkerStart = "# --- ERDA-Will harbor commands (managed by harbor/erda.ps1 install) ---"
+  $MarkerPrefix = "# --- ERDA-Will harbor commands"
+  $MarkerEnd = "# --- end ERDA-Will harbor commands ---"
+  $Block = "$MarkerStart`nfunction erda { & `"$ErdaPath`" @args }`n$MarkerEnd"
+
+  # Matched by prefix, not exact text: an older install (e.g. the
+  # since-merged harbor/install.ps1) wrote a marker with different wording
+  # after "harbor commands" -- matching only the prefix means an upgrade
+  # replaces that stale block instead of leaving it duplicated alongside a
+  # new one.
+  $Existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+  if ($Existing -and $Existing.Contains($MarkerPrefix)) {
+    $Lines = Get-Content $PROFILE
+    $Kept = New-Object System.Collections.Generic.List[string]
+    $Skipping = $false
+    foreach ($line in $Lines) {
+      if ($line.StartsWith($MarkerPrefix)) { $Skipping = $true; continue }
+      if ($line -eq $MarkerEnd) { $Skipping = $false; continue }
+      if (-not $Skipping) { $Kept.Add($line) }
+    }
+    Set-Content -Path $PROFILE -Value $Kept
+    Add-Content -Path $PROFILE -Value $Block
+    Write-Host "updated existing erda install in $PROFILE (path may have changed)"
+  } else {
+    Add-Content -Path $PROFILE -Value "`n$Block"
+    Write-Host "installed erda into $PROFILE"
+  }
+
+  Write-Host ""
+  Write-Host "Restart your terminal, or run: . `$PROFILE"
+  Write-Host "Then 'erda <command>' works from any directory (e.g. erda christen, erda board)."
+}
+
+# christen — launch a new ship with one command and sensible defaults.
+# Handles the whole first-provisioning dance: substitutes your real SSH key
+# into keel.yaml (never writing the substituted copy into the repo), calls
+# `multipass launch`, then waits for SSH and cloud-init to actually finish
+# before handing control back -- so "christen" means "ready to use", not just
+# "instance exists".
+#
+# Fleet naming (D16): flagships get Will-class virtue names (resolve,
+# endeavour, tenacity...); skiffs use skiff-<purpose> and get purged same
+# day. This command doesn't enforce either -- name whatever you want.
+function Invoke-Christen {
+  param(
+    [string]$Name = "ship",
+    [int]$Cpus = 2,
+    [string]$Memory = "4G",
+    [string]$Disk = "20G"
+  )
+
+  # Deliberately NOT inheriting the script's $ErrorActionPreference = "Stop"
+  # here: in PowerShell 5.1, any redirected stderr output from a native exe
+  # (ssh, multipass) gets wrapped into an ErrorRecord and promoted to a
+  # terminating exception under Stop -- turning ssh's harmless "Warning:
+  # Permanently added ... to the list of known hosts" notice into a
+  # script-ending failure. Assigning inside this function shadows the outer
+  # value only for the duration of this call; every native call below is
+  # checked explicitly via $LASTEXITCODE instead.
+  $ErrorActionPreference = "Continue"
+
+  if ($Name -notmatch '^[A-Za-z]$' -and $Name -notmatch '^[A-Za-z][A-Za-z0-9-]*[A-Za-z0-9]$') {
+    Write-Error "christen: invalid name '$Name' (letters, digits, hyphens; must start with a letter, end alphanumeric)"
+    exit 1
+  }
+
+  $KeelSrc = Join-Path $RepoRoot "keel.yaml"
+  if (-not (Test-Path $KeelSrc)) {
+    Write-Error "christen: keel.yaml not found at $KeelSrc"
+    exit 1
+  }
+
+  $SshPub = "$SshPriv.pub"
+  if (-not (Test-Path $SshPub)) {
+    Write-Error "christen: no SSH public key at $SshPub -- generate one first: ssh-keygen -t ed25519"
+    exit 1
+  }
+
+  $PubKey = (Get-Content $SshPub -Raw).Trim()
+  $TmpKeel = Join-Path $env:TEMP "keel-christen-$([guid]::NewGuid().ToString('N')).yaml"
+  (Get-Content $KeelSrc) -replace 'REPLACE-ME-with-your-ssh-public-key', $PubKey | Set-Content -Encoding utf8 $TmpKeel
+
+  try {
+    Write-Host "christening '$Name': $Cpus cpu(s), $Memory memory, $Disk disk"
+    & $MP launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk --cloud-init $TmpKeel
+    if ($LASTEXITCODE -ne 0) {
+      Write-Error "christen: multipass launch failed (exit $LASTEXITCODE)"
+      exit 1
+    }
+  } finally {
+    Remove-Item $TmpKeel -ErrorAction SilentlyContinue
+  }
+
+  Write-Host ""
+  Write-Host -NoNewline "waiting for '$Name' to get an IP..."
+  $Ip = $null
+  for ($i = 0; $i -lt 20; $i++) {
+    $IpLine = & $MP info $Name | Select-String "IPv4"
+    if ($IpLine) {
+      $Candidate = ($IpLine -split '\s+')[1]
+      if ($Candidate -match '^\d+\.\d+\.\d+\.\d+$') { $Ip = $Candidate; break }
+    }
+    Write-Host -NoNewline "."
+    Start-Sleep -Seconds 2
+  }
+  if (-not $Ip) {
+    Write-Host ""
+    Write-Error "christen: never got an IP for '$Name' -- check: multipass info $Name"
+    exit 1
+  }
+  Write-Host " $Ip"
+
+  Write-Host -NoNewline "waiting for ssh..."
+  $SshOk = $false
+  for ($i = 0; $i -lt 40; $i++) {
+    # -o LogLevel=ERROR suppresses ssh's routine notices (e.g. "Warning:
+    # Permanently added ... to the list of known hosts") at the ssh level,
+    # rather than redirecting stderr in PowerShell -- see the note above
+    # $ErrorActionPreference for why that redirection is the thing to avoid.
+    ssh -i $SshPriv -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=5 -o BatchMode=yes eric@$Ip "true"
+    if ($LASTEXITCODE -eq 0) { $SshOk = $true; break }
+    Write-Host -NoNewline "."
+    Start-Sleep -Seconds 3
+  }
+  if (-not $SshOk) {
+    Write-Host ""
+    Write-Warning "christen: ssh never came up on '$Name' ($Ip) after 2 minutes -- check manually: ssh -i $SshPriv eric@$Ip"
+    exit 1
+  }
+  Write-Host " up"
+
+  Write-Host "waiting for cloud-init to finish provisioning (a couple of minutes)..."
+  ssh -i $SshPriv -o StrictHostKeyChecking=accept-new eric@$Ip "cloud-init status --wait"
+
+  Write-Host ""
+  Write-Host "'$Name' is ready: ssh -i $SshPriv eric@$Ip"
+}
 
 if ([string]::IsNullOrEmpty($Command)) {
   Write-Host $Usage
@@ -74,8 +259,12 @@ if ([string]::IsNullOrEmpty($Command)) {
 }
 
 switch ($Command) {
+  "install" {
+    Invoke-Install
+  }
+
   "christen" {
-    & (Join-Path $PSScriptRoot "christen.ps1") @Rest
+    Invoke-Christen @Rest
   }
 
   "board" {
@@ -101,7 +290,7 @@ switch ($Command) {
     }
 
     # -o LogLevel=ERROR: suppress ssh's routine notices at the ssh level
-    # rather than redirecting PowerShell's stream (see christen.ps1's own
+    # rather than redirecting PowerShell's stream (see Invoke-Christen's own
     # note on why -- redirected native stderr + strict error handling is a
     # real PowerShell 5.1 footgun).
     $KeyPresent = ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "test -f ~/.config/age/ship.key && echo yes || echo no"

@@ -35,7 +35,7 @@ shipyard/
 ├── HANDOFF.md           # state + next task (keep updated as you complete work)
 ├── keel.yaml
 ├── fitout.sh
-├── harbor/              # host-side tooling (runs before a ship exists): christen.sh/.ps1
+├── harbor/              # host-side tooling (runs before a ship exists): erda.sh/.ps1, install.cmd
 ├── scuttlebutt/         # Fresh config.json (JSONC), theme, chartroom plugin (.ts)
 ├── dotfiles/tmux/       # ship.tmux.conf + deck-layout.svg (reference image)
 ├── strongbox/           # keys.env.age — NEVER commit plaintext keys

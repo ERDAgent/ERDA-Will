@@ -75,8 +75,9 @@ Never commit either substituted copy — both write outside the repo (`/tmp` or
 
 ### The easy way: `erda christen`
 
-`harbor/christen.sh` (bash/git-bash) and `harbor/christen.ps1` (PowerShell) do §0's
-key substitution and this section's launch-and-wait in one command — "christen" means
+`harbor/erda.sh` (bash/git-bash) and `harbor/erda.ps1` (PowerShell) — the same single
+script that handles every other `erda` command — do §0's key substitution and this
+section's launch-and-wait in one command via their `christen` case, so "christen" means
 the ship is actually ready to use when it returns, not just that the instance exists.
 Once `erda` is installed (below), this is `erda christen [options]`:
 
@@ -92,7 +93,7 @@ erda christen -Name resolve -Cpus 4 -Memory 8G -Disk 40G
 ```
 
 Without `erda` installed, call the script directly the same way:
-`harbor/christen.sh [...]` / `harbor\christen.ps1 [...]`.
+`harbor/erda.sh christen [...]` / `harbor\erda.ps1 christen [...]`.
 
 Defaults (no args at all): name `ship`, 2 cpus, 4G memory, 20G disk — matching every
 manual example in this file. Both scripts read your key from
@@ -103,25 +104,25 @@ Verified end-to-end on this Harbor, both shells: launch → IP → SSH up →
 `delete --purge`.
 
 **Want to just type `erda <command>` from anywhere, no path?** Run the installer once
-— `harbor/install.sh` (macOS/Linux) or, on Windows, **`harbor\install.cmd`** (not
-`install.ps1` directly — see the gotcha below) — which wires an `erda` function into
-your shell profile (`~/.bashrc`/`~/.zshrc`, or PowerShell's `$PROFILE`), pointing at
-this exact checkout's `harbor/erda.{sh,ps1}` dispatcher. This is the reproducibility
-story for a fresh computer: profile/PATH state itself can't live in git, but the
-*setup step* does — clone the repo, run the installer once, restart your terminal,
-`erda` works globally from then on. Idempotent (safe to re-run, e.g. after moving the
-repo or pulling an update — replaces the old block rather than duplicating it).
-Verified for real: installed, confirmed bare `erda` commands (`christen`, `board`,
-`open lockbox`, `anchor`, `sail`, `resail`, `suspend`, `view`, `sink`) all work from a
-completely unrelated directory in a fresh shell session, re-ran the installer and
-confirmed no duplication.
+— `harbor/erda.sh install` (macOS/Linux) or, on Windows, **`harbor\install.cmd`** (not
+`erda.ps1 install` directly — see the gotcha below) — which wires an `erda` function
+into your shell profile (`~/.bashrc`/`~/.zshrc`, or PowerShell's `$PROFILE`), pointing
+at this exact checkout's `harbor/erda.{sh,ps1}`. This is the reproducibility story for
+a fresh computer: profile/PATH state itself can't live in git, but the *setup step*
+does — clone the repo, run the installer once, restart your terminal, `erda` works
+globally from then on. Idempotent (safe to re-run, e.g. after moving the repo or
+pulling an update — replaces the old block rather than duplicating it, including
+across the upgrade from an older marker). Verified for real: installed, confirmed bare
+`erda` commands (`christen`, `board`, `open lockbox`, `anchor`, `sail`, `resail`,
+`suspend`, `view`, `sink`) all work from a completely unrelated directory in a fresh
+shell session, re-ran the installer and confirmed no duplication.
 
 **Windows gotcha, real one**: a fresh Windows account's default PowerShell execution
 policy (`Restricted`) blocks *any* local `.ps1` file from running at all — including
-`install.ps1` itself, and later `erda.ps1`/`christen.ps1` too. `harbor\install.cmd`
+`erda.ps1` itself, even just to run its own `install` case. `harbor\install.cmd`
 exists specifically to bootstrap around this: batch files aren't subject to
-PowerShell's execution policy, so it can invoke `install.ps1` with a one-time
-`-ExecutionPolicy Bypass`, and `install.ps1` itself then sets a real, permanent
+PowerShell's execution policy, so it can invoke `erda.ps1 install` with a one-time
+`-ExecutionPolicy Bypass`, and that install step itself then sets a real, permanent
 `RemoteSigned` policy at `CurrentUser` scope (doesn't need admin rights, doesn't touch
 other accounts) so every later `erda` call works normally. If you ever see "running
 scripts is disabled on this system," that's this — `Get-ExecutionPolicy -List` shows
