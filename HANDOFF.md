@@ -632,6 +632,52 @@ manual commands — and fixed a pre-existing bug found in the process: two secti
 both numbered `## 8.` (a duplicate from when the fleet-naming patch was applied);
 renumbered the "sailing multiple ships" section to `## 9.`.
 
+## 4n. `captain charter`/`captain work` + charter auto-creates GitHub repos (July 3, 2026)
+
+Eric asked for two things: `charter` should create a new GitHub repo when none is
+given (instead of defaulting to local-only), and the operator commands should be
+renamed `captain charter [name] [git-url] [--local]` / `captain work [name]`. Dropped
+a third ask (`captain toss` to delete GitHub repos) at Eric's own instruction mid-way
+through, after confirming via a live test that repo deletion needs the same broader
+PAT scope as creation.
+
+`ship/bin/charter`: no `git-url` and no `--local` now checks `gh repo view
+ERDAgent/<name>` (reuse if it exists) before trying `gh repo create ERDAgent/<name>
+--private`, feeding the result into the same `git clone --bare` path an explicit URL
+would use. `--local` preserves the original behavior explicitly for when that's
+genuinely wanted. Falls back gracefully — clear message, not a hard failure — if `gh`
+isn't authenticated or the token lacks repo-creation permission.
+
+**Real finding, verified before writing any code**: the existing push-only PAT scope
+(Contents R/W on specific repos, from D14) cannot create repos at all —
+`Resource not accessible by personal access token (createRepository)`. Repo creation
+is an account-level action, not scoped to a pre-existing repo, so it needs a
+structurally different fine-grained PAT: `Repository access: All repositories` +
+`Administration: Read and write` — a meaningfully bigger grant than the minimal
+scope D14 deliberately chose. Documented as a conscious tradeoff in
+`strongbox/README.md` rather than silently widening the token. **The feature is
+implemented and works correctly (verified via its fallback path), but auto-creation
+itself is not yet usable until Eric mints and swaps in a broader-scoped token** — not
+a bug, a pending operator decision.
+
+`ship/bin/captain`: new dispatcher (`charter`/`work` subcommands delegate to the
+existing `charter`/`sail` scripts unchanged, so `muster`'s and `sail`'s own internal
+wiring is untouched). `fitout.sh` symlinks it alongside `charter`/`sail`/`muster`/
+`unlock`.
+
+Verified all three `charter` paths for real against the live ship: no-url with
+insufficient PAT scope (correct fallback message + working local charter), explicit
+`--local` (confirmed no `gh` calls attempted), and reuse-existing-repo (tested against
+the real `ERDA-Will` repo itself — correctly detected and cloned it rather than trying
+to recreate it). `captain work` verified delegating to `sail` correctly (real tmux
+deck, all 7 windows). Shellcheck clean on `charter`, `captain`, and `fitout.sh`.
+
+Updated `docs/captain-cheatsheet.md`'s "Getting to the Captain" section, and did a
+full rewrite (not just a patch) of `docs/git-and-github.md`, which had gone
+substantially stale — it predated both the `gh-captain-access` wiring (§4i) and the
+push-on-integrate policy decision (§4h), so its original "no, the system never creates
+repos / nothing pushes" framing was no longer true on two separate counts.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -683,3 +729,4 @@ Next up, in rough priority order:
 - v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. Eric confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against Eric's actual PowerShell profile. See the note in §4k and §4l.
 - v11 (Claude Code, July 2, 2026): Eric hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for Eric that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
 - v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at Eric's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with Eric's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.
+- v13 (Claude Code, July 3, 2026): built `captain charter`/`captain work` and made `charter` auto-create a GitHub repo when none is given (reusing one if it already exists), at Eric's request; dropped `captain toss` (repo deletion) after Eric called it off mid-investigation. Found before writing code that the existing push-only PAT can't create repos at all (`Resource not accessible by personal access token`) — repo creation needs a structurally broader scope (`All repositories` + `Administration: RW`), documented as a deliberate tradeoff rather than silently widening the token. The feature works correctly end-to-end via its fallback path but isn't actually usable for real auto-creation until Eric mints that broader token. Verified all three charter paths (auto-create-fallback, `--local`, reuse-existing) against the live ship, and `captain work`'s delegation to `sail`. Rewrote `docs/git-and-github.md`, which had gone stale across two separate earlier changes (gh wiring, push-on-integrate policy) this update needed to account for anyway. See §4n.
