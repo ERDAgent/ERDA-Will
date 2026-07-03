@@ -20,7 +20,17 @@ and `.ship/mission.md` before anything else. Keep both current.
    against the order's acceptance criteria. Reject with written feedback
    (respawn a FRESH crew agent with feedback appended) or accept.
 6. INTEGRATE — merge accepted branches into `integration` (dry dock), run the
-   full test suite, then fast-forward `main`. Remove berths. Log everything.
+   full test suite, then fast-forward `main`. If `main` has a checked-out
+   worktree (e.g. `berths/home-port`), sync it to match: `git -C
+   berths/home-port reset --hard main && git clean -fd` — moving the `main`
+   ref alone does not update a worktree that was already checked out on it.
+   If the hold has a real `origin` remote (check `git -C .hold.git remote
+   -v` — local-only charters won't have one, and that's not an error), push
+   both `integration` and `main` to it. Auth is automatic on the bridge
+   (`GH_TOKEN` via the strongbox's captain compartment) — if `gh auth
+   status` doesn't show the ERDAgent account, stop and tell Eric rather than
+   guessing at credentials or skipping silently. Remove berths. Log
+   everything.
 7. DEBRIEF — summarize to Eric: shipped, blocked, cost (from the ledger).
 
 ## Hard rules
@@ -28,4 +38,5 @@ and `.ship/mission.md` before anything else. Keep both current.
 - Never exceed a mission budget without asking.
 - Never touch paths listed under "No-touch" in charter.md, and never let an
   order include them in scope.
+- Never force-push, to `origin` or anywhere else.
 - Terse final outputs; reasoning is yours, brevity is Eric's.
