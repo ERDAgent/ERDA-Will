@@ -82,10 +82,23 @@ harbor\christen.ps1 -Name resolve -Cpus 4 -Memory 8G -Disk 40G
 
 Defaults (no args at all): name `ship`, 2 cpus, 4G memory, 20G disk — matching every
 manual example in this file. Both scripts read your key from
-`~/.ssh/id_ed25519[.pub]` and this repo's own `keel.yaml`, so run them from inside the
-repo (or symlink/alias them somewhere on PATH). Verified end-to-end on this Harbor,
-both shells: launch → IP → SSH up → `cloud-init status --wait: done` → ready message,
-then torn down again with `delete --purge`.
+`~/.ssh/id_ed25519[.pub]` and resolve `keel.yaml` from their own location, so they
+work from any directory as long as you give a correct path to the script itself
+(`C:\path\to\ERDA-Will\harbor\christen.ps1 ...`, or `cd` into the repo first and use a
+relative path). Verified end-to-end on this Harbor, both shells: launch → IP → SSH up
+→ `cloud-init status --wait: done` → ready message, then torn down again with
+`delete --purge`.
+
+**Want to just type `christen` from anywhere, no path?** Run the installer once —
+`harbor/install.sh` or `harbor\install.ps1` — which wires a `christen` function into
+your shell profile (`~/.bashrc`/`~/.zshrc`, or PowerShell's `$PROFILE`), pointing at
+this exact checkout. This is the reproducibility story for a fresh computer: profile/
+PATH state itself can't live in git, but the *setup step* does — clone the repo, run
+the installer once, restart your terminal, `christen` works globally from then on.
+Idempotent (safe to re-run, e.g. after moving the repo or pulling an update — replaces
+the old block rather than duplicating it). Verified for real: installed, confirmed the
+bare `christen` command launches a real ship from a completely unrelated directory in
+a fresh shell session, re-ran the installer and confirmed no duplication.
 
 The rest of this section is what `christen` is actually doing under the hood — useful
 if you want to understand it, adapt it, or it ever needs debugging.
