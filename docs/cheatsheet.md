@@ -5,8 +5,10 @@ Run `harbor\install.cmd` on Windows, or `harbor/erda.sh install` on mac/linux, t
 From host OS
 
   - `erda christen [name] [cpus] [memory] [disk]`: launches a new ship.
-  - `erda board [ship]`: opens tmux connection.
-  - `erda open lockbox [ship]`: deploy the age key if needed, connect unlocked.
+  - `erda strongbox init`: input github and deepinfra keys
+  - `erda strongbox backup/restore`: backs up or restores strongbox 
+  - `erda open lockbox [ship]`: deploys keys and connects to a ship, must do for newely christened ships.
+  - `erda board [ship]`: connects to a ship.
   - `erda anchor [ship]`: gracefully shuts down.
   - `erda force-anchor [ship]`: immediate shuts down, can corrupt a running instance.
   - `erda sail [ship]`: starts a ship.
