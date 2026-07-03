@@ -127,6 +127,19 @@ if ! command -v opencode >/dev/null 2>&1; then
 fi
 export PATH="$HOME/.opencode/bin:$PATH"
 
+# --- headless browser for UI verification (Playwright + Chromium) ---
+# Real Captain feedback after the first live mission (a Vue app): install/
+# test/lint/build all green doesn't confirm a UI actually renders correctly
+# -- that voyage relied on Eric manually port-forwarding and eyeballing it.
+# --with-deps installs the system libraries Chromium needs (sudo, apt) plus
+# the browser itself, so any charter's crew can `npx playwright screenshot`
+# a dev server and have the report include a PNG instead of just green CI.
+if ! command -v playwright >/dev/null 2>&1; then
+  log "installing Playwright + headless Chromium"
+  npm i -g playwright --ignore-scripts
+  npx playwright install --with-deps chromium
+fi
+
 # Symlink the agent CLIs into /usr/local/bin, which is on every shell's PATH
 # regardless of login/interactive status. Neither ~/.bashrc (interactive-only)
 # nor /etc/profile.d (login-only, below) covers everything that has to find
@@ -136,7 +149,7 @@ export PATH="$HOME/.opencode/bin:$PATH"
 # result — that resolves through fnm's per-shell "multishell" symlink, which
 # is torn down when the shell exits, so a symlink to it would go stale.
 FNM_BIN="$FNM_DIR/node-versions/$NODE_LTS/installation/bin"
-for bin in node npm npx claude codex pi; do
+for bin in node npm npx claude codex pi playwright; do
   [[ -x "$FNM_BIN/$bin" ]] && sudo ln -sfn "$FNM_BIN/$bin" "/usr/local/bin/$bin"
 done
 [[ -x "$HOME/.opencode/bin/opencode" ]] && sudo ln -sfn "$HOME/.opencode/bin/opencode" /usr/local/bin/opencode
@@ -175,6 +188,6 @@ else
 fi
 
 log "fitout complete"
-for bin in pi opencode claude codex fresh tmux jq rg fd fzf age; do
+for bin in pi opencode claude codex fresh tmux jq rg fd fzf age playwright; do
   printf '  %-8s %s\n' "$bin" "$(command -v "$bin" 2>/dev/null || echo 'NOT FOUND')"
 done
