@@ -534,6 +534,35 @@ correct custom args, invalid-name rejection before attempting anything, the full
 launch→IP→SSH→cloud-init→ready flow, and a functional check (git identity, agent CLIs)
 on each resulting ship. Both test ships destroyed after. Shellcheck clean.
 
+**Note on the ship named `ship`**: this session's real (non-throwaway) ship, holding
+the `experimental` charter's maiden-voyage work (§4h's Vue dice-roller app, 3/3 crew
+tasks merged through dry dock), was deleted by Eric directly (confirmed by him, not a
+tooling bug — investigated via Hyper-V's own VMMS event log before asking, since three
+independent signals agreeing it was gone warranted checking rather than assuming).
+That work was never pushed to GitHub (deliberately — push validation in §4i used
+disposable test branches on `ERDA-Will` itself, specifically to avoid touching that
+charter's real work) and is accepted as lost — "still in testing phase," Eric's words.
+Nothing to recover; a fresh `christen` + `charter experimental` starts clean.
+
+## 4l. `harbor/install.{sh,ps1}` — make `christen` callable from anywhere (July 2, 2026)
+
+Eric wanted to just type `christen`, from any directory, and wanted that reproducible
+on a brand-new computer from just the GitHub repo — not a manual profile edit that
+wouldn't survive a fresh machine. Shell profile/PATH state is inherently per-machine
+and can't live in git, so the fix makes the *setup step itself* part of the repo:
+`harbor/install.ps1` (writes a `christen` function into PowerShell's `$PROFILE`) and
+`harbor/install.sh` (same, into `~/.bashrc`/`~/.zshrc`), both pointing at whatever
+checkout they're run from. Clone → run installer once → restart terminal → `christen`
+works globally on that machine from then on. Idempotent via marker-comment block
+replacement, so re-running after moving the repo or pulling an update doesn't
+duplicate the profile entry.
+
+Verified for real: installed against Eric's actual (previously nonexistent) PowerShell
+profile, confirmed the generated function's exact content, ran the bare `christen`
+command from a totally unrelated directory in a fresh (non-inherited) PowerShell
+session and it launched a real ship end to end, re-ran the installer and confirmed the
+block was replaced rather than duplicated. Shellcheck clean on `install.sh`.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -582,3 +611,4 @@ Next up, in rough priority order:
 - v7 (Claude Code, July 2, 2026): Eric drove the cheatsheet himself end-to-end (found and reported: a Windows-checkout PATH copy-paste slip, PowerShell vs bash syntax gaps in the cheatsheet, the ubuntu-login fnm error, a literal `<ip>` paste). Fixed all of it live against his running ship, plus two real bugs found via his first actual Captain session: the bridge never wired `captain.md` into `pi` at all (fixed — see sail's `CAPTAIN_CMD`), and the bridge started inside a berth instead of the charter root, breaking `charter.md`/`mission.md`'s relative paths (fixed by starting at `$DIR`). Enabled tmux OSC 52 clipboard passthrough (host↔VM copy/paste). Wrote three more docs at Eric's request: `docs/captain-cheatsheet.md` (how to talk to the Captain), `docs/system-overview.md` (all roles + how they interact), `docs/git-and-github.md` (verified directly: charter never creates remote repos, nothing currently pushes to GitHub, no push credentials existed on the ship at all). Eric then ran a real maiden voyage (3/3 crew tasks done first-try, a Vue dice-roller app, clean dry-dock merge) and got a structured Captain review; implemented its headless-browser suggestion (Playwright, verified with a real screenshot, found and fixed the same non-login-PATH gap class for the `playwright` binary), and explicitly declined its `allow-scripts=true` suggestion (conflicts with `CLAUDE.md`'s `--ignore-scripts` hard rule; likely not even a real npm config key). Applied `gh-captain-access.patch` from a separate claude.ai planning session (D14/D15: two-compartment strongbox so crew can structurally never hold `GH_TOKEN`) via `git am`, found and fixed one gap the patch itself missed (`fitout.sh`'s strongbox verification wasn't compartment-aware), and validated everything on the real ship except the actual push test — blocked on Eric minting the PAT. See §4h (partial), captain-prompt/bridge-cwd fix, and §4i.
 - v8 (Claude Code, July 2, 2026): applied a second off-ship patch, `fleet-naming.patch` (D16: Will-class flagship naming, skiffs, named vessels, the one-charter-one-ship residency rule) — verified its two factual claims directly (no hardcoded instance-name dependency anywhere in `keel.yaml`/`fitout.sh`; the guest hostname genuinely matches the Multipass instance name) before trusting it. Eric decided the deferred push policy: auto-push both `integration` and `main` on every mission, no PR-gating — wired into `captain.md`'s INTEGRATE step, which also now fixes the maiden-voyage review's home-port resync bug (verified the fix mechanically by reproducing the staleness for real). Walked Eric through minting and encrypting the GH_TOKEN PAT; first attempt (interactive paste in the SSH session) silently produced a length-1 token, caught by the same byte-length-not-presence verification discipline as §4f — retried via file transfer instead, which worked. Ran the full §4i validation checklist for real: `gh auth status` confirms ERDAgent, a real push (a disposable branch, not the live repo's actual history) succeeded with no prompt, and the negative test confirmed crew-scope pushes fail cleanly. GitHub push access is now fully live and empirically proven correctly scoped.
 - v9 (Claude Code, July 2, 2026): built `harbor/christen.{sh,ps1}` at Eric's request — one friendly command (`christen [name] [cpus] [memory] [disk]`, all optional) replacing the raw `multipass launch` + manual key-substitution dance. Found and fixed a real PowerShell 5.1 gotcha while testing (`$ErrorActionPreference = "Stop"` + redirected native stderr turning a harmless ssh notice into a fatal error). Verified end-to-end with two real launches, both shells. See §4k.
+- v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. Eric confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against Eric's actual PowerShell profile. See the note in §4k and §4l.
