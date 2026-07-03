@@ -4,8 +4,18 @@ Everything in this file is a plain `multipass`/`ssh` command. No Claude Code, no
 `ship/bin/*` helper required — this is the manual reference for deploying, using, and
 destroying the Ship on your own, on either Harbor (macOS or Windows). Verified against
 Multipass 1.16.3 on Windows/Hyper-V (2026-07-02); the macOS/Multipass driver differs
-(HyperKit or QEMU, not Hyper-V) but the command surface below is the same client CLI on
-both.
+(HyperKit or QEMU, not Hyper-V) but the `multipass` command surface below is the same
+client CLI on both.
+
+**Shell note**: `multipass ...` and `ssh ...`/`scp ...` invocations are identical
+regardless of shell — Windows OpenSSH does its own `~` expansion, so those work
+verbatim in PowerShell too. Only the *scripting glue* around them (setting a variable,
+substituting text in a file, redirecting output) differs by shell, so those few steps
+below are given twice: **Bash** (macOS/Linux/git-bash) and **PowerShell** (Windows
+native — this is Eric's primary shell on the Windows Harbor, confirmed 2026-07-02).
+Pick the block matching whatever's actually running — mixing bash syntax into a
+PowerShell prompt (or vice versa) is what caused the very first attempt at this
+section to fail.
 
 Command reference for anything not covered here: `multipass help <command>`.
 
@@ -18,31 +28,55 @@ Command reference for anything not covered here: `multipass help <command>`.
   PowerShell to check, `Enable-WindowsOptionalFeature ... -All` + reboot if not)
 
 Confirm the backend: `multipass get local.driver` → `hyperv` (Windows) or
-`hyperkit`/`qemu` (macOS).
+`hyperkit`/`qemu` (macOS). If `multipass` isn't recognized right after installing,
+close and reopen your terminal (PATH is set machine-wide by the installer but existing
+shells don't pick it up); as a one-off fallback the full path on Windows is
+`"C:\Program Files\Multipass\bin\multipass.exe"`.
 
 **Get a real SSH key ready** — `keel.yaml` ships with a placeholder
 (`REPLACE-ME-with-your-ssh-public-key`) in `ssh_authorized_keys`. Before launching, make
 a working copy with your real key substituted in. Run this from **inside the repo**
-(`cd` to wherever you cloned `ERDA-Will` first — `keel.yaml` is at its root, not one
-level up):
+(`cd`/`Set-Location` to wherever you cloned `ERDA-Will` first — `keel.yaml` is at its
+root, not one level up). Generate a key first if you don't have one:
+`ssh-keygen -t ed25519` (same command, either shell).
 
+Bash / git-bash:
 ```bash
-# bash/zsh/git-bash — never commit the substituted copy
 cd /path/to/ERDA-Will                 # e.g. cd /c/repos/ERDA-Will on Windows/git-bash
-PUBKEY=$(cat ~/.ssh/id_ed25519.pub)   # generate one first if you don't have it:
-                                       #   ssh-keygen -t ed25519
+PUBKEY=$(cat ~/.ssh/id_ed25519.pub)
 sed "s|REPLACE-ME-with-your-ssh-public-key|$PUBKEY|" keel.yaml > /tmp/keel-real.yaml
 grep ssh-ed25519 /tmp/keel-real.yaml  # sanity check: should print your real key,
                                        # not the literal word REPLACE-ME
 ```
 
+PowerShell (Windows native):
+```powershell
+Set-Location C:\path\to\ERDA-Will      # e.g. Set-Location C:\repos\ERDA-Will
+$PUBKEY = (Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub" -Raw).Trim()
+(Get-Content keel.yaml) -replace 'REPLACE-ME-with-your-ssh-public-key', $PUBKEY |
+  Set-Content -Encoding utf8 "$env:TEMP\keel-real.yaml"
+Select-String -Path "$env:TEMP\keel-real.yaml" -Pattern 'ssh-ed25519'  # sanity check
+```
+
+Never commit either substituted copy — both write outside the repo (`/tmp` or
+`$env:TEMP`) specifically so `git status` in the repo stays clean.
+
 ## 1. Launch (first provisioning)
 
+Bash / git-bash:
 ```bash
 multipass launch 24.04 \
   --name ship \
   --cpus 2 --memory 4G --disk 20G \
   --cloud-init /tmp/keel-real.yaml
+```
+
+PowerShell:
+```powershell
+multipass launch 24.04 `
+  --name ship `
+  --cpus 2 --memory 4G --disk 20G `
+  --cloud-init "$env:TEMP\keel-real.yaml"
 ```
 
 `keel.yaml` clones the repo over HTTPS (public, no baked-in credentials) and hands off
