@@ -1,6 +1,6 @@
 # erda commands
 
-Run install.ps1 on windows, or ASDF on mac/linux, or enable erda commands.
+Run `harbor\install.cmd` on Windows, or `harbor/erda.sh install` on mac/linux, to enable erda commands.
 
 From host OS
 
@@ -14,7 +14,7 @@ From host OS
   - `erda suspend [ship]`: suspends a ship, no CPU/RAM use while suspended.
   - `erda view`: list all ships.
   - `erda view [ship]`: view ship info.
-  - `sink [ship]`: deletes and purges ship.
+  - `erda sink [ship]`: deletes and purges ship.
 
 From a ship
 
