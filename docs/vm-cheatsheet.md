@@ -134,7 +134,48 @@ the exact shape `muster`'s crew windows run in). `ssh host -tt 'bash -lc "cmd"'`
 something works one way and not the other, that's expected, not a bug — check which PATH
 you actually need.
 
-## 3. Day-to-day lifecycle
+## 3. Unlock the strongbox (every new ship)
+
+`fitout.sh` deliberately never does this step — it's the one thing that would put a
+real secret into the git-cloned image. Every *new* ship (including a fresh one after
+`delete --purge` + relaunch — the private key doesn't survive that, only the
+committed, encrypted `strongbox/keys.env.age` does) needs its private age key copied
+in once before `pi` can reach DeepInfra. Without it, `pi` starts with `Warning: No
+models available` / `Error: No API key found` — that's this exact step missing, not a
+bug.
+
+You need `strongbox/ship.key` (gitignored, never committed — wherever you generated it
+per `strongbox/README.md`). Run from your host, **not** inside the SSH session:
+
+Bash / git-bash:
+```bash
+SHIP_IP=<ip-from-multipass-info>
+ssh -i ~/.ssh/id_ed25519 eric@$SHIP_IP 'mkdir -p ~/.config/age'
+scp -i ~/.ssh/id_ed25519 strongbox/ship.key eric@$SHIP_IP:~/.config/age/ship.key
+ssh -i ~/.ssh/id_ed25519 eric@$SHIP_IP 'chmod 600 ~/.config/age/ship.key'
+```
+
+PowerShell:
+```powershell
+$SHIP_IP = "<ip-from-multipass-info>"
+ssh -i ~/.ssh/id_ed25519 eric@$SHIP_IP "mkdir -p ~/.config/age"
+scp -i ~/.ssh/id_ed25519 C:\repos\ERDA-Will\strongbox\ship.key eric@${SHIP_IP}:~/.config/age/ship.key
+ssh -i ~/.ssh/id_ed25519 eric@$SHIP_IP "chmod 600 ~/.config/age/ship.key"
+```
+
+Then, in your SSH session, before starting `pi` (if you're using `charter`/`sail`, the
+bridge window does this automatically — this manual step is only needed for a bare,
+standalone `pi`):
+
+```bash
+eval "$(unlock)"
+pi
+```
+
+`unlock` degrades gracefully (prints a note, sets nothing) if the key isn't there yet
+— it never blocks the rest of the ship from working.
+
+## 4. Day-to-day lifecycle
 
 ```bash
 multipass stop ship                    # graceful shutdown
@@ -153,7 +194,7 @@ idempotency the whole design leans on):
 ssh eric@<ip> 'cd ~/shipyard && git pull --ff-only && ./fitout.sh'
 ```
 
-## 4. Backup / restore (same host only)
+## 5. Backup / restore (same host only)
 
 Multipass snapshots and clones are **local to one Multipass installation** — they live
 inside that backend's own disk format (Hyper-V `.vhdx` on Windows, HyperKit/QEMU on
@@ -183,7 +224,7 @@ multipass info ship --snapshots                # detail per snapshot
 multipass clone ship -n ship-experiment        # independent full copy, same host
 ```
 
-## 5. Files in and out
+## 6. Files in and out
 
 ```bash
 multipass transfer local-file.txt ship:/home/eric/local-file.txt
@@ -202,7 +243,7 @@ mangled outright.
 Plain `scp -i ~/.ssh/id_ed25519 file eric@<ip>:~/` works too and avoids all of the
 above; prefer it once you have the IP.
 
-## 6. Destroy
+## 7. Destroy
 
 ```bash
 multipass delete ship            # soft-delete, recoverable
@@ -214,16 +255,16 @@ multipass purge                  # purge everything already soft-deleted
 Every drill in this project's history destroys its test ship with `delete --purge`
 when done — don't leave one running as a matter of practice.
 
-## 7. Known non-idempotent / manual steps
+## 8. Known non-idempotent / manual steps
 
 These are the only things `fitout.sh` deliberately does **not** automate — by design,
 not oversight:
 
 - **SSH key** in `keel.yaml` (§0) — one placeholder substitution per operator, same
   spirit as the age key below.
-- **Strongbox age key** — `mkdir -p ~/.config/age && scp ship.key <ship>:~/.config/age/ship.key`,
-  then `eval "$(unlock)"`. `fitout.sh` verifies the strongbox decrypts if the key is
-  already present, and skips gracefully (no error) if it isn't yet — see
+- **Strongbox age key** (§3) — needed again on every *new* ship, including a fresh one
+  after `delete --purge` + relaunch. `fitout.sh` verifies the strongbox decrypts if the
+  key is already present, and skips gracefully (no error) if it isn't yet — see
   `strongbox/README.md`.
 - Everything else — git identity (`ERDAgent` / `agentic@ericrose.dev`, the ship's own
   persona), agent CLIs, PATH wiring, `ship/bin/*` on PATH, tmux/Fresh config — is set by
