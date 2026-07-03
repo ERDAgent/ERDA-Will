@@ -476,12 +476,20 @@ own idempotency claim on a ship with prior state):**
 Next session aboard, once `strongbox/captain.env.age` exists: re-run 3–4 for real, then
 revisit the deferred items below.
 
-**Deferred to the Captain's next voyage (per its own review):** wiring `origin:` into
-charter.md for existing charters and any push-on-integrate behavior. One policy
-decision for Eric before enabling auto-push of `main` on client charters (e.g. Royal
-Guest): auto-push both integration and main post-gate, or main-via-PR for
-client-facing repos? Branch protection on GitHub is also worth setting either way
-(at minimum: no force pushes). Not decided — flagged, not guessed.
+**Decided (Eric, July 2, 2026):** auto-push both `integration` and `main` post-gate —
+no PR-gating for `main` at this time, even on client charters. Wired into
+`ship/prompts/captain.md`'s INTEGRATE step (1e0aaf3): push both branches to `origin`
+when one exists (local-only charters skip silently), stop and tell Eric rather than
+guess if `gh auth status` isn't showing ERDAgent. Also folded in the maiden-voyage
+review's home-port resync bug (§4h — fast-forwarding `main` via `update-ref` doesn't
+update an already-checked-out worktree) since it's the same INTEGRATE step; the fix
+itself (`reset --hard main && clean -fd`) was verified mechanically on the real ship by
+reproducing the staleness and confirming the recovery. The push half of this is still
+unverified — same blocker as §4i items 3–4, needs `strongbox/captain.env.age`.
+
+Still open, not decided: branch protection on GitHub (at minimum, no force pushes —
+though `captain.md` now has a hard rule against force-pushing at all) is worth setting
+up repo-side too, defense in depth. Not done — flagged, not guessed.
 
 ## 4j. Fleet naming + multi-ship docs (July 2, 2026) — docs only, no code
 
