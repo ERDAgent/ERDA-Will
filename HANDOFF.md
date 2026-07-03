@@ -413,7 +413,7 @@ clean `multipass launch --cloud-init keel.yaml` first showed the identity missin
 `fitout.sh` directly and re-running it set the identity correctly and the `fd` fix
 from §4g still held. Test ship destroyed after.
 
-## 4i. gh CLI + captain-scoped GitHub access (July 2, 2026) — patch applied and on-ship validated (items 1–2); real push (3–4) blocked on the operator PAT
+## 4i. gh CLI + captain-scoped GitHub access (July 2, 2026) — fully validated, all 4 checklist items done
 
 Origin: the Captain's maiden-voyage review ("the outstanding charter change I have
 clearance for but couldn't execute: GitHub origin... I'll wire the origin: line and any
@@ -440,10 +440,8 @@ NOTHING here has run on a real ship yet):
 - `strongbox/README.md`: compartment table + exact PAT-minting/encrypt/verify steps,
   carrying forward both §4f lessons (zsh `read -p`; verify byte-length not presence).
 
-**Operator (Eric) side, blocking first use** (strongbox/README.md has the details):
-mint the fine-grained PAT on ERDAgent (charter repos only, Contents RW), grant
-ERDAgent write on charter repos not already under the org, encrypt to
-`captain.env.age`, commit.
+**Operator (Eric) side — done (July 2, 2026):** PAT minted on ERDAgent, encrypted to
+`captain.env.age`, committed (335f1b5).
 
 **On-ship validation checklist — results (July 2, 2026, Claude Code, against the real
 Windows/Hyper-V ship, not a fresh one — reused deliberately to also prove the patch's
@@ -464,17 +462,29 @@ own idempotency claim on a ship with prior state):**
    captain scope). Invalid scope name errors cleanly. Credential helper confirmed set
    for both `github.com` and `gist.github.com`. `gh auth status` with no token: clean
    "not logged in" message, exit 1, no crash, no `gh auth login` state written.
-3. **Blocked on the operator step** — no real PAT exists yet (`strongbox/captain.env.age`
-   not present, checked directly). Structurally confirmed instead: `muster`'s
-   `.crew-run.sh` is untouched by the patch and still calls plain `eval "$(unlock)"`
-   (crew scope) — by construction, crew windows never request the captain compartment,
-   so there's no code path where GH_TOKEN reaches one even once a real token exists.
-4. **Blocked on the same operator step** — nothing to leak yet; the real negative test
-   (attempt a push from a crew window with a real token loaded elsewhere) needs to wait
-   until 3 is unblocked.
+3. **Done.** Eric minted the fine-grained PAT and provided it (335f1b5 —
+   `strongbox/captain.env.age`). First encryption attempt produced a length-1
+   `GH_TOKEN` (an interactive `read -rs` paste inside the SSH/tmux session apparently
+   didn't register correctly — cause not root-caused, not worth chasing since the fix
+   was straightforward); caught by the same byte-length verification discipline from
+   §4f, not just checking the file existed. Retried via file transfer instead of
+   interactive paste (write token to a local scratch file, `scp` it over, encrypt
+   from the file, `shred -u` the plaintext immediately after) — decrypted to a real
+   93-char value with the correct `github_pat_` prefix. `gh auth status` under
+   `unlock captain`: confirmed logged in as ERDAgent. Real push test: cloned
+   `ERDA-Will` fresh into a scratch dir on the ship (**not** the real charter's hold —
+   didn't want to risk the live repo's actual `main`/`integration`), pushed a
+   uniquely-named disposable branch (`test-push-validation-<epoch>`) under captain
+   scope — succeeded, no interactive prompt, confirmed the branch existed on GitHub
+   via `gh api`, then deleted the remote branch and local clone, confirmed gone.
+4. **Done.** From the same scratch clone, crew scope (plain `unlock`, no `captain`):
+   confirmed `GH_TOKEN` len 0, then attempted a push with `GIT_TERMINAL_PROMPT=0` —
+   failed cleanly (`could not read Username ... terminal prompts disabled`, exit 128)
+   rather than hanging or succeeding. Crew's inability to push is now empirically
+   confirmed, not just structurally argued from reading `muster`.
 
-Next session aboard, once `strongbox/captain.env.age` exists: re-run 3–4 for real, then
-revisit the deferred items below.
+All four items done. GitHub push access is real and working, scoped exactly as
+designed (D14/D15) — crew cannot reach it under any tested path.
 
 **Decided (Eric, July 2, 2026):** auto-push both `integration` and `main` post-gate —
 no PR-gating for `main` at this time, even on client charters. Wired into
@@ -546,3 +556,4 @@ Next up, in rough priority order:
 - v5 (Claude Code, July 2, 2026): x86_64 validation done on Eric's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.
 - v6 (Claude Code, July 2, 2026): Eric set direction — D12 (local Multipass only, OVHcloud deferred until he's confirmed reproducibility himself) and D13 (ship git identity = ERDAgent/agentic@ericrose.dev, separate from his personal account). Implemented D13 in `fitout.sh`, verified on a fresh ship. Wrote `docs/vm-cheatsheet.md`: full manual Multipass lifecycle (launch/stop/start/suspend/snapshot/restore/clone/transfer/destroy) with no Claude Code or `ship/bin/*` dependency, verified against real `multipass help` output — supports Eric's stated goal of being able to run this without Claude Code on the bare-metal host. See §4h.
 - v7 (Claude Code, July 2, 2026): Eric drove the cheatsheet himself end-to-end (found and reported: a Windows-checkout PATH copy-paste slip, PowerShell vs bash syntax gaps in the cheatsheet, the ubuntu-login fnm error, a literal `<ip>` paste). Fixed all of it live against his running ship, plus two real bugs found via his first actual Captain session: the bridge never wired `captain.md` into `pi` at all (fixed — see sail's `CAPTAIN_CMD`), and the bridge started inside a berth instead of the charter root, breaking `charter.md`/`mission.md`'s relative paths (fixed by starting at `$DIR`). Enabled tmux OSC 52 clipboard passthrough (host↔VM copy/paste). Wrote three more docs at Eric's request: `docs/captain-cheatsheet.md` (how to talk to the Captain), `docs/system-overview.md` (all roles + how they interact), `docs/git-and-github.md` (verified directly: charter never creates remote repos, nothing currently pushes to GitHub, no push credentials existed on the ship at all). Eric then ran a real maiden voyage (3/3 crew tasks done first-try, a Vue dice-roller app, clean dry-dock merge) and got a structured Captain review; implemented its headless-browser suggestion (Playwright, verified with a real screenshot, found and fixed the same non-login-PATH gap class for the `playwright` binary), and explicitly declined its `allow-scripts=true` suggestion (conflicts with `CLAUDE.md`'s `--ignore-scripts` hard rule; likely not even a real npm config key). Applied `gh-captain-access.patch` from a separate claude.ai planning session (D14/D15: two-compartment strongbox so crew can structurally never hold `GH_TOKEN`) via `git am`, found and fixed one gap the patch itself missed (`fitout.sh`'s strongbox verification wasn't compartment-aware), and validated everything on the real ship except the actual push test — blocked on Eric minting the PAT. See §4h (partial), captain-prompt/bridge-cwd fix, and §4i.
+- v8 (Claude Code, July 2, 2026): applied a second off-ship patch, `fleet-naming.patch` (D16: Will-class flagship naming, skiffs, named vessels, the one-charter-one-ship residency rule) — verified its two factual claims directly (no hardcoded instance-name dependency anywhere in `keel.yaml`/`fitout.sh`; the guest hostname genuinely matches the Multipass instance name) before trusting it. Eric decided the deferred push policy: auto-push both `integration` and `main` on every mission, no PR-gating — wired into `captain.md`'s INTEGRATE step, which also now fixes the maiden-voyage review's home-port resync bug (verified the fix mechanically by reproducing the staleness for real). Walked Eric through minting and encrypting the GH_TOKEN PAT; first attempt (interactive paste in the SSH session) silently produced a length-1 token, caught by the same byte-length-not-presence verification discipline as §4f — retried via file transfer instead, which worked. Ran the full §4i validation checklist for real: `gh auth status` confirms ERDAgent, a real push (a disposable branch, not the live repo's actual history) succeeded with no prompt, and the negative test confirmed crew-scope pushes fail cleanly. GitHub push access is now fully live and empirically proven correctly scoped.
