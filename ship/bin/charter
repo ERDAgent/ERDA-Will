@@ -73,17 +73,34 @@ mkdir -p "$DIR"/{berths,.ship/orders,.ship/reports,.ship/log}
 cd "$DIR"
 
 # --- the hold: bare repo all berths hang off ---
+# An empty bare repo (whether git init --bare here, or a freshly
+# `gh repo create`d GitHub repo with zero commits -- confirmed this is
+# exactly what auto-create above produces) has no commits or branches at
+# all, so `worktree add ... main` below would fail with "invalid reference:
+# main". Lay the keel with an empty root commit whenever main doesn't exist
+# yet, pushing to origin too if there is one, so a freshly auto-created
+# GitHub repo isn't left empty either.
+lay_the_keel() {
+  local push_origin="$1"
+  local tmp
+  tmp="$(mktemp -d)"
+  git -C "$tmp" init -b main -q
+  git -C "$tmp" -c user.name=shipyard -c user.email=shipyard@local \
+    commit --allow-empty -q -m "lay the keel: charter $NAME"
+  git -C "$tmp" push -q "$DIR/.hold.git" main
+  [[ "$push_origin" == "1" ]] && git -C "$DIR/.hold.git" push -q origin main
+  rm -rf "$tmp"
+}
+
 if [[ -n "$URL" ]]; then
   git clone --bare "$URL" .hold.git
+  if ! git -C .hold.git show-ref --verify --quiet refs/heads/main; then
+    echo "remote repo has no commits yet -- laying the keel"
+    lay_the_keel 1
+  fi
 else
   git init --bare -b main .hold.git
-  # an empty bare repo has no commits; give it a home-port root commit
-  TMP="$(mktemp -d)"
-  git -C "$TMP" init -b main -q
-  git -C "$TMP" -c user.name=shipyard -c user.email=shipyard@local \
-    commit --allow-empty -q -m "lay the keel: charter $NAME"
-  git -C "$TMP" push -q "$DIR/.hold.git" main
-  rm -rf "$TMP"
+  lay_the_keel 0
 fi
 
 # home-port berth: a plain checkout of main for browsing / manual work
