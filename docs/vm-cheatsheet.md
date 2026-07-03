@@ -96,10 +96,29 @@ Fix: delete the cached image and relaunch.
 ## 2. Get in
 
 ```bash
-multipass info ship | grep -i ipv4     # note the IP
-ssh -i ~/.ssh/id_ed25519 eric@<ip>     # preferred — see the gotcha below
-multipass shell ship                   # Multipass's own shell, logs in as `ubuntu` not `eric`
+multipass info ship               # find the "IPv4:" line, e.g. 172.22.224.86
 ```
+
+Then **substitute that address** for `<ip>` below — don't paste `<ip>` literally, it's
+a placeholder, not something `ssh` understands (`Could not resolve hostname <ip>` means
+exactly that mistake happened):
+
+```
+ssh -i ~/.ssh/id_ed25519 eric@172.22.224.86
+```
+
+**Use `ssh eric@<ip>`, not `multipass shell ship`, for anything beyond a quick peek.**
+`multipass shell` is Multipass's own convenience shell and always logs in as the
+*default* `ubuntu` account, not `eric` — the user `keel.yaml` actually provisions, with
+the sudo rights and SSH key. This isn't just a different prompt: `ubuntu`'s home
+directory has no access into `/home/eric` (normal Linux permissions, not a bug), and
+since the agent CLIs (`pi`, `claude`, `codex`, `opencode`) are symlinked into
+`/usr/local/bin` pointing at binaries installed under `/home/eric/...`, **none of them
+resolve for `ubuntu`** — `command -v pi` will come back empty even though `fitout.sh`'s
+own end-of-run summary just listed it as installed. That's expected: `ubuntu` was never
+the intended operator, and every crew/muster interaction always runs as `eric`. Use
+`multipass shell ship` only to poke at the VM as Multipass sees it (disk usage, is it
+even booted) — do real work over `ssh eric@<ip>`.
 
 **Gotcha, found during the x86_64 drill**: `multipass exec` is unreliable for anything
 beyond a trivial one-shot command on the Hyper-V backend — a `bash -lc '...'` login-shell

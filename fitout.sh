@@ -143,9 +143,16 @@ done
 
 # fnm itself (for interactive Node-version switching) still needs a login
 # shell's PATH — /usr/local/bin above only covers the fixed set of CLIs.
+# /etc/profile.d/* is sourced by every user's login shell on the ship, not
+# just eric's -- `multipass shell` logs in as the default `ubuntu` user, and
+# without the -x guard below, ubuntu's login hit a bare "fnm: command not
+# found" (found by actually running `multipass shell ship`, not from reading
+# this script). $FNM_DIR only ever exists for eric (fnm is installed to
+# eric's home, once, by this script), so any other user should just silently
+# skip fnm activation rather than error.
 sudo tee /etc/profile.d/shipyard.sh > /dev/null <<EOF
 #!/bin/sh
-if [ -n "\$BASH_VERSION" ]; then
+if [ -n "\$BASH_VERSION" ] && [ -x "$FNM_DIR/fnm" ]; then
   export PATH="$FNM_DIR:\$PATH"
   eval "\$(fnm env --shell bash)"
 fi
