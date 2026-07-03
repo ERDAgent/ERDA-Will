@@ -5,8 +5,8 @@ Run install.ps1 on windows, or ASDF on mac/linux, or enable erda commands.
 From host OS
 
   - `erda christen [name] [cpus] [memory] [disk]`: launches a new ship.
-  - `erda board [ship]`: opens tmux connection.
-  - `erda open lockbox [ship]`: deploy the age key if needed, connect unlocked.
+  - `erda open lockbox [ship]`: deploys keys and connects to a ship.
+  - `erda board [ship]`: connects to a ship.
   - `erda anchor [ship]`: gracefully shuts down.
   - `erda force-anchor [ship]`: immediate shuts down, can corrupt a running instance.
   - `erda sail [ship]`: starts a ship.
