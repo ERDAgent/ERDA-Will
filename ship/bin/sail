@@ -19,9 +19,34 @@ GLYPHS="${SHIP_GLYPHS:-1}"
 g() { [[ "$GLYPHS" == "1" ]] && printf '%s ' "$1" || true; }
 
 if ! tmux has-session -t "=$SES" 2>/dev/null; then
-  # window 0 — bridge: the Captain (interactive pi). Falls back to a shell if pi absent.
-  BRIDGE_CMD="bash -lc 'cd \"$DIR/berths/home-port\" 2>/dev/null || cd \"$DIR\"; \
-    echo \"[bridge] charter: $NAME — start the Captain with: pi\"; exec bash'"
+  # resolve the real shipyard checkout even when invoked via the
+  # /usr/local/bin symlink fitout.sh sets up (readlink -f, not just
+  # dirname "${BASH_SOURCE[0]}", which would resolve to the symlink itself)
+  SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+  CAPTAIN_PROMPT="$SHIPYARD_DIR/ship/prompts/captain.md"
+  # Captain default matches crew's model routing (D5) but runs interactively
+  # (no -p) with captain.md's role contract appended. Without this a bare
+  # `pi` has no idea it's supposed to plan/muster/gate rather than code
+  # directly -- found on a real Captain session: pi introduced itself as a
+  # generic coding assistant, no awareness of the role at all. Override with
+  # SHIP_CAPTAIN_AGENT (avoid a literal single-quote in the value -- it
+  # splices into a single-quoted bash -lc string below).
+  CAPTAIN_CMD="${SHIP_CAPTAIN_AGENT:-pi --provider deepinfra --model zai-org/GLM-5.2 --thinking high --append-system-prompt $CAPTAIN_PROMPT}"
+
+  # window 0 — bridge: the Captain (interactive pi), started at the charter
+  # root ($DIR via -c below), not a berth. captain.md tells the Captain to
+  # read charter.md and .ship/mission.md via plain relative paths, and the
+  # Captain never writes code itself (crew.md's job) — so there's no berth to
+  # be in. Same class of relative-path bug as crew.md's report path (§4f),
+  # just never exercised here until a real Captain session hit it. Loads the
+  # strongbox first, same as muster's crew windows. Falls back to a plain
+  # shell if pi or captain.md are missing.
+  if command -v pi >/dev/null 2>&1 && [[ -f "$CAPTAIN_PROMPT" ]]; then
+    BRIDGE_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock)\"; \
+      echo \"[bridge] charter: $NAME — starting the Captain\"; exec $CAPTAIN_CMD'"
+  else
+    BRIDGE_CMD="bash -lc 'echo \"[bridge] charter: $NAME — pi or captain.md not found, dropping to a shell\"; exec bash'"
+  fi
   tmux new-session -d -s "$SES" -c "$DIR" -n "$(g ⚓)bridge" "$BRIDGE_CMD"
 
   # window 1 — chartroom: Scuttlebutt on .ship/ (falls back to watching the bus)
