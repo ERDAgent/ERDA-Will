@@ -22,13 +22,18 @@ Confirm the backend: `multipass get local.driver` → `hyperv` (Windows) or
 
 **Get a real SSH key ready** — `keel.yaml` ships with a placeholder
 (`REPLACE-ME-with-your-ssh-public-key`) in `ssh_authorized_keys`. Before launching, make
-a working copy with your real key substituted in:
+a working copy with your real key substituted in. Run this from **inside the repo**
+(`cd` to wherever you cloned `ERDA-Will` first — `keel.yaml` is at its root, not one
+level up):
 
 ```bash
 # bash/zsh/git-bash — never commit the substituted copy
+cd /path/to/ERDA-Will                 # e.g. cd /c/repos/ERDA-Will on Windows/git-bash
 PUBKEY=$(cat ~/.ssh/id_ed25519.pub)   # generate one first if you don't have it:
                                        #   ssh-keygen -t ed25519
 sed "s|REPLACE-ME-with-your-ssh-public-key|$PUBKEY|" keel.yaml > /tmp/keel-real.yaml
+grep ssh-ed25519 /tmp/keel-real.yaml  # sanity check: should print your real key,
+                                       # not the literal word REPLACE-ME
 ```
 
 ## 1. Launch (first provisioning)
