@@ -412,7 +412,7 @@ clean `multipass launch --cloud-init keel.yaml` first showed the identity missin
 `fitout.sh` directly and re-running it set the identity correctly and the `fd` fix
 from §4g still held. Test ship destroyed after.
 
-## 4i. gh CLI + captain-scoped GitHub access (July 2, 2026) — WRITTEN OFF-SHIP, NEEDS ON-SHIP VALIDATION
+## 4i. gh CLI + captain-scoped GitHub access (July 2, 2026) — patch applied and on-ship validated (items 1–2); real push (3–4) blocked on the operator PAT
 
 Origin: the Captain's maiden-voyage review ("the outstanding charter change I have
 clearance for but couldn't execute: GitHub origin... I'll wire the origin: line and any
@@ -444,16 +444,36 @@ mint the fine-grained PAT on ERDAgent (charter repos only, Contents RW), grant
 ERDAgent write on charter repos not already under the org, encrypt to
 `captain.env.age`, commit.
 
-**On-ship validation checklist (Claude Code, next session aboard):**
-1. Fresh ship from keel: gh installs on both arches; `fitout.sh` still idempotent
-   (second run fast, no-op); shellcheck the three touched scripts.
-2. `eval "$(unlock)"` in a crew-shaped context: DEEPINFRA_API_KEY present, GH_TOKEN
-   ABSENT. `eval "$(unlock captain)"`: both present; `gh auth status` reports ERDAgent.
-3. Real push: scratch charter cloned from a real ERDAgent repo, crew work through dry
-   dock, then from the bridge push `integration` — verify the push authenticates via
-   the credential helper with no interactive prompt.
-4. Negative test: from a crew window (crew scope), `git push` must FAIL auth. If it
-   somehow succeeds, something is leaking the token — stop and find it.
+**On-ship validation checklist — results (July 2, 2026, Claude Code, against the real
+Windows/Hyper-V ship, not a fresh one — reused deliberately to also prove the patch's
+own idempotency claim on a ship with prior state):**
+
+1. **Done.** `git am`'d cleanly (no conflicts). `gh` installed (x86_64; arm64 not
+   re-tested this session, apt-arch selection is mechanical via `dpkg
+   --print-architecture` so low risk). `fitout.sh` re-run: first run 5.9s (installs
+   gh), second run 1.5s, true no-op. Shellcheck on all three touched files: clean,
+   only the same pre-existing SC2015 info note in `sail` from before this patch.
+2. **Done**, and found one real gap the patch itself missed while checking it:
+   `fitout.sh`'s own end-of-run strongbox verification still only checked
+   `keys.env.age`, with no awareness `captain.env.age` exists — fixed in f0063f9
+   (compartment-aware verification, doesn't block one compartment on the other).
+   Confirmed directly: `eval "$(unlock)"` → `DEEPINFRA_API_KEY` len 32, `GH_TOKEN` len
+   0. `eval "$(unlock captain)"` → same `DEEPINFRA_API_KEY`, `GH_TOKEN` still len 0
+   (correct — no `captain.env.age` exists yet, and that's explicitly not an error for
+   captain scope). Invalid scope name errors cleanly. Credential helper confirmed set
+   for both `github.com` and `gist.github.com`. `gh auth status` with no token: clean
+   "not logged in" message, exit 1, no crash, no `gh auth login` state written.
+3. **Blocked on the operator step** — no real PAT exists yet (`strongbox/captain.env.age`
+   not present, checked directly). Structurally confirmed instead: `muster`'s
+   `.crew-run.sh` is untouched by the patch and still calls plain `eval "$(unlock)"`
+   (crew scope) — by construction, crew windows never request the captain compartment,
+   so there's no code path where GH_TOKEN reaches one even once a real token exists.
+4. **Blocked on the same operator step** — nothing to leak yet; the real negative test
+   (attempt a push from a crew window with a real token loaded elsewhere) needs to wait
+   until 3 is unblocked.
+
+Next session aboard, once `strongbox/captain.env.age` exists: re-run 3–4 for real, then
+revisit the deferred items below.
 
 **Deferred to the Captain's next voyage (per its own review):** wiring `origin:` into
 charter.md for existing charters and any push-on-integrate behavior. One policy
@@ -507,3 +527,4 @@ Next up, in rough priority order:
 - v4 (Claude Code, July 1–2, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e. DeepInfra wiring done and verified with a real crew agent completing real work end-to-end (model slug, `models.json`, strongbox populated, four more real bugs found and fixed: DeepInfra's 422 on the `developer` role, `muster` never loading the strongbox, `crew.md` never reaching `pi`, and the ambiguous report path) — see §4f.
 - v5 (Claude Code, July 2, 2026): x86_64 validation done on Eric's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.
 - v6 (Claude Code, July 2, 2026): Eric set direction — D12 (local Multipass only, OVHcloud deferred until he's confirmed reproducibility himself) and D13 (ship git identity = ERDAgent/agentic@ericrose.dev, separate from his personal account). Implemented D13 in `fitout.sh`, verified on a fresh ship. Wrote `docs/vm-cheatsheet.md`: full manual Multipass lifecycle (launch/stop/start/suspend/snapshot/restore/clone/transfer/destroy) with no Claude Code or `ship/bin/*` dependency, verified against real `multipass help` output — supports Eric's stated goal of being able to run this without Claude Code on the bare-metal host. See §4h.
+- v7 (Claude Code, July 2, 2026): Eric drove the cheatsheet himself end-to-end (found and reported: a Windows-checkout PATH copy-paste slip, PowerShell vs bash syntax gaps in the cheatsheet, the ubuntu-login fnm error, a literal `<ip>` paste). Fixed all of it live against his running ship, plus two real bugs found via his first actual Captain session: the bridge never wired `captain.md` into `pi` at all (fixed — see sail's `CAPTAIN_CMD`), and the bridge started inside a berth instead of the charter root, breaking `charter.md`/`mission.md`'s relative paths (fixed by starting at `$DIR`). Enabled tmux OSC 52 clipboard passthrough (host↔VM copy/paste). Wrote three more docs at Eric's request: `docs/captain-cheatsheet.md` (how to talk to the Captain), `docs/system-overview.md` (all roles + how they interact), `docs/git-and-github.md` (verified directly: charter never creates remote repos, nothing currently pushes to GitHub, no push credentials existed on the ship at all). Eric then ran a real maiden voyage (3/3 crew tasks done first-try, a Vue dice-roller app, clean dry-dock merge) and got a structured Captain review; implemented its headless-browser suggestion (Playwright, verified with a real screenshot, found and fixed the same non-login-PATH gap class for the `playwright` binary), and explicitly declined its `allow-scripts=true` suggestion (conflicts with `CLAUDE.md`'s `--ignore-scripts` hard rule; likely not even a real npm config key). Applied `gh-captain-access.patch` from a separate claude.ai planning session (D14/D15: two-compartment strongbox so crew can structurally never hold `GH_TOKEN`) via `git am`, found and fixed one gap the patch itself missed (`fitout.sh`'s strongbox verification wasn't compartment-aware), and validated everything on the real ship except the actual push test — blocked on Eric minting the PAT. See §4h (partial), captain-prompt/bridge-cwd fix, and §4i.
