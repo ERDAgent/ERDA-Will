@@ -39,6 +39,7 @@ A portable Linux dev environment (VM bootable identically on macOS, Windows, and
 | D13 | Ship's automated/crew git identity = `ERDAgent` / `agentic@ericrose.dev`, set unconditionally by `fitout.sh` | Eric's explicit call (July 2, 2026): keep the ship's own commits (crew agents, and anything Claude Code commits while working aboard) under the dedicated ERDAgentic GitHub account, separate from his personal EricRoseDev identity. Resolves the gap flagged in §4g (no ship had *any* default git identity, so crew commits failed outright) |
 | D14 | GitHub access via gh CLI + `GH_TOKEN` fine-grained PAT (ERDAgent account) in the strongbox; NO `gh auth login` state on disk | Eric's call (July 2, 2026), from the Captain's maiden-voyage review. Env-var auth is headless, rotates by re-encrypting one file, and inherits the strongbox's existing trust model. PAT scoped to charter repos only, Contents RW (see strongbox/README.md) |
 | D15 | Two-compartment strongbox: `keys.env.age` (crew scope: model keys) + `captain.env.age` (captain scope: GH_TOKEN). `unlock` defaults to crew; only sail's bridge window loads `unlock captain` | Push credentials must never reach crew agents — D10's "crew never push" becomes a capability boundary instead of a prompt rule. Muster's crew windows call plain `unlock` (unchanged, back-compatible) and get model keys only |
+| D16 | Fleet naming + the one-charter-one-ship rule. Ship classes: Flagship (Will-class virtue names: resolve, endeavour, tenacity…), Skiff (`skiff-<purpose>`, purged same day), Named vessel (client isolation). A charter resides on exactly ONE ship at a time; it may move (push → purge → re-charter) but never live on two | Eric's call (July 2, 2026), with the name lore recorded: ERDA = EricRoseDevAgent, Will = the impetus — "the will of the people that drives the navy to sail." The residency rule became load-bearing the moment D14 gave ships push credentials: two Captains on one charter = push races on integration/main. keel.yaml verified name-agnostic, so multi-ship needs zero code changes — this is convention + docs only |
 
 ## 3. Facts verified during planning (with as-of dates)
 
@@ -481,6 +482,15 @@ decision for Eric before enabling auto-push of `main` on client charters (e.g. R
 Guest): auto-push both integration and main post-gate, or main-via-PR for
 client-facing repos? Branch protection on GitHub is also worth setting either way
 (at minimum: no force pushes). Not decided — flagged, not guessed.
+
+## 4j. Fleet naming + multi-ship docs (July 2, 2026) — docs only, no code
+
+keel.yaml verified name-agnostic (nothing in keel or fitout depends on the instance
+name — "ship" was only ever the cheatsheet's example). Added `docs/vm-cheatsheet.md`
+§8 (multi-ship mechanics, naming classes, unique-name/purge gotcha, per-ship resource
+note) and the D16 one-charter-one-ship rule with its rationale. CLAUDE.md vocabulary
+extended (The Will, ship classes). No script changes; nothing to validate on-ship
+beyond reading.
 
 ## 5. NEXT TASK
 

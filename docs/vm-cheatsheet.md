@@ -271,3 +271,43 @@ not oversight:
   `fitout.sh` on every launch, unconditionally and idempotently. A fresh `multipass
   launch --cloud-init keel.yaml` should need nothing beyond the two steps above to be
   fully usable.
+
+## 8. Sailing multiple ships
+
+`keel.yaml` is name-agnostic — nothing in it or `fitout.sh` depends on the
+instance name, so the fleet scales by just launching again:
+
+```
+multipass launch 24.04 --name resolve --cloud-init keel.yaml
+```
+
+Every ship is fully self-contained (own `~/fleet/`, own tmux server, own
+strongbox unlock step). Multipass sets the VM hostname to the instance name,
+and the deck's status bar shows `#H` — so every tmux session already displays
+which ship you're standing on.
+
+### Naming (D16): the Will class
+
+| Class | Purpose | Lifecycle | Naming |
+|---|---|---|---|
+| **Flagship** | Daily driver, one per harbor | Long-lived | Will-class virtues: `resolve`, `endeavour`, `tenacity`, `grit`… (ERDA-**Will** is the class namesake: the impetus that drives the navy to sail) |
+| **Skiff** | Drill / test / scratch | Launch, use, `delete --purge` same day | `skiff-<purpose>`: `skiff-drill`, `skiff-x86`, `skiff-shellcheck` |
+| **Named vessel** | Hard-isolation ships (a client whose secrets warrant their own hull — the D8 exception) | Life of the engagement | client-evocative, e.g. `palm-court` |
+
+Gotchas:
+- Instance names must be unique per harbor **including deleted-but-unpurged
+  instances** — `multipass list` shows `Deleted` entries; `multipass purge`
+  frees their names.
+- Each ship defaults to real RAM/disk. Check headroom before a second
+  flagship on a laptop; skiffs can launch smaller (`--memory 4G --disk 20G`).
+
+### The one-charter-one-ship rule (D16, load-bearing)
+
+A charter must **reside on exactly one ship at a time**. Nothing technically
+prevents chartering the same repo on two ships — but that is two Captains on
+one charter, and now that ships hold push credentials (D14), it is two agents
+racing pushes to the same `integration`/`main`. Charters may *move* ships
+freely (push everything → `delete --purge` → `charter` again elsewhere —
+that's the portability working as intended); they must never *live* on two
+at once. Before chartering on a new ship, be sure the old berth is gone or
+was never there.
