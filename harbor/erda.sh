@@ -6,6 +6,7 @@
 #                                             command (run once per machine, or
 #                                             again after moving/updating the repo)
 #   christen [name] [cpus] [memory] [disk]   launch a new ship
+#   strongbox <init|backup|restore>          manage the local age keypair (see below)
 #   board [ship]                             connect: multipass info + ssh in
 #   open lockbox [ship]                      deploy the age key if needed, connect
 #                                             with the strongbox already unlocked
@@ -53,6 +54,9 @@ usage() {
 usage: erda <command> [ship] [args...]
   install                                   wire up `erda` as a global command (run once)
   christen [name] [cpus] [memory] [disk]    launch a new ship
+  strongbox init                            generate a new keypair + encrypt secrets
+  strongbox backup <path>                   copy ship.key to a path of your choosing
+  strongbox restore <path>                  copy ship.key back from a path
   board [ship]                              connect (multipass info + ssh)
   open lockbox [ship]                       deploy the age key if needed, connect unlocked
   anchor [ship]                             stop
@@ -193,6 +197,97 @@ cmd_christen() {
   echo "'$name' is ready: ssh -i $SSH_PRIV eric@$ip"
 }
 
+# strongbox — manage the local age keypair (strongbox/ship.key) and the
+# encrypted secret bundles it decrypts. `ship.key` is host-side, permanent
+# infrastructure -- it has nothing to do with any one ship instance, so
+# sinking a ship never touches it and losing it is NOT recoverable by
+# generating a new one (the existing keys.env.age/captain.env.age were
+# encrypted to the OLD key's public half specifically). Back it up.
+cmd_strongbox() {
+  local sub="${1:-}"
+  [[ $# -gt 0 ]] && shift
+  local key_path="$REPO_ROOT/strongbox/ship.key"
+
+  case "$sub" in
+    init)
+      if [[ -f "$key_path" ]]; then
+        echo "strongbox: $key_path already exists." >&2
+        echo "  Overwriting it orphans anything already encrypted with the old key" >&2
+        echo "  (keys.env.age / captain.env.age would become permanently undecryptable)." >&2
+        read -rp "  Type 'overwrite' to replace it anyway: " CONFIRM
+        [[ "$CONFIRM" == "overwrite" ]] || { echo "cancelled." >&2; exit 1; }
+      fi
+
+      command -v age-keygen >/dev/null 2>&1 || { echo "strongbox: 'age' isn't installed on this machine (brew install age)" >&2; exit 1; }
+      age-keygen -o "$key_path" 2>&1 | grep -v '^$' || true
+      chmod 600 "$key_path"
+      local recipient
+      recipient="$(grep -o 'age1.*' "$key_path")"
+      echo "generated $key_path"
+
+      echo
+      read -rs -p "DEEPINFRA_API_KEY (input hidden): " DEEPINFRA_API_KEY
+      echo
+      [[ -n "$DEEPINFRA_API_KEY" ]] || { echo "strongbox: empty value entered, aborting" >&2; exit 1; }
+      printf 'DEEPINFRA_API_KEY=%s\n' "$DEEPINFRA_API_KEY" | age -r "$recipient" -o "$REPO_ROOT/strongbox/keys.env.age" -
+      local keys_len
+      keys_len="$(age -d -i "$key_path" "$REPO_ROOT/strongbox/keys.env.age" | wc -c | tr -d ' ')"
+      echo "wrote keys.env.age (decrypts to $keys_len bytes)"
+
+      echo
+      read -rp "Also set up the captain compartment (GH_TOKEN) now? [y/N] " ADD_GH
+      if [[ "$ADD_GH" =~ ^[Yy]$ ]]; then
+        read -rs -p "GH_TOKEN (input hidden): " GH_TOKEN
+        echo
+        [[ -n "$GH_TOKEN" ]] || { echo "strongbox: empty value entered, skipping captain compartment" >&2; }
+        if [[ -n "${GH_TOKEN:-}" ]]; then
+          printf 'GH_TOKEN=%s\n' "$GH_TOKEN" | age -r "$recipient" -o "$REPO_ROOT/strongbox/captain.env.age" -
+          local captain_len
+          captain_len="$(age -d -i "$key_path" "$REPO_ROOT/strongbox/captain.env.age" | wc -c | tr -d ' ')"
+          echo "wrote captain.env.age (decrypts to $captain_len bytes)"
+        fi
+      fi
+
+      echo
+      echo "strongbox initialized. Back up $key_path now: erda strongbox backup <path>"
+      echo "(without a backup, losing this file again means repeating this whole process)"
+      ;;
+
+    backup)
+      local dest="${1:-}"
+      [[ -n "$dest" ]] || { echo "usage: erda strongbox backup <destination-path>" >&2; exit 1; }
+      [[ -f "$key_path" ]] || { echo "strongbox: no local $key_path to back up" >&2; exit 1; }
+      [[ -d "$dest" ]] && dest="$dest/ship.key"
+      cp "$key_path" "$dest"
+      chmod 600 "$dest" 2>/dev/null || true
+      echo "backed up $key_path -> $dest"
+      echo "keep this somewhere durable and private (password manager, encrypted drive, etc.) — it's the only copy outside this machine."
+      ;;
+
+    restore)
+      local src="${1:-}"
+      [[ -n "$src" ]] || { echo "usage: erda strongbox restore <source-path>" >&2; exit 1; }
+      [[ -f "$src" ]] || { echo "strongbox: no file at $src" >&2; exit 1; }
+      if [[ -f "$key_path" ]]; then
+        read -rp "strongbox: $key_path already exists. Type 'overwrite' to replace it: " CONFIRM
+        [[ "$CONFIRM" == "overwrite" ]] || { echo "cancelled." >&2; exit 1; }
+      fi
+      cp "$src" "$key_path"
+      chmod 600 "$key_path"
+      echo "restored $key_path from $src"
+      echo "verify with: erda open lockbox <ship>"
+      ;;
+
+    *)
+      echo "usage: erda strongbox <init|backup|restore> [args...]" >&2
+      echo "  init                 generate a new keypair + encrypt DEEPINFRA_API_KEY (and optionally GH_TOKEN)" >&2
+      echo "  backup <path>        copy ship.key to a path of your choosing" >&2
+      echo "  restore <path>       copy ship.key back from a path of your choosing" >&2
+      exit 1
+      ;;
+  esac
+}
+
 CMD="${1:-}"
 [[ $# -gt 0 ]] && shift
 
@@ -203,6 +298,10 @@ case "$CMD" in
 
   christen)
     cmd_christen "$@"
+    ;;
+
+  strongbox)
+    cmd_strongbox "$@"
     ;;
 
   board)

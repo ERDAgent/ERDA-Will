@@ -8,6 +8,7 @@
                                               command (run once per machine, or
                                               again after moving/updating the repo)
     christen [name] [cpus] [memory] [disk]   launch a new ship
+    strongbox <init|backup|restore>          manage the local age keypair (see below)
     board [ship]                             connect: multipass info + ssh in
     open lockbox [ship]                      deploy the age key if needed, connect
                                               with the strongbox already unlocked
@@ -66,6 +67,9 @@ $Usage = @"
 usage: erda <command> [ship] [args...]
   install                                   wire up `erda` as a global command (run once)
   christen [name] [cpus] [memory] [disk]    launch a new ship
+  strongbox init                            generate a new keypair + encrypt secrets
+  strongbox backup <path>                   copy ship.key to a path of your choosing
+  strongbox restore <path>                  copy ship.key back from a path
   board [ship]                              connect (multipass info + ssh)
   open lockbox [ship]                       deploy the age key if needed, connect unlocked
   anchor [ship]                             stop
@@ -253,6 +257,103 @@ function Invoke-Christen {
   Write-Host "'$Name' is ready: ssh -i $SshPriv eric@$Ip"
 }
 
+# strongbox — manage the local age keypair (strongbox\ship.key) and the
+# encrypted secret bundles it decrypts. ship.key is host-side, permanent
+# infrastructure -- it has nothing to do with any one ship instance, so
+# sinking a ship never touches it and losing it is NOT recoverable by
+# generating a new one (the existing keys.env.age/captain.env.age were
+# encrypted to the OLD key's public half specifically). Back it up.
+function Invoke-Strongbox {
+  param(
+    [Parameter(Position=0)] [string]$Sub,
+    [Parameter(ValueFromRemainingArguments=$true)] [string[]]$SubArgs = @()
+  )
+
+  # See Invoke-Christen's note on $ErrorActionPreference: age-keygen writes
+  # its "Public key: ..." line to stderr by design, and redirecting that
+  # (2>&1 below) while Stop is active would turn it into a terminating
+  # exception under PowerShell 5.1. Shadowed locally only for this call.
+  $ErrorActionPreference = "Continue"
+
+  $KeyPath = Join-Path $RepoRoot "strongbox\ship.key"
+
+  switch ($Sub) {
+    "init" {
+      if (Test-Path $KeyPath) {
+        Write-Warning "strongbox: $KeyPath already exists."
+        Write-Warning "  Overwriting it orphans anything already encrypted with the old key"
+        Write-Warning "  (keys.env.age / captain.env.age would become permanently undecryptable)."
+        $Confirm = Read-Host "  Type 'overwrite' to replace it anyway"
+        if ($Confirm -ne "overwrite") { Write-Host "cancelled."; exit 1 }
+      }
+
+      if (-not (Get-Command age-keygen -ErrorAction SilentlyContinue)) {
+        Write-Error "strongbox: 'age' isn't installed on this machine"
+        exit 1
+      }
+      & age-keygen -o $KeyPath 2>&1 | Out-Null
+      Write-Host "generated $KeyPath"
+      $Recipient = (Get-Content $KeyPath | Select-String "age1").ToString().Trim()
+
+      Write-Host ""
+      $DeepInfraKey = Read-Host "DEEPINFRA_API_KEY (input hidden)" -AsSecureString
+      $PlainDeepInfra = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DeepInfraKey))
+      if (-not $PlainDeepInfra) { Write-Error "strongbox: empty value entered, aborting"; exit 1 }
+      $KeysEnvPath = Join-Path $RepoRoot "strongbox\keys.env.age"
+      "DEEPINFRA_API_KEY=$PlainDeepInfra" | & age -r $Recipient -o $KeysEnvPath -
+      $KeysLen = (& age -d -i $KeyPath $KeysEnvPath | Measure-Object -Character).Characters
+      Write-Host "wrote keys.env.age (decrypts to $KeysLen bytes)"
+
+      Write-Host ""
+      $AddGh = Read-Host "Also set up the captain compartment (GH_TOKEN) now? [y/N]"
+      if ($AddGh -match '^[Yy]$') {
+        $GhToken = Read-Host "GH_TOKEN (input hidden)" -AsSecureString
+        $PlainGh = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($GhToken))
+        if (-not $PlainGh) {
+          Write-Warning "strongbox: empty value entered, skipping captain compartment"
+        } else {
+          $CaptainEnvPath = Join-Path $RepoRoot "strongbox\captain.env.age"
+          "GH_TOKEN=$PlainGh" | & age -r $Recipient -o $CaptainEnvPath -
+          $CaptainLen = (& age -d -i $KeyPath $CaptainEnvPath | Measure-Object -Character).Characters
+          Write-Host "wrote captain.env.age (decrypts to $CaptainLen bytes)"
+        }
+      }
+
+      Write-Host ""
+      Write-Host "strongbox initialized. Back up $KeyPath now: erda strongbox backup <path>"
+      Write-Host "(without a backup, losing this file again means repeating this whole process)"
+    }
+
+    "backup" {
+      $Dest = if ($SubArgs.Count -ge 1) { $SubArgs[0] } else { $null }
+      if (-not $Dest) { Write-Error "usage: erda strongbox backup <destination-path>"; exit 1 }
+      if (-not (Test-Path $KeyPath)) { Write-Error "strongbox: no local $KeyPath to back up"; exit 1 }
+      if (Test-Path $Dest -PathType Container) { $Dest = Join-Path $Dest "ship.key" }
+      Copy-Item -Path $KeyPath -Destination $Dest -Force
+      Write-Host "backed up $KeyPath -> $Dest"
+      Write-Host "keep this somewhere durable and private (password manager, encrypted drive, etc.) -- it's the only copy outside this machine."
+    }
+
+    "restore" {
+      $Src = if ($SubArgs.Count -ge 1) { $SubArgs[0] } else { $null }
+      if (-not $Src) { Write-Error "usage: erda strongbox restore <source-path>"; exit 1 }
+      if (-not (Test-Path $Src)) { Write-Error "strongbox: no file at $Src"; exit 1 }
+      if (Test-Path $KeyPath) {
+        $Confirm = Read-Host "strongbox: $KeyPath already exists. Type 'overwrite' to replace it"
+        if ($Confirm -ne "overwrite") { Write-Host "cancelled."; exit 1 }
+      }
+      Copy-Item -Path $Src -Destination $KeyPath -Force
+      Write-Host "restored $KeyPath from $Src"
+      Write-Host "verify with: erda open lockbox <ship>"
+    }
+
+    default {
+      Write-Error "usage: erda strongbox <init|backup|restore> [args...]"
+      exit 1
+    }
+  }
+}
+
 if ([string]::IsNullOrEmpty($Command)) {
   Write-Host $Usage
   exit 1
@@ -265,6 +366,10 @@ switch ($Command) {
 
   "christen" {
     Invoke-Christen @Rest
+  }
+
+  "strongbox" {
+    Invoke-Strongbox @Rest
   }
 
   "board" {

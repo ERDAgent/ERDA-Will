@@ -791,6 +791,68 @@ git (`100755`, learned the hard way in §4n's v14 filemode bug). Updated
 standalone scripts; confirmed no other doc had stale references. `harbor/` is now
 exactly `erda.sh`, `erda.ps1`, `install.cmd` — three files instead of seven.
 
+## 4q. Lost `strongbox/ship.key`, recovered, and built `erda strongbox init/backup/restore` (July 3, 2026)
+
+Eric ran `erda open lockbox` on a freshly-christened ship and got `no local
+strongbox/ship.key -- generate/place it first`. Root cause: `ship.key` (the private
+half of the age keypair, gitignored, host-side only per §4f) was gone from disk —
+confirmed not in `~/.Trash`, never in git history (correctly, always gitignored), and
+not present on any running ship. Likely cause: Eric sunk an old ship (`erda sink`) and,
+reasonably given the name, assumed `ship.key` was scoped to that specific ship and
+deleted it as cleanup — it isn't; it's host-side infrastructure independent of any one
+ship, and `erda sink` (which only runs `multipass delete --purge`) has no way to touch
+a file on the host filesystem at all. This is a real naming/mental-model trap worth
+guarding against, not just a one-off mistake.
+
+Losing `ship.key` is **not** recoverable by generating a new one: `keys.env.age`/
+`captain.env.age` were encrypted specifically to the old key's public half, so a new
+key can't decrypt them — the only path forward is regenerating the keypair and
+re-encrypting fresh copies of every secret (meaning the underlying credential values
+themselves have to be re-obtained, since GitHub in particular never shows an existing
+PAT again after creation).
+
+**Recovered**: Eric ran the new `erda strongbox init` (built this session, see below)
+in a real terminal — generated a fresh keypair, re-entered `DEEPINFRA_API_KEY` (still
+retrievable from DeepInfra's dashboard) and a newly-minted `GH_TOKEN` PAT. Verified
+both decrypt correctly and to the *exact* expected byte lengths from earlier in this
+session (32 and 93 respectively) — strong evidence these are the same real values, not
+just non-empty placeholders. `gh auth status` under `unlock captain` confirmed ERDAgent.
+
+**Found one more real bug during recovery verification, not the tooling's fault**: the
+already-running test ship still failed `unlock captain` with `age: error: no identity
+matched any of the recipients` even after the new key was deployed to it. Cause: the
+ship's own git checkout (`~/shipyard`) carried its *own* copy of `strongbox/*.env.age`,
+cloned before the key was regenerated — so it had the *old* encrypted bundles paired
+with the *new* private key, a structural mismatch. Not a bug in `open lockbox` (which
+correctly deploys the key when missing) — it's a real gap in the mental model that
+`strongbox/README.md` now documents explicitly: the `.env.age` files travel with the
+git repo, the key doesn't, and regenerating the key orphans every ship whose checkout
+predates that regeneration until they `git pull`. Fixed for this session's test ship by
+copying the fresh `.env.age` files directly (it was disposable); documented the general
+fix (commit + push + `git pull` on affected ships) in `strongbox/README.md` rather than
+scripting around it, since it's a one-time consequence of key rotation, not a
+steady-state operation worth automating yet.
+
+Built, at Eric's request ("add any tooling possible to make this easy next time"):
+`erda strongbox init` (generates the keypair, prompts for both secrets with hidden
+input, encrypts, verifies non-empty by exact byte count — folding the whole
+previously-manual `strongbox/README.md` recipe, including the byte-length-not-presence
+discipline from §4f, into one guided command; refuses to silently overwrite an
+existing key) and `erda strongbox backup <path>` / `erda strongbox restore <path>`
+(plain file copy to/from a path of the operator's choosing — deliberately no assumed
+cloud/vault provider, matching this project's existing plain-files philosophy, per
+Eric's explicit choice of this over a macOS-Keychain-integrated alternative). Added to
+both `erda.sh` and `erda.ps1` for parity with every other command; the PowerShell
+version needed the same `$ErrorActionPreference` care as `Invoke-Christen` (`age-keygen`
+writes its "Public key: ..." line to stderr, which redirecting under the script's
+global `Stop` preference would turn into a terminating exception on PowerShell 5.1) —
+caught before it shipped, not after, by re-checking against that established pattern
+rather than assuming a new function was exempt. Shellcheck clean; PowerShell version
+reviewed carefully by hand (no `pwsh` available on this host to execute it directly).
+`strongbox/README.md` rewritten to lead with the new tooling and to state the
+host-side/ship-independent nature of `ship.key` explicitly, plus the checkout-staleness
+gotcha found above.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -849,3 +911,4 @@ Next up, in rough priority order:
 - v14 (Claude Code, July 3, 2026): Eric hit "Permission denied" on `captain` from a freshly christened ship — found the real cause (`ship/bin/captain` and three `harbor/*.sh` files were committed with mode 644, not 755, since this repo has `core.fileMode=false` and `chmod +x` on a brand-new file before `git add` has no effect under that setting), fixed with `git update-index --chmod=+x` on all four, and hotfixed Eric's live ship directly so he didn't need to re-christen. Then walked Eric through minting the broader-scoped GH_TOKEN for real: he considered a two-token split to protect ERDA-Will from the creation-scoped token, which turned out not to actually work (fine-grained PATs' repo list can't be updated by automation, so a creation token needs content access too) — he chose the single broader token knowingly once that was clear. First live test with the working token immediately surfaced a second real bug (freshly created GitHub repos are empty, `charter` assumed otherwise) — fixed and verified end-to-end, including a regression check against the real non-empty ERDA-Will repo. `captain charter` with auto-create is now genuinely fully working. See §4n.
 - v15 (Claude Code, July 3, 2026): Eric asked to re-drill the whole system on this Mac since a lot had landed since the last real macOS test. Full drill passed end-to-end: `erda` global install, `christen`, all agent CLIs + `fitout.sh` idempotency + git identity, the rest of the `erda` command surface, and a real charter → sail → hand-written order → `muster` with real `pi`/GLM-5.2 → manual dry-dock merge → fast-forward `main`, all against a real ship. Found and fixed a real bug: `ship_ip()` in `erda.sh`/`erda.ps1` (and, defensively, both `christen` wait-loops) accepted multipass's `--` placeholder (shown for a stopped/mid-restart instance) as a valid IP, since it only checked non-empty — caused a confusing `ssh: hostname contains invalid characters` instead of erda's own clear not-running message; fixed by requiring a real dotted-quad match in all four spots, shellcheck clean. Also hit a real `multipassd` hang on this host (stuck mid-`resail`/restart, needed two rounds of `sudo launchctl kickstart` plus killing an orphaned qemu process holding a disk lock — all needed Eric directly, since sudo needs a real TTY this tool doesn't have) — root-caused to a Multipass/qemu-on-macOS quirk, not a repo bug; the wedged test VM was purged and redrilled clean rather than debugged further, matching this project's own disposable-ship convention. See §4o.
 - v16 (Claude Code, July 3, 2026): Eric asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.
+- v17 (Claude Code, July 3, 2026): Eric lost `strongbox/ship.key` (likely deleted along with an old ship, reasonably but incorrectly assuming it was ship-scoped — it's host-side infrastructure, `erda sink` can't touch it) and, since the committed `.env.age` files were encrypted to that specific key, recovery meant regenerating the keypair and re-entering both secrets, not just making a new key. Walked Eric through the recovery in a real terminal (secrets need hidden interactive input my tools can't capture) and verified it worked via exact byte-length match against earlier-session values (32/93 bytes) plus a real `gh auth status`. Found one more real bug during verification: the test ship's own git checkout still had the *old* encrypted bundles (cloned before the key rotation), so `unlock` failed with a recipient mismatch even after the new key was deployed — not a script bug, a genuine gap in the mental model (the `.env.age` files travel with the repo, the key doesn't) now documented in `strongbox/README.md`. Built `erda strongbox init/backup/restore` (both `erda.sh` and `erda.ps1`) at Eric's request to make this recoverable/preventable next time — `init` folds the whole manual README recipe into one guided command with the same byte-length verification discipline as §4f, `backup`/`restore` are plain path-based file copies with no assumed cloud/vault provider (Eric's explicit choice over a macOS-Keychain-integrated alternative). Caught a real PowerShell 5.1 footgun in the new `Invoke-Strongbox` before it shipped (`age-keygen`'s stderr output redirected under the script's global `$ErrorActionPreference = "Stop"`) by checking it against the same pattern `Invoke-Christen` already had to work around. See §4q.
