@@ -1,14 +1,15 @@
 <#
 .SYNOPSIS
-  install — wire up harbor/* commands (currently: christen) as global shell
-  commands, so you can type `christen` from any directory.
+  install — wire up `erda` (harbor/erda.ps1, the command dispatcher for all
+  harbor/* operations: christen, board, open lockbox, anchor, sail, ...) as
+  a global shell command, so you can type `erda <command>` from anywhere.
 .DESCRIPTION
-  This is the reproducibility story for "just typing christen from anywhere":
+  This is the reproducibility story for "just typing erda from anywhere":
   PATH and PowerShell profile changes are per-machine state that git can't
   carry across computers, so instead of asking you to hand-edit your profile,
   the setup step itself lives in this repo. On a fresh machine: clone the
   repo, run this script once, restart your terminal (or dot-source $PROFILE).
-  `christen` then works globally, permanently, on that machine.
+  `erda` then works globally, permanently, on that machine.
 
   Idempotent: re-running (e.g. after moving the repo to a new path, or after
   pulling an updated harbor/) replaces the previously-installed block rather
@@ -32,7 +33,7 @@ $ErrorActionPreference = "Stop"
 # other accounts or require admin rights.
 $CurrentUserPolicy = Get-ExecutionPolicy -Scope CurrentUser
 if ($CurrentUserPolicy -in @("Restricted", "AllSigned", "Undefined")) {
-  Write-Host "setting your execution policy to RemoteSigned (needed to run local scripts like christen)..."
+  Write-Host "setting your execution policy to RemoteSigned (needed to run local scripts like erda)..."
   try {
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
   } catch {
@@ -42,14 +43,14 @@ if ($CurrentUserPolicy -in @("Restricted", "AllSigned", "Undefined")) {
 }
 $EffectivePolicy = Get-ExecutionPolicy
 if ($EffectivePolicy -in @("Restricted", "AllSigned")) {
-  Write-Warning "effective execution policy is still $EffectivePolicy -- christen may not run yet."
+  Write-Warning "effective execution policy is still $EffectivePolicy -- erda may not run yet."
   Write-Warning "run 'Get-ExecutionPolicy -List' to see what's overriding CurrentUser (likely MachinePolicy or UserPolicy via Group Policy)."
 }
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$ChristenPath = Join-Path $RepoRoot "harbor\christen.ps1"
-if (-not (Test-Path $ChristenPath)) {
-  Write-Error "install: expected $ChristenPath to exist -- run this from a real ERDA-Will checkout"
+$ErdaPath = Join-Path $RepoRoot "harbor\erda.ps1"
+if (-not (Test-Path $ErdaPath)) {
+  Write-Error "install: expected $ErdaPath to exist -- run this from a real ERDA-Will checkout"
   exit 1
 }
 
@@ -59,7 +60,7 @@ if (-not (Test-Path $PROFILE)) {
 
 $MarkerStart = "# --- ERDA-Will harbor commands (managed by harbor/install.ps1) ---"
 $MarkerEnd = "# --- end ERDA-Will harbor commands ---"
-$Block = "$MarkerStart`nfunction christen { & `"$ChristenPath`" @args }`n$MarkerEnd"
+$Block = "$MarkerStart`nfunction erda { & `"$ErdaPath`" @args }`n$MarkerEnd"
 
 $Existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
 if ($Existing -and $Existing.Contains($MarkerStart)) {
@@ -76,12 +77,12 @@ if ($Existing -and $Existing.Contains($MarkerStart)) {
   }
   Set-Content -Path $PROFILE -Value $Kept
   Add-Content -Path $PROFILE -Value $Block
-  Write-Host "updated existing christen install in $PROFILE (path may have changed)"
+  Write-Host "updated existing erda install in $PROFILE (path may have changed)"
 } else {
   Add-Content -Path $PROFILE -Value "`n$Block"
-  Write-Host "installed christen into $PROFILE"
+  Write-Host "installed erda into $PROFILE"
 }
 
 Write-Host ""
 Write-Host "Restart your terminal, or run: . `$PROFILE"
-Write-Host "Then 'christen' works from any directory."
+Write-Host "Then 'erda <command>' works from any directory (e.g. erda christen, erda board)."

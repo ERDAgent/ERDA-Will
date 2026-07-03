@@ -19,6 +19,16 @@ section to fail.
 
 Command reference for anything not covered here: `multipass help <command>`.
 
+**`erda` — the friendly command prefix.** Once installed (§0), `erda <command> [ship]`
+covers everything in this file short of one-off/advanced operations (snapshots,
+file transfer): `christen`, `board` (connect), `open lockbox` (unlock secrets),
+`anchor`/`force-anchor` (stop), `sail`/`resail` (start/restart), `suspend`, `view`
+(list/info), `sink` (destroy). Each section below leads with its `erda` equivalent,
+then the plain `multipass`/`ssh` commands underneath — useful for understanding what
+`erda` is actually doing, adapting it, or falling back to it if `erda` itself is ever
+unavailable. `[ship]` defaults to `ship` everywhere it's optional. Run `harbor/erda.sh`
+or `harbor\erda.ps1` with no arguments for the full command list.
+
 ## 0. One-time setup
 
 **Install Multipass**
@@ -63,52 +73,57 @@ Never commit either substituted copy — both write outside the repo (`/tmp` or
 
 ## 1. Launch (first provisioning)
 
-### The easy way: `christen`
+### The easy way: `erda christen`
 
 `harbor/christen.sh` (bash/git-bash) and `harbor/christen.ps1` (PowerShell) do §0's
 key substitution and this section's launch-and-wait in one command — "christen" means
-the ship is actually ready to use when it returns, not just that the instance exists:
+the ship is actually ready to use when it returns, not just that the instance exists.
+Once `erda` is installed (below), this is `erda christen [options]`:
 
 ```bash
-harbor/christen.sh [name] [cpus] [memory] [disk]     # any/all args optional
-harbor/christen.sh resolve                           # named, defaults for the rest
-harbor/christen.sh resolve 4 8G 40G                   # fully custom
+erda christen [name] [cpus] [memory] [disk]     # any/all args optional
+erda christen resolve                           # named, defaults for the rest
+erda christen resolve 4 8G 40G                  # fully custom
 ```
 ```powershell
-harbor\christen.ps1 [-Name <name>] [-Cpus <n>] [-Memory <size>] [-Disk <size>]
-harbor\christen.ps1 -Name resolve
-harbor\christen.ps1 -Name resolve -Cpus 4 -Memory 8G -Disk 40G
+erda christen [-Name <name>] [-Cpus <n>] [-Memory <size>] [-Disk <size>]
+erda christen -Name resolve
+erda christen -Name resolve -Cpus 4 -Memory 8G -Disk 40G
 ```
+
+Without `erda` installed, call the script directly the same way:
+`harbor/christen.sh [...]` / `harbor\christen.ps1 [...]`.
 
 Defaults (no args at all): name `ship`, 2 cpus, 4G memory, 20G disk — matching every
 manual example in this file. Both scripts read your key from
 `~/.ssh/id_ed25519[.pub]` and resolve `keel.yaml` from their own location, so they
-work from any directory as long as you give a correct path to the script itself
-(`C:\path\to\ERDA-Will\harbor\christen.ps1 ...`, or `cd` into the repo first and use a
-relative path). Verified end-to-end on this Harbor, both shells: launch → IP → SSH up
-→ `cloud-init status --wait: done` → ready message, then torn down again with
+work from any directory as long as you give a correct path to the script itself.
+Verified end-to-end on this Harbor, both shells: launch → IP → SSH up →
+`cloud-init status --wait: done` → ready message, then torn down again with
 `delete --purge`.
 
-**Want to just type `christen` from anywhere, no path?** Run the installer once —
-`harbor/install.sh` (macOS/Linux) or, on Windows, **`harbor\install.cmd`** (not
-`install.ps1` directly — see the gotcha below) — which wires a `christen` function
-into your shell profile (`~/.bashrc`/`~/.zshrc`, or PowerShell's `$PROFILE`), pointing
-at this exact checkout. This is the reproducibility story for a fresh computer:
-profile/PATH state itself can't live in git, but the *setup step* does — clone the
-repo, run the installer once, restart your terminal, `christen` works globally from
-then on. Idempotent (safe to re-run, e.g. after moving the repo or pulling an update —
-replaces the old block rather than duplicating it). Verified for real: installed,
-confirmed the bare `christen` command launches a real ship from a completely unrelated
-directory in a fresh shell session, re-ran the installer and confirmed no duplication.
+**Want to just type `erda <command>` from anywhere, no path?** Run the installer once
+— `harbor/install.sh` (macOS/Linux) or, on Windows, **`harbor\install.cmd`** (not
+`install.ps1` directly — see the gotcha below) — which wires an `erda` function into
+your shell profile (`~/.bashrc`/`~/.zshrc`, or PowerShell's `$PROFILE`), pointing at
+this exact checkout's `harbor/erda.{sh,ps1}` dispatcher. This is the reproducibility
+story for a fresh computer: profile/PATH state itself can't live in git, but the
+*setup step* does — clone the repo, run the installer once, restart your terminal,
+`erda` works globally from then on. Idempotent (safe to re-run, e.g. after moving the
+repo or pulling an update — replaces the old block rather than duplicating it).
+Verified for real: installed, confirmed bare `erda` commands (`christen`, `board`,
+`open lockbox`, `anchor`, `sail`, `resail`, `suspend`, `view`, `sink`) all work from a
+completely unrelated directory in a fresh shell session, re-ran the installer and
+confirmed no duplication.
 
 **Windows gotcha, real one**: a fresh Windows account's default PowerShell execution
 policy (`Restricted`) blocks *any* local `.ps1` file from running at all — including
-`install.ps1` itself, and later `christen.ps1` too. `harbor\install.cmd` exists
-specifically to bootstrap around this: batch files aren't subject to PowerShell's
-execution policy, so it can invoke `install.ps1` with a one-time
+`install.ps1` itself, and later `erda.ps1`/`christen.ps1` too. `harbor\install.cmd`
+exists specifically to bootstrap around this: batch files aren't subject to
+PowerShell's execution policy, so it can invoke `install.ps1` with a one-time
 `-ExecutionPolicy Bypass`, and `install.ps1` itself then sets a real, permanent
 `RemoteSigned` policy at `CurrentUser` scope (doesn't need admin rights, doesn't touch
-other accounts) so every later `christen` call works normally. If you ever see "running
+other accounts) so every later `erda` call works normally. If you ever see "running
 scripts is disabled on this system," that's this — `Get-ExecutionPolicy -List` shows
 which scope is blocking you; `harbor\install.cmd` fixes the common case in one step.
 
@@ -148,6 +163,19 @@ Fix: delete the cached image and relaunch.
   verified from this session — different from Windows's `ProgramData` location).
 
 ## 2. Get in
+
+### The easy way: `erda board`
+
+```bash
+erda board [ship]
+```
+
+Does exactly what §2's manual steps below do (`multipass info` for the IP, then
+`ssh eric@<ip>`) in one command — verified end-to-end, including the "ship isn't
+running" error path (`multipass info` returns no IP → clear message pointing at
+`erda sail`, not a confusing hang).
+
+### By hand
 
 ```bash
 multipass info ship               # find the "IPv4:" line, e.g. 172.22.224.86
@@ -198,6 +226,29 @@ in once before `pi` can reach DeepInfra. Without it, `pi` starts with `Warning: 
 models available` / `Error: No API key found` — that's this exact step missing, not a
 bug.
 
+### The easy way: `erda open lockbox`
+
+```bash
+erda open lockbox [ship]
+```
+
+Automates as much of this section as can be automated from the host side: checks
+whether `~/.config/age/ship.key` already exists on the target ship, copies
+`strongbox/ship.key` in (with the right permissions) only if it's missing, then
+connects with the strongbox already unlocked at **captain scope** — both
+`DEEPINFRA_API_KEY` and `GH_TOKEN` (if `strongbox/captain.env.age` exists) land in
+your shell's environment the moment you're connected, no separate `eval "$(unlock)"`
+needed. Verified end-to-end on a ship with no key yet: correctly detected the missing
+key, copied it, and the resulting session had both real secret values loaded (checked
+by byte-length, not printing them).
+
+What it *can't* automate: `unlock`'s whole mechanism only makes sense inside a live
+shell session (it prints `export` lines for that shell to `eval`), so "unlocking" from
+outside always means "connect with it already done" — there's no way to pre-load
+secrets into a session you haven't started yet.
+
+### By hand
+
 You need `strongbox/ship.key` (gitignored, never committed — wherever you generated it
 per `strongbox/README.md`). Run from your host, **not** inside the SSH session:
 
@@ -231,6 +282,21 @@ pi
 
 ## 4. Day-to-day lifecycle
 
+| `erda` | Equivalent | Notes |
+|---|---|---|
+| `erda anchor [ship]` | `multipass stop ship` | graceful shutdown |
+| `erda force-anchor [ship]` | `multipass stop ship --force` | immediate; can corrupt a running instance, last resort |
+| `erda sail [ship]` | `multipass start ship` | note: same name as `ship/bin/sail <charter>` (opens the tmux deck), which runs *on* the ship, not the Harbor — they never collide but both exist |
+| `erda resail [ship]` | `multipass restart ship` | |
+| `erda suspend [ship]` | `multipass suspend ship` | pause to disk, no CPU/RAM use while suspended |
+| `erda view` | `multipass list` | all instances + state |
+| `erda view [ship]` | `multipass info ship` | IP, disk/mem usage, mounts |
+
+All verified for real against a throwaway test ship: stop → start → restart →
+suspend → resume, each confirmed via `multipass info` showing the correct state
+transition.
+
+By hand:
 ```bash
 multipass stop ship                    # graceful shutdown
 multipass stop ship --force            # immediate; can corrupt a running instance, last resort
@@ -299,6 +365,20 @@ above; prefer it once you have the IP.
 
 ## 7. Destroy
 
+### The easy way: `erda sink`
+
+```bash
+erda sink [ship]              # asks you to type the ship's name to confirm
+erda sink [ship] -y           # skips confirmation (scripting/muscle-memory use)
+```
+
+`multipass delete <ship> --purge` in one step — immediate and permanent, so it asks
+for confirmation by default (type the exact ship name; anything else cancels with
+nothing destroyed). Verified both paths for real: wrong confirmation correctly
+cancelled without touching the VM, `-y` correctly skipped the prompt and destroyed it.
+
+### By hand
+
 ```bash
 multipass delete ship            # soft-delete, recoverable
 multipass recover ship           # ...until you do this instead
@@ -315,18 +395,19 @@ These are the only things `fitout.sh` deliberately does **not** automate — by 
 not oversight:
 
 - **SSH key** in `keel.yaml` (§0) — one placeholder substitution per operator, same
-  spirit as the age key below.
+  spirit as the age key below. `erda christen` (§1) automates the substitution itself.
 - **Strongbox age key** (§3) — needed again on every *new* ship, including a fresh one
   after `delete --purge` + relaunch. `fitout.sh` verifies the strongbox decrypts if the
   key is already present, and skips gracefully (no error) if it isn't yet — see
-  `strongbox/README.md`.
+  `strongbox/README.md`. `erda open lockbox` (§3) automates the copy-in step and
+  connects with it already unlocked.
 - Everything else — git identity (`ERDAgent` / `agentic@ericrose.dev`, the ship's own
   persona), agent CLIs, PATH wiring, `ship/bin/*` on PATH, tmux/Fresh config — is set by
   `fitout.sh` on every launch, unconditionally and idempotently. A fresh `multipass
   launch --cloud-init keel.yaml` should need nothing beyond the two steps above to be
   fully usable.
 
-## 8. Sailing multiple ships
+## 9. Sailing multiple ships
 
 `keel.yaml` is name-agnostic — nothing in it or `fitout.sh` depends on the
 instance name, so the fleet scales by just launching again:

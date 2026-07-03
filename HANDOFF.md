@@ -505,9 +505,11 @@ up repo-side too, defense in depth. Not done — flagged, not guessed.
 
 keel.yaml verified name-agnostic (nothing in keel or fitout depends on the instance
 name — "ship" was only ever the cheatsheet's example). Added `docs/vm-cheatsheet.md`
-§8 (multi-ship mechanics, naming classes, unique-name/purge gotcha, per-ship resource
-note) and the D16 one-charter-one-ship rule with its rationale. CLAUDE.md vocabulary
-extended (The Will, ship classes). No script changes; nothing to validate on-ship
+§9 (multi-ship mechanics, naming classes, unique-name/purge gotcha, per-ship resource
+note; originally numbered §8, a duplicate of the "known manual steps" section —
+renumbered when `erda`'s docs were added, see §4m) and the D16 one-charter-one-ship
+rule with its rationale. CLAUDE.md vocabulary extended (The Will, ship classes). No
+script changes; nothing to validate on-ship
 beyond reading.
 
 ## 4k. `harbor/christen.{sh,ps1}` — friendly one-command ship launch (July 2, 2026)
@@ -582,6 +584,54 @@ own tooling (same masking issue) — verified by code correctness and by fixing 
 real system with the identical commands, not by reproducing the exact fresh-machine
 scenario end-to-end.
 
+## 4m. `erda` — unified command prefix for all Harbor operations (July 2, 2026)
+
+Eric asked to prefix all harbor commands with `erda` (so `christen` becomes
+`erda christen`) and add short commands for the rest of the day-to-day VM lifecycle.
+Built `harbor/erda.{sh,ps1}` as a single dispatcher (christen delegates to the existing
+`christen.{sh,ps1}` rather than duplicating that logic):
+
+| Command | Does |
+|---|---|
+| `erda christen [name] [cpus] [mem] [disk]` | launch (delegates to christen.{sh,ps1}) |
+| `erda board [ship]` | `multipass info` + `ssh` in, one step |
+| `erda open lockbox [ship]` | deploy `strongbox/ship.key` if missing, connect with `unlock captain` already run — automates everything about "unlocking" that can be automated from the host side; the mechanism itself only makes sense inside a live shell, so "unlock in advance" isn't a coherent thing to build |
+| `erda anchor` / `force-anchor` [ship] | `multipass stop` / `stop --force` |
+| `erda sail` / `resail` [ship] | `multipass start` / `restart` |
+| `erda suspend [ship]` | `multipass suspend` |
+| `erda view [ship]` | `multipass list` (no ship) / `info <ship>` |
+| `erda sink [ship] [-y]` | `multipass delete --purge`, asks to type the ship name to confirm unless `-y` |
+
+`[ship]` defaults to `"ship"` everywhere it's optional, matching `christen`'s own
+default. `install.{sh,ps1}` updated to wire up `erda` instead of the old bare
+`christen` function — re-running the installer replaces the old block.
+
+**Naming collision, flagged not hidden**: `erda sail` (start a stopped VM, this
+script, runs on the Harbor) and `ship/bin/sail <charter>` (opens the tmux deck, runs
+*on* the ship) share a name. They never actually collide — different sides of the SSH
+connection, never both on PATH in the same context — but "sail" means two different
+things depending on which side you're on. Proceeded with Eric's exact spec since it
+was unambiguous and thematically deliberate (sail = set out); noted in both scripts'
+help text and the cheatsheet so it's a known thing, not a surprise.
+
+`sink`'s confirmation prompt was Eric's-instructions-plus-judgment, not explicitly
+requested: an irreversible `--purge` behind a short, easy-to-fire word felt worth a
+safety default, with `-y`/`--force`/`-Force` to skip it for scripted/muscle-memory use.
+
+Verified every command for real against a live throwaway ship (`test-erda`): christen,
+view (both forms), anchor, sail, resail, suspend→resume, board (confirmed real SSH
+connection via a non-interactive stdin-fed session, since a genuinely interactive test
+isn't scriptable), open lockbox (confirmed the key gets deployed only when missing,
+and separately verified the exact `unlock captain` invocation loads both real secrets
+— the interactive-session part of the same test was inconclusive due to the test
+harness's own lack of a real PTY, not a script bug), force-anchor, and sink (both the
+cancel path with a wrong confirmation and the real destroy path with `-y`). Shellcheck
+clean on `erda.sh` and the updated `install.sh`. Rewrote `docs/vm-cheatsheet.md`
+throughout — every relevant section now leads with its `erda` equivalent before the
+manual commands — and fixed a pre-existing bug found in the process: two sections were
+both numbered `## 8.` (a duplicate from when the fleet-naming patch was applied);
+renumbered the "sailing multiple ships" section to `## 9.`.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -632,3 +682,4 @@ Next up, in rough priority order:
 - v9 (Claude Code, July 2, 2026): built `harbor/christen.{sh,ps1}` at Eric's request — one friendly command (`christen [name] [cpus] [memory] [disk]`, all optional) replacing the raw `multipass launch` + manual key-substitution dance. Found and fixed a real PowerShell 5.1 gotcha while testing (`$ErrorActionPreference = "Stop"` + redirected native stderr turning a harmless ssh notice into a fatal error). Verified end-to-end with two real launches, both shells. See §4k.
 - v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. Eric confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against Eric's actual PowerShell profile. See the note in §4k and §4l.
 - v11 (Claude Code, July 2, 2026): Eric hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for Eric that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
+- v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at Eric's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with Eric's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.

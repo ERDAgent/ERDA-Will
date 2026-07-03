@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# install — wire up harbor/* commands (currently: christen) as global shell
-# commands, so you can type `christen` from any directory.
+# install — wire up `erda` (harbor/erda.sh, the command dispatcher for all
+# harbor/* operations: christen, board, open lockbox, anchor, sail, ...) as
+# a global shell command, so you can type `erda <command>` from anywhere.
 #
-# This is the reproducibility story for "just typing christen from
-# anywhere": shell profile changes are per-machine state that git can't
-# carry across computers, so instead of hand-editing your profile, the
-# setup step itself lives in this repo. On a fresh machine: clone the repo,
-# run this script once, restart your terminal (or `source` your profile).
-# `christen` then works globally, permanently, on that machine.
+# This is the reproducibility story for "just typing erda from anywhere":
+# shell profile changes are per-machine state that git can't carry across
+# computers, so instead of hand-editing your profile, the setup step itself
+# lives in this repo. On a fresh machine: clone the repo, run this script
+# once, restart your terminal (or `source` your profile). `erda` then works
+# globally, permanently, on that machine.
 #
 # Idempotent: re-running (e.g. after moving the repo to a new path, or
 # after pulling an updated harbor/) replaces the previously-installed block
@@ -16,8 +17,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CHRISTEN_PATH="$REPO_ROOT/harbor/christen.sh"
-[[ -f "$CHRISTEN_PATH" ]] || { echo "install: expected $CHRISTEN_PATH to exist -- run this from a real ERDA-Will checkout" >&2; exit 1; }
+ERDA_PATH="$REPO_ROOT/harbor/erda.sh"
+[[ -f "$ERDA_PATH" ]] || { echo "install: expected $ERDA_PATH to exist -- run this from a real ERDA-Will checkout" >&2; exit 1; }
 
 PROFILE_FILE="${SHELL_PROFILE:-}"
 if [[ -z "$PROFILE_FILE" ]]; then
@@ -40,18 +41,18 @@ if grep -qF "$MARKER_START" "$PROFILE_FILE"; then
     !skip {print}
   ' "$PROFILE_FILE" > "$PROFILE_FILE.tmp"
   mv "$PROFILE_FILE.tmp" "$PROFILE_FILE"
-  echo "updated existing christen install in $PROFILE_FILE (path may have changed)"
+  echo "updated existing erda install in $PROFILE_FILE (path may have changed)"
 else
-  echo "installed christen into $PROFILE_FILE"
+  echo "installed erda into $PROFILE_FILE"
 fi
 
 {
   echo ""
   echo "$MARKER_START"
-  echo "christen() { \"$CHRISTEN_PATH\" \"\$@\"; }"
+  echo "erda() { \"$ERDA_PATH\" \"\$@\"; }"
   echo "$MARKER_END"
 } >> "$PROFILE_FILE"
 
 echo
 echo "Restart your terminal, or run: source $PROFILE_FILE"
-echo "Then 'christen' works from any directory."
+echo "Then 'erda <command>' works from any directory (e.g. erda christen, erda board)."
