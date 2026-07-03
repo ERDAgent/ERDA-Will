@@ -1,13 +1,34 @@
 #!/usr/bin/env bash
 # charter — register a repo as a charter in the fleet
-# usage: charter <name> [git-url]
-#   charter royal-guest git@github.com:eric/royal-guest-site.git
-#   charter scratchpad                  (local-only charter, empty hold)
+# usage: charter <name> [git-url] [--local]
+#   charter royal-guest git@github.com:eric/royal-guest-site.git   # clone an existing repo
+#   charter royal-guest                                            # no url: create a new
+#                                                                   #   private ERDAgent/royal-guest
+#                                                                   #   repo (or use it if it
+#                                                                   #   already exists), needs gh
+#                                                                   #   authenticated with repo-
+#                                                                   #   creation permission
+#   charter scratchpad --local                                     # explicitly local-only, no
+#                                                                   #   remote at all, empty hold
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
-NAME="${1:?usage: charter <name> [git-url]}"
-URL="${2:-}"
+GH_OWNER="${GH_OWNER:-ERDAgent}"
+
+NAME=""
+URL=""
+LOCAL_ONLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --local) LOCAL_ONLY=1 ;;
+    *)
+      if [[ -z "$NAME" ]]; then NAME="$arg"
+      elif [[ -z "$URL" ]]; then URL="$arg"
+      fi
+      ;;
+  esac
+done
+[[ -n "$NAME" ]] || { echo "usage: charter <name> [git-url] [--local]" >&2; exit 1; }
 DIR="$FLEET/$NAME"
 
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
@@ -18,6 +39,34 @@ DIR="$FLEET/$NAME"
 if [[ -e "$DIR/.hold.git" ]]; then
   echo "charter '$NAME' already exists at $DIR" >&2
   exit 1
+fi
+
+# --- no URL given: create (or reuse) a GitHub repo, unless --local ---
+# Needs gh authenticated (eval "$(unlock captain)") AND a GH_TOKEN with repo
+# *creation* permission -- broader than the Contents-R/W-on-specific-repos
+# scope strongbox/README.md documents for push access (D14). Fine-grained
+# PATs need "All repositories" access + Administration: Read and write to
+# create new repos at all; verified directly that the original push-only
+# scope gets "Resource not accessible by personal access token" from `gh
+# repo create`. Falls back to a local-only charter rather than failing hard
+# -- a charter should still work for an operator without gh set up.
+if [[ -z "$URL" && "$LOCAL_ONLY" -eq 0 ]]; then
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    if gh repo view "$GH_OWNER/$NAME" >/dev/null 2>&1; then
+      echo "GitHub repo $GH_OWNER/$NAME already exists -- using it"
+      URL="https://github.com/$GH_OWNER/$NAME.git"
+    elif gh repo create "$GH_OWNER/$NAME" --private >/dev/null 2>&1; then
+      echo "created GitHub repo $GH_OWNER/$NAME (private)"
+      URL="https://github.com/$GH_OWNER/$NAME.git"
+    else
+      echo "charter: couldn't create $GH_OWNER/$NAME on GitHub -- likely a PAT scope issue" >&2
+      echo "  (repo creation needs broader permissions than the default Contents R/W -- see strongbox/README.md)" >&2
+      echo "  falling back to a local-only charter" >&2
+    fi
+  else
+    echo "charter: gh not authenticated -- run 'eval \"\$(unlock captain)\"' first if you want an auto-created GitHub repo" >&2
+    echo "  falling back to a local-only charter" >&2
+  fi
 fi
 
 mkdir -p "$DIR"/{berths,.ship/orders,.ship/reports,.ship/log}

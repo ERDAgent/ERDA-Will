@@ -95,7 +95,7 @@ ln -sfn "$SHIPYARD_DIR/dotfiles/tmux/ship.tmux.conf" "$HOME/.tmux.conf"
 # ship/bin/* on PATH everywhere (same /usr/local/bin rationale as the agent
 # CLIs above): muster's crew windows call `unlock` by name, and charter/sail/
 # muster themselves should be callable without the full repo path.
-for bin in charter sail muster unlock; do
+for bin in charter sail muster unlock captain; do
   sudo ln -sfn "$SHIPYARD_DIR/ship/bin/$bin" "/usr/local/bin/$bin"
 done
 

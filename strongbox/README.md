@@ -42,6 +42,20 @@ keys.env.age "for convenience."
    - Set an expiry. Rotation = repeat step 3 with the new token.
 2. **Give ERDAgent write access** to each charter repo that isn't already
    under the ERDAgent account/org (repo → Settings → Collaborators).
+
+**Separate, broader scope needed for `captain charter`'s auto-create-repo
+feature.** The PAT above (Contents R/W on specific repos) is enough for
+pushing to charters that already exist, but **cannot create new repos** —
+verified directly: `gh repo create` with that scope returns `Resource not
+accessible by personal access token (createRepository)`. Repo creation is an
+account-level action, not scoped to a pre-existing repo, so it needs a
+*different* fine-grained PAT shape: **Repository access: All repositories**,
+plus **Administration: Read and write**. This is a meaningfully bigger grant
+than the minimal push-only scope above — deliberate tradeoff, not an
+oversight, so mint it as a conscious choice rather than just widening the
+existing token "to make the error go away." Without it, `captain charter`
+with no `git-url` falls back to a local-only charter automatically, with a
+clear message explaining why — not a hard failure.
 3. **Encrypt** (note the `bash -c` wrapper — zsh's `read -p` means something
    entirely different; this exact mistake silently encrypted an empty value
    once already, see HANDOFF §4f):

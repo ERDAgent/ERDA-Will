@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# captain — friendly command prefix for charter-management operations.
+# usage: captain <command> [args...]
+#   captain charter <name> [git-url] [--local]   -- charter <name> [git-url] [--local]
+#   captain work <name>                          -- sail <name>
+set -euo pipefail
+
+# resolve the real shipyard checkout even when invoked via the
+# /usr/local/bin symlink fitout.sh sets up (readlink -f, not just
+# dirname "${BASH_SOURCE[0]}", which would resolve to the symlink itself)
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: captain <command> [args...]
+  charter <name> [git-url] [--local]   register a charter (creates a private
+                                        GitHub repo if no url given and none
+                                        exists yet; --local skips that)
+  work <name>                          open the deck for a charter
+USAGE
+}
+
+CMD="${1:-}"
+[[ $# -gt 0 ]] && shift
+
+case "$CMD" in
+  charter)
+    exec "$SCRIPT_DIR/charter" "$@"
+    ;;
+  work)
+    exec "$SCRIPT_DIR/sail" "$@"
+    ;;
+  ""|-h|--help)
+    usage
+    exit 1
+    ;;
+  *)
+    echo "captain: unknown command '$CMD'. Run 'captain' with no args for the command list." >&2
+    exit 1
+    ;;
+esac

@@ -11,14 +11,25 @@ verified session (2026-07-02) — not just the design doc.
 ## Getting to the Captain
 
 ```bash
-charter <name> [git-url]   # once, for a brand-new project — omit git-url for local-only
-sail <name>                # opens the deck; window 0 ("bridge") is the Captain
+captain charter <name> [git-url] [--local]   # once, for a brand-new project
+captain work <name>                          # opens the deck; window 0 ("bridge") is the Captain
 ```
 
-`sail <name>` on a project you've already chartered just reattaches to the same deck —
-same Captain conversation, same mission, same everything, picking up where you left
-off (tmux sessions persist across SSH disconnects; they only die if the ship itself
-restarts or you explicitly `tmux kill-session`).
+`captain charter` with no `git-url`: creates (or reuses, if it already exists) a
+private GitHub repo under the ERDAgent account and clones that — needs `gh`
+authenticated with repo-*creation* permission, broader than the default push-only PAT
+scope (see `strongbox/README.md`); falls back to a local-only charter with a clear
+message if that's not set up. Pass `--local` to skip GitHub entirely on purpose. Give
+an explicit `git-url` to charter an existing repo instead, same as before.
+
+`captain work <name>` on a project you've already chartered just reattaches to the
+same deck — same Captain conversation, same mission, same everything, picking up
+where you left off (tmux sessions persist across SSH disconnects; they only die if
+the ship itself restarts or you explicitly `tmux kill-session`).
+
+(`captain charter`/`captain work` are friendly aliases for the underlying `charter`/
+`sail` commands — those still work directly too, same behavior, if you ever need
+them.)
 
 The bridge auto-launches `pi` as the Captain — no login needed, no manual model flags.
 If it ever comes up as a plain, un-briefed coding assistant instead (introduces itself
@@ -27,10 +38,11 @@ launch, not the conversation — check `docs/vm-cheatsheet.md` §3 (strongbox) f
 
 ## Starting a brand-new project
 
-1. `charter <name> [git-url]` creates a `charter.md` template (stack/conventions, test
-   commands, no-touch paths, notes — all blank placeholders) and an empty
-   `.ship/mission.md`.
-2. `sail <name>` — the Captain reads `charter.md` on its own before anything else.
+1. `captain charter <name> [git-url] [--local]` creates a `charter.md` template
+   (stack/conventions, test commands, no-touch paths, notes — all blank placeholders)
+   and an empty `.ship/mission.md`.
+2. `captain work <name>` — the Captain reads `charter.md` on its own before anything
+   else.
 3. Tell it what you want, e.g.:
    > "This is a Next.js app, tests run with `npm test`, never touch `deploy/` or
    > `.env*`. I want a dark-mode toggle added to the settings page."
@@ -41,7 +53,7 @@ launch, not the conversation — check `docs/vm-cheatsheet.md` §3 (strongbox) f
 
 ## Working on an existing project
 
-`sail <name>` and just talk — no ceremony. Good openers:
+`captain work <name>` and just talk — no ceremony. Good openers:
 > "Pick up where we left off — what's the state of things?"
 > "New ask: <describe it>."
 
