@@ -655,10 +655,30 @@ is an account-level action, not scoped to a pre-existing repo, so it needs a
 structurally different fine-grained PAT: `Repository access: All repositories` +
 `Administration: Read and write` — a meaningfully bigger grant than the minimal
 scope D14 deliberately chose. Documented as a conscious tradeoff in
-`strongbox/README.md` rather than silently widening the token. **The feature is
-implemented and works correctly (verified via its fallback path), but auto-creation
-itself is not yet usable until Eric mints and swaps in a broader-scoped token** — not
-a bug, a pending operator decision.
+`strongbox/README.md` rather than silently widening the token.
+
+**Update (July 3, 2026): the broader token is minted and auto-create is fully
+working.** Eric considered a two-token split first (narrow push token kept separate
+from a repo-creation token, to keep `ERDA-Will` itself untouched by the creation
+token) — investigated and rejected: fine-grained PATs' "Only select repositories"
+list is fixed at mint time and can't be updated by automation, so a token used to
+create a brand-new repo can never also have been pre-scoped to that repo; it needs
+`Contents` access too just to clone what it created, which means it needs the same
+broad reach a single combined token would have anyway. Two tokens don't actually
+reduce the exposure. Eric chose the single broader token knowingly, replacing
+`GH_TOKEN`'s original scope.
+
+**Found and fixed a second real bug on the very first live test with a working
+token**: `gh repo create` produces a genuinely empty repo (no commits, no branches at
+all), but `charter`'s clone path assumed any URL already had `main` to check out —
+`worktree add` failed with `invalid reference: main`. Same class of thing the
+local-only path already handled (bootstrap an empty root commit); refactored into a
+shared `lay_the_keel()` that now also fires when a URL-based clone comes back empty,
+pushing the bootstrap commit to `origin` too. Verified end-to-end: real create → lay
+the keel → push → checkout all correct, both locally and on GitHub; regression-tested
+the reuse-existing-repo path against the real (non-empty) `ERDA-Will` repo to confirm
+the new empty-check doesn't misfire on repos with real history. `captain charter` with
+no url is now genuinely, fully working — not just falling back gracefully.
 
 `ship/bin/captain`: new dispatcher (`charter`/`work` subcommands delegate to the
 existing `charter`/`sail` scripts unchanged, so `muster`'s and `sail`'s own internal
@@ -730,3 +750,4 @@ Next up, in rough priority order:
 - v11 (Claude Code, July 2, 2026): Eric hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for Eric that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
 - v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at Eric's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with Eric's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.
 - v13 (Claude Code, July 3, 2026): built `captain charter`/`captain work` and made `charter` auto-create a GitHub repo when none is given (reusing one if it already exists), at Eric's request; dropped `captain toss` (repo deletion) after Eric called it off mid-investigation. Found before writing code that the existing push-only PAT can't create repos at all (`Resource not accessible by personal access token`) — repo creation needs a structurally broader scope (`All repositories` + `Administration: RW`), documented as a deliberate tradeoff rather than silently widening the token. The feature works correctly end-to-end via its fallback path but isn't actually usable for real auto-creation until Eric mints that broader token. Verified all three charter paths (auto-create-fallback, `--local`, reuse-existing) against the live ship, and `captain work`'s delegation to `sail`. Rewrote `docs/git-and-github.md`, which had gone stale across two separate earlier changes (gh wiring, push-on-integrate policy) this update needed to account for anyway. See §4n.
+- v14 (Claude Code, July 3, 2026): Eric hit "Permission denied" on `captain` from a freshly christened ship — found the real cause (`ship/bin/captain` and three `harbor/*.sh` files were committed with mode 644, not 755, since this repo has `core.fileMode=false` and `chmod +x` on a brand-new file before `git add` has no effect under that setting), fixed with `git update-index --chmod=+x` on all four, and hotfixed Eric's live ship directly so he didn't need to re-christen. Then walked Eric through minting the broader-scoped GH_TOKEN for real: he considered a two-token split to protect ERDA-Will from the creation-scoped token, which turned out not to actually work (fine-grained PATs' repo list can't be updated by automation, so a creation token needs content access too) — he chose the single broader token knowingly once that was clear. First live test with the working token immediately surfaced a second real bug (freshly created GitHub repos are empty, `charter` assumed otherwise) — fixed and verified end-to-end, including a regression check against the real non-empty ERDA-Will repo. `captain charter` with auto-create is now genuinely fully working. See §4n.
