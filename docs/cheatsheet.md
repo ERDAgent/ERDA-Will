@@ -1,5 +1,7 @@
 # Quick Start
 
+To get started building, follow these steps:
+
   - `erda christen my-ship`
   - `erda open lockbox my-ship`
   - `captain charter my-charter`
