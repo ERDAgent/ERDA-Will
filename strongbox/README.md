@@ -62,7 +62,7 @@ files are committed and pushed) to match the new key.
 | File | Scope | Contents | Who loads it |
 |---|---|---|---|
 | `keys.env.age` | crew | Model keys only (`DEEPINFRA_API_KEY`) | Every agent context: `eval "$(unlock)"` — muster's crew windows do this |
-| `captain.env.age` | captain | Push/publish credentials (`GH_TOKEN`) | Bridge + integration only: `eval "$(unlock captain)"` — sail's bridge window does this |
+| `captain.env.age` | captain | Push/publish credentials (`GH_TOKEN`) | Bridge + integration only: `eval "$(unlock captain)"` — sail's bridge window does this automatically, and `charter` does too (quietly, before its gh-auth check) so a bare `captain charter` works from any shell once `ship.key` is deployed |
 
 Crew agents must never hold push credentials — "crew never push" is enforced
 by this split, not just by crew.md's prose. Never move GH_TOKEN into

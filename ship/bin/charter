@@ -51,6 +51,18 @@ fi
 # repo create`. Falls back to a local-only charter rather than failing hard
 # -- a charter should still work for an operator without gh set up.
 if [[ -z "$URL" && "$LOCAL_ONLY" -eq 0 ]]; then
+  # The very first charter on a freshly christened ship always hit this: GH_TOKEN
+  # lives in the captain compartment and nothing loads it into a plain shell
+  # automatically -- sail's bridge window does its own auto-unlock, but a bare
+  # `captain charter` in whatever shell you happen to be in never did. This is
+  # the same privilege the bridge already gets for free, not a new escalation,
+  # so unlock quietly here too. If ship.key was never deployed to this ship at
+  # all (erda open lockbox <ship>), unlock just fails and the check below
+  # reports the normal "gh not authenticated" fallback.
+  if ! (command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1) && command -v unlock >/dev/null 2>&1; then
+    eval "$(unlock captain 2>/dev/null)" 2>/dev/null || true
+  fi
+
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if gh repo view "$GH_OWNER/$NAME" >/dev/null 2>&1; then
       echo "GitHub repo $GH_OWNER/$NAME already exists -- using it"
