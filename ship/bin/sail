@@ -65,7 +65,7 @@ if ! tmux has-session -t "=$SES" 2>/dev/null; then
 
   # window 3 — bosun: roster watch
   tmux new-window -t "$SES:3" -c "$DIR/.ship" -n "$(g 📣)bosun" \
-    "watch -t -n 5 'echo == roster ==; jq -r \".[] | [.task,.status,.branch] | @tsv\" roster.json 2>/dev/null || cat roster.json; echo; echo == last events ==; tail -n 8 log/events.log'"
+    "watch -t -n 5 'echo == roster ==; jq -r \".[] | [.name,.task,.status,.branch] | @tsv\" roster.json 2>/dev/null || cat roster.json; echo; echo == last events ==; tail -n 8 log/events.log'"
 
   # window 4 — quartermaster: review station
   tmux new-window -t "$SES:4" -c "$DIR" -n "$(g ⚖)quartermaster" \

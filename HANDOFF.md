@@ -1034,6 +1034,45 @@ got a real HTTP 200 with a directory listing of the integration worktree, provin
 full chain end-to-end (charter.md config → sail's window → dev server → SSH tunnel →
 host-side HTTP fetch). Tunnel and ship torn down after.
 
+## 4u. Crew get human-readable names (July 4, 2026)
+
+Eric wanted each crew member to have a human-readable name instead of just a task ID,
+and asked for a creative naming scheme. Offered three themed options (knots/rigging,
+trade winds, navigator's stars) plus "give me your own list" — Eric chose to specify
+the theme himself: hobbit-like names, explicitly **not** any name that actually
+appears in Tolkien's hobbit lore. Landed on a 31-name invented pool (Alder, Barley,
+Birch, Bracken, Bramble, Bumble, Buttercup, Clover, Cricket, Dandelion, Fennel, Fern,
+Foxglove, Hazel, Juniper, Linden, Marrow, Meadow, Nettle, Oaken, Pebble, Poppy, Rowan,
+Sage, Sorrel, Sparrow, Tansy, Thistle, Willow, Wren, Yarrow) — deliberately avoiding
+the specific flower names Tolkien actually used for Sam Gamgee's children (Rose,
+Daisy, Marigold, Ruby, Primrose, Pearl, Pansy, Goldilocks, Elanor), since those sit in
+the exact same "plant name" convention and were the real collision risk, not the
+more obviously-Tolkien names (Bilbo, Frodo, Merry, Pippin, etc.).
+
+Implemented in `ship/bin/muster`: assigns a name at muster time, picked at random from
+the pool while avoiding collision with any other currently-*active* ("working")
+crew member in the same charter (not every name ever used historically — the goal is
+no confusion between two crew running at once, not permanent uniqueness). Falls back
+to a numbered suffix if the whole pool is somehow already in use (vanishingly
+unlikely at typical crew sizes). The name replaces the task ID in the tmux window
+title (`⚒Clover`, not `⚒crew-T-014`) and in the crew runner's own status messages;
+`roster.json` gained a `name` field alongside the existing `task`/`branch`/`status`,
+and the Bosun window's roster display (`sail` window 3) now shows name alongside
+task/status/branch, so the two are always one glance apart. Task IDs, branch names
+(`crew/<task-id>-<slug>`), and order-file paths are all unchanged — this is a display
+layer on top of the existing machine-facing identifiers, not a replacement for them.
+
+Verified: the random-pick-with-collision-avoidance algorithm standalone (no active
+crew, some active crew correctly excluded across 20 repeated picks, and the
+pool-exhausted fallback), plus a syntax check on `muster` and `sail`. The `jq`
+additions (`.name` field write, `.name` in the roster display) are simple one-field
+extensions of already-proven expressions in the same files, not independently unit
+tested here (`jq` isn't installed on this Windows host — ship-only tool). Not
+verified: an actual live `muster` invocation on a real ship (would need a real
+DEEPINFRA-backed crew agent run, not just the naming logic) — worth confirming next
+time a real mission musters crew, rather than spinning up a throwaway ship + paid
+model call just for a cosmetic feature this late in the session.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1097,3 +1136,4 @@ Next up, in rough priority order:
 - v19 (Claude Code, July 4, 2026): built the Shipwright role a real tmux window and strongbox compartment at Eric's request, surfacing and resolving two real conflicts with the original plan first (API-key auth over `/login`, per-charter-deck placement despite Shipwright's charter-independent scope — both decided by Eric, see D17) rather than guessing either way. `unlock` gained a `shipwright` scope (superset of captain), `erda strongbox init` gained an `ANTHROPIC_API_KEY` prompt → `shipwright.env.age`, `fitout.sh` verifies the third compartment independently, and `sail` gained window 7 (`claude` at `~/shipyard`, unlocking automatically, falling back to a plain shell like the bridge window does). Verified the new strongbox/unlock plumbing end-to-end against a real throwaway age keypair; the tmux window itself and a live `claude` session are unverified pending a real ship (no tmux on this Windows host). Updated every doc describing the old toolbelt-only shipwright model. See §4s.
 - v20 (Claude Code, July 4, 2026): pushed v19's Shipwright work, then christened a throwaway Multipass ship on this Windows host specifically to verify it for real rather than leave it as an untested claim — `git pull`ed the new code onto it, deployed the age key, chartered a `--local` test charter, and `sail`ed it. Confirmed via `tmux list-windows`/`display-message`/`capture-pane`: all 8 role windows created correctly, `shipwright` at index 7 with cwd genuinely `~/shipyard`, `claude` launched and (correctly, with no key present yet) fell through to its normal `/login` menu. Confirmed `unlock shipwright` loads real `DEEPINFRA_API_KEY`/`GH_TOKEN` while cleanly reporting the absent `ANTHROPIC_API_KEY` rather than erroring (checked byte-lengths only, never printed real values — a permission classifier correctly blocked a first attempt that would have leaked them into the transcript, redone safely via a script file instead). Confirmed empirically (not just by reading `muster`) that a plain auto-indexed `tmux new-window` lands at 8, not colliding with `shipwright`. Sunk the test ship after. Still open, needing Eric's real `ANTHROPIC_API_KEY`: the actual skip-`/login` path and a real shipwright-authored commit to ERDA-Will. See §4s.
 - v21 (Claude Code, July 4, 2026): built the Preview role (dev-server deck window + `erda preview` SSH tunnel) at Eric's request, ruling out any external tunneling service before designing anything (ships already have a directly-reachable IP over existing SSH, so it was never actually a tradeoff) and resolving three real design choices by asking rather than guessing (SSH tunnel over raw IP, `integration` branch over a crew berth, tmux window over a headless process — now D18). Caught a real `core.fileMode=false` bug before pushing (same class as v14/§4o) by checking `git ls-files -s` directly rather than assuming `chmod +x` had taken effect on the new `ship/bin/preview` file. Verified fully live on a throwaway ship: the preview window's graceful no-branch fallback, auto-creation of `berths/integration` once a branch existed, the dev server actually starting, and — from this Windows host — a real `erda preview` SSH tunnel serving a genuine HTTP 200 fetched via `Invoke-WebRequest` against `localhost:8123`. Ship torn down after. See §4t.
+- v22 (Claude Code, July 4, 2026): gave crew members human-readable names at Eric's request — pitched three themed options, Eric chose to specify his own theme (hobbit-like, explicitly not actual Tolkien lore names) rather than pick from the pitches. Landed on a 31-name invented pool, deliberately avoiding the specific flower names Tolkien used for Sam Gamgee's children (the real collision risk, more than the obviously-famous names). `muster` now assigns one per crew member, avoiding collision with other currently-active crew in the same charter; it replaces the task ID in the tmux window title and status messages, while task IDs/branches/order paths stay unchanged underneath. Verified the random-pick-with-collision-avoidance logic standalone (`jq` isn't installed on this Windows host, so the roster.json field additions rely on close analogy to already-proven expressions rather than independent testing); an actual live `muster` run wasn't exercised this session. See §4u.

@@ -49,6 +49,29 @@ BASE="$(basename "$ORDER" .md)"
 SLUG="${BASE#"$TASK"-}"; [[ "$SLUG" == "$BASE" ]] && SLUG="task"
 BRANCH="crew/$TASK-$SLUG"
 
+# --- crew name: a human-readable callsign, not just a task ID ---
+# Invented, hobbit-flavored names -- deliberately NOT any name from Tolkien's
+# own hobbit genealogies (which run surprisingly deep, including flower names
+# for Sam Gamgee's children -- Rose/Daisy/Marigold/Ruby/Primrose/Pearl/Pansy/
+# Goldilocks/Elanor are all real hobbit names and excluded on purpose). Only
+# avoids collision with currently-*active* crew in this charter, not every
+# name ever used -- identity within one glance at the roster is the goal,
+# not permanent uniqueness across a charter's whole history.
+CREW_NAMES=(Alder Barley Birch Bracken Bramble Bumble Buttercup Clover Cricket
+  Dandelion Fennel Fern Foxglove Hazel Juniper Linden Marrow Meadow Nettle
+  Oaken Pebble Poppy Rowan Sage Sorrel Sparrow Tansy Thistle Willow Wren Yarrow)
+ACTIVE_NAMES="$(jq -r '.[] | select(.status=="working") | .name // empty' "$BUS/roster.json" 2>/dev/null)"
+CREWNAME=""
+while IFS= read -r candidate; do
+  if ! grep -qxF "$candidate" <<< "$ACTIVE_NAMES"; then
+    CREWNAME="$candidate"
+    break
+  fi
+done < <(printf '%s\n' "${CREW_NAMES[@]}" | shuf)
+# pool exhausted (every name currently in use) -- vanishingly unlikely given
+# typical crew sizes, but degrade gracefully rather than fail muster outright
+[[ -z "$CREWNAME" ]] && CREWNAME="${CREW_NAMES[$((RANDOM % ${#CREW_NAMES[@]}))]}-$TASK"
+
 log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
 
 # --- berth + branch ---
@@ -72,8 +95,8 @@ grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n
 (
   flock 9
   TMPJ="$(mktemp)"
-  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "crew-$TASK" --arg s "$(date -Is)" \
-     '. += [{task:$t, branch:$b, window:$w, started:$s, status:"working"}]' \
+  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$CREWNAME" --arg n "$CREWNAME" --arg s "$(date -Is)" \
+     '. += [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
      "$BUS/roster.json" > "$TMPJ" && mv "$TMPJ" "$BUS/roster.json"
 ) 9>"$BUS/.roster.lock"
 log "muster" "$TASK $BRANCH"
@@ -97,7 +120,7 @@ command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
 # the wrong commands. printf %q here produces a single shell-safe token that
 # reconstructs the exact original string at runtime for display only; the
 # real invocation below is unaffected.
-printf '[crew %s] agent: %s · branch: %s\n' "$TASK" $(printf '%q' "$AGENT_CMD") "$BRANCH"
+printf '[%s/%s] agent: %s · branch: %s\n' "$CREWNAME" "$TASK" $(printf '%q' "$AGENT_CMD") "$BRANCH"
 $AGENT_CMD "\$(cat .order.md)"
 RC=\$?
 # shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
@@ -111,12 +134,12 @@ STATUS=done
      "$BUS/roster.json" > "\$TMPJ" && mv "\$TMPJ" "$BUS/roster.json"
 ) 9>"$BUS/.roster.lock"
 printf '%s\t%s\t%s\n' "\$(date -Is)" "crew-\$STATUS" "$TASK rc=\$RC" >> "$BUS/log/events.log"
-echo; echo "[crew $TASK] \$STATUS (rc=\$RC) — report expected in .ship/reports/$TASK.report.md"
-echo "[crew $TASK] press enter to close this window"
+echo; echo "[$CREWNAME/$TASK] \$STATUS (rc=\$RC) — report expected in .ship/reports/$TASK.report.md"
+echo "[$CREWNAME/$TASK] press enter to close this window"
 read -r
 EOF
 chmod +x "$RUNNER"
 
-WIN="crew-$TASK"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="⚒$WIN"
+WIN="$CREWNAME"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="⚒$WIN"
 tmux new-window -t "$SES" -n "$WIN" "$RUNNER"
-echo "mustered $TASK on $BRANCH → window crew-$TASK (deck: $SES)"
+echo "mustered $TASK as '$CREWNAME' on $BRANCH → window $WIN (deck: $SES)"

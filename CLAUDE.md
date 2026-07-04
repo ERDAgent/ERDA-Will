@@ -18,7 +18,7 @@ You are working in **Shipyard**: the bootstrap repo for Eric's portable agentic 
 | Captain / First Mate / Bosun / Quartermaster / Purser / Crew | Orchestration roles; see plan §6 |
 | The Hold | Bare git repo (`.hold.git`) |
 | Berth | A git worktree under `berths/`, one per crew task |
-| Muster | Spawn: berth + branch + tmux window + headless agent |
+| Muster | Spawn: berth + branch + tmux window + headless agent; assigns each crew member a human-readable name (invented, hobbit-flavored — never an actual Tolkien hobbit name) from `ship/bin/muster`'s `CREW_NAMES` list |
 | Dry Dock / Home Port | `integration` branch / `main` |
 | Trade Winds | DeepInfra serving GLM-5.2 (model `zai-org/GLM-5.2`) |
 | Shipwrights | Claude Code (you) & Codex — system-level repair and support, not the daily sailing crew |

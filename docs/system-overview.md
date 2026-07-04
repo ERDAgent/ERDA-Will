@@ -120,6 +120,12 @@ never resumes after rejection; a reviewer's feedback always spawns a brand-new c
 agent against the same order, so there's no drift between what was reviewed and what a
 "fixed" version might silently become.
 
+Each crew member also gets a human-readable name (`muster` picks one at random from an
+invented, hobbit-flavored pool — deliberately not any actual Tolkien hobbit name — that
+avoids colliding with any other currently-active crew member in the same charter). The
+tmux window shows the name (e.g. "⚒Clover"); the roster (Bosun's window) shows name,
+task, status, and branch together, so "Clover" and "T-014" are always one glance apart.
+
 ### Shipwrights — Claude Code, Codex
 System-level repair and support for the ship/scripts themselves (this repo,
 `fitout.sh`, `ship/bin/*`) — not daily project work, and not part of the charter/crew
