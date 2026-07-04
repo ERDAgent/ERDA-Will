@@ -21,8 +21,8 @@ Command reference for anything not covered here: `multipass help <command>`.
 
 **`erda` — the friendly command prefix.** Once installed (§0), `erda <command> [ship]`
 covers everything in this file short of one-off/advanced operations (snapshots,
-file transfer): `christen`, `board` (connect), `open lockbox` (unlock secrets),
-`anchor`/`force-anchor` (stop), `sail`/`resail` (start/restart), `suspend`, `view`
+file transfer): `christen`, `board` (connect, deploying + unlocking the strongbox as
+needed), `anchor`/`force-anchor` (stop), `sail`/`resail` (start/restart), `suspend`, `view`
 (list/info), `sink` (destroy). Each section below leads with its `erda` equivalent,
 then the plain `multipass`/`ssh` commands underneath — useful for understanding what
 `erda` is actually doing, adapting it, or falling back to it if `erda` itself is ever
@@ -113,7 +113,7 @@ does — clone the repo, run the installer once, restart your terminal, `erda` w
 globally from then on. Idempotent (safe to re-run, e.g. after moving the repo or
 pulling an update — replaces the old block rather than duplicating it, including
 across the upgrade from an older marker). Verified for real: installed, confirmed bare
-`erda` commands (`christen`, `board`, `open lockbox`, `anchor`, `sail`, `resail`,
+`erda` commands (`christen`, `board`, `anchor`, `sail`, `resail`,
 `suspend`, `view`, `sink`) all work from a completely unrelated directory in a fresh
 shell session, re-ran the installer and confirmed no duplication.
 
@@ -174,7 +174,12 @@ erda board [ship]
 Does exactly what §2's manual steps below do (`multipass info` for the IP, then
 `ssh eric@<ip>`) in one command — verified end-to-end, including the "ship isn't
 running" error path (`multipass info` returns no IP → clear message pointing at
-`erda sail`, not a confusing hang).
+`erda sail`, not a confusing hang). **Also handles all of §3 automatically**: if a
+local `strongbox/ship.key` exists, `board` deploys it to the ship first (only if
+missing) and connects with the strongbox already unlocked at captain scope — no
+separate command needed, on a freshly christened ship or otherwise. Ships get sunk
+and re-christened often enough that a separate "now unlock it" step was pure
+friction, so this is just what `board` does now.
 
 ### By hand
 
@@ -227,21 +232,21 @@ in once before `pi` can reach DeepInfra. Without it, `pi` starts with `Warning: 
 models available` / `Error: No API key found` — that's this exact step missing, not a
 bug.
 
-### The easy way: `erda open lockbox`
+### The easy way: it's just `erda board` now (§2)
 
-```bash
-erda open lockbox [ship]
-```
-
-Automates as much of this section as can be automated from the host side: checks
-whether `~/.config/age/ship.key` already exists on the target ship, copies
-`strongbox/ship.key` in (with the right permissions) only if it's missing, then
-connects with the strongbox already unlocked at **captain scope** — both
-`DEEPINFRA_API_KEY` and `GH_TOKEN` (if `strongbox/captain.env.age` exists) land in
-your shell's environment the moment you're connected, no separate `eval "$(unlock)"`
-needed. Verified end-to-end on a ship with no key yet: correctly detected the missing
-key, copied it, and the resulting session had both real secret values loaded (checked
-by byte-length, not printing them).
+There used to be a separate `erda open lockbox` command for this. Ships get sunk and
+re-christened often enough that having to remember a second command right after
+`board` was pure friction, so `board` (§2) now does this automatically as part of
+connecting: checks whether `~/.config/age/ship.key` already exists on the target
+ship, copies `strongbox/ship.key` in (with the right permissions) only if it's
+missing, then connects with the strongbox already unlocked at **captain scope** —
+both `DEEPINFRA_API_KEY` and `GH_TOKEN` (if `strongbox/captain.env.age` exists) land
+in your shell's environment the moment you're connected, no separate `eval
+"$(unlock)"` needed. Verified end-to-end on a ship with no key yet: correctly
+detected the missing key, copied it, and the resulting session had both real secret
+values loaded (checked by byte-length, not printing them). If you don't have a local
+`strongbox/ship.key` at all yet (run `erda strongbox init` first), `board` just
+connects plainly instead of failing.
 
 What it *can't* automate: `unlock`'s whole mechanism only makes sense inside a live
 shell session (it prints `export` lines for that shell to `eval`), so "unlocking" from
@@ -400,8 +405,8 @@ not oversight:
 - **Strongbox age key** (§3) — needed again on every *new* ship, including a fresh one
   after `delete --purge` + relaunch. `fitout.sh` verifies the strongbox decrypts if the
   key is already present, and skips gracefully (no error) if it isn't yet — see
-  `strongbox/README.md`. `erda open lockbox` (§3) automates the copy-in step and
-  connects with it already unlocked.
+  `strongbox/README.md`. `erda board` (§2/§3) automates the copy-in step and connects
+  with it already unlocked, automatically, every time.
 - Everything else — git identity (`ERDAgent` / `agentic@ericrose.dev`, the ship's own
   persona), agent CLIs, PATH wiring, `ship/bin/*` on PATH, tmux/Fresh config — is set by
   `fitout.sh` on every launch, unconditionally and idempotently. A fresh `multipass

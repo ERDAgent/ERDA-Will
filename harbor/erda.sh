@@ -7,10 +7,10 @@
 #                                             again after moving/updating the repo)
 #   christen [name] [cpus] [memory] [disk]   launch a new ship
 #   strongbox <init|backup|restore>          manage the local age keypair (see below)
-#   board [ship]                             connect: multipass info + ssh in
-#   open lockbox [ship]                      deploy the age key if needed, connect
-#                                             with the strongbox already unlocked
-#                                             (captain scope: model keys + GH_TOKEN)
+#   board [ship]                             connect: multipass info + ssh in, deploying
+#                                             the age key if needed and connecting with
+#                                             the strongbox already unlocked (captain
+#                                             scope: model keys + GH_TOKEN)
 #   anchor [ship]                            multipass stop
 #   force-anchor [ship]                      multipass stop --force
 #   sail [ship]                              multipass start
@@ -57,8 +57,8 @@ usage: erda <command> [ship] [args...]
   strongbox init                            generate a new keypair + encrypt secrets
   strongbox backup <path>                   copy ship.key to a path of your choosing
   strongbox restore <path>                  copy ship.key back from a path
-  board [ship]                              connect (multipass info + ssh)
-  open lockbox [ship]                       deploy the age key if needed, connect unlocked
+  board [ship]                              connect (multipass info + ssh), deploying the
+                                             age key if needed and unlocking the strongbox
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
   sail [ship]                               start
@@ -276,7 +276,7 @@ cmd_strongbox() {
       cp "$src" "$key_path"
       chmod 600 "$key_path"
       echo "restored $key_path from $src"
-      echo "verify with: erda open lockbox <ship>"
+      echo "verify with: erda board <ship>"
       ;;
 
     *)
@@ -306,32 +306,30 @@ case "$CMD" in
     ;;
 
   board)
+    # Ships get sunk and christened often enough that a separate "now unlock
+    # it" step was pure friction -- boarding always deploys ship.key (if
+    # missing) and connects with the strongbox already unlocked, as long as a
+    # local strongbox/ship.key exists at all. Before `erda strongbox init` has
+    # ever been run there's nothing to deploy, so it falls back to a plain
+    # connect rather than failing hard.
     NAME="${1:-ship}"
     IP="$(ship_ip "$NAME")"
     echo "boarding '$NAME' ($IP)..."
-    ssh -i "$SSH_PRIV" eric@"$IP"
-    ;;
-
-  open)
-    [[ "${1:-}" == "lockbox" ]] || { echo "erda: 'open' only supports 'open lockbox [ship]'" >&2; exit 1; }
-    shift
-    NAME="${1:-ship}"
-    IP="$(ship_ip "$NAME")"
-    echo "opening the lockbox on '$NAME' ($IP)..."
 
     KEY_PATH="$REPO_ROOT/strongbox/ship.key"
-    [[ -f "$KEY_PATH" ]] || { echo "erda: no local strongbox/ship.key -- generate/place it first (see strongbox/README.md)" >&2; exit 1; }
-
-    KEY_PRESENT="$(ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'test -f ~/.config/age/ship.key && echo yes || echo no')"
-    if [[ "$KEY_PRESENT" != "yes" ]]; then
-      echo "no age key on '$NAME' yet -- copying strongbox/ship.key..."
-      ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'mkdir -p ~/.config/age'
-      scp -i "$SSH_PRIV" -o LogLevel=ERROR "$KEY_PATH" eric@"$IP":~/.config/age/ship.key
-      ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'chmod 600 ~/.config/age/ship.key'
+    if [[ -f "$KEY_PATH" ]]; then
+      KEY_PRESENT="$(ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'test -f ~/.config/age/ship.key && echo yes || echo no')"
+      if [[ "$KEY_PRESENT" != "yes" ]]; then
+        echo "no age key on '$NAME' yet -- copying strongbox/ship.key..."
+        ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'mkdir -p ~/.config/age'
+        scp -i "$SSH_PRIV" -o LogLevel=ERROR "$KEY_PATH" eric@"$IP":~/.config/age/ship.key
+        ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" 'chmod 600 ~/.config/age/ship.key'
+      fi
+      ssh -i "$SSH_PRIV" -t eric@"$IP" 'eval "$(unlock captain)"; exec bash -l'
+    else
+      echo "erda: no local strongbox/ship.key yet -- connecting without the strongbox unlocked (see strongbox/README.md)" >&2
+      ssh -i "$SSH_PRIV" eric@"$IP"
     fi
-
-    echo "connecting with the lockbox unlocked (captain scope: model keys + GH_TOKEN if present)..."
-    ssh -i "$SSH_PRIV" -t eric@"$IP" 'eval "$(unlock captain)"; exec bash -l'
     ;;
 
   anchor)

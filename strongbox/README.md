@@ -42,8 +42,8 @@ By hand, if you want to see every step:
     mkdir -p ~/.config/age && scp ship.key <ship>:~/.config/age/ship.key
     eval "$(unlock)"          # or: set -a; source <(unlock); set +a
 
-(`erda open lockbox <ship>` does this deploy-if-missing step for you, then
-connects with the strongbox already unlocked.)
+(`erda board <ship>` does this deploy-if-missing step for you automatically, every
+time you connect, then connects with the strongbox already unlocked.)
 
 `fitout.sh` calls unlock automatically when the key is present, and skips
 gracefully when it isn't (so the keel never blocks on secrets).

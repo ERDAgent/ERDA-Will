@@ -853,6 +853,61 @@ reviewed carefully by hand (no `pwsh` available on this host to execute it direc
 host-side/ship-independent nature of `ship.key` explicitly, plus the checkout-staleness
 gotcha found above.
 
+## 4r. Windows first-run friction pass: strongbox/age fixes, `captain list charters`, `charter` auto-unlock, `board` absorbs `open lockbox` (July 3–4, 2026)
+
+Eric hit `erda strongbox init` failing with `'age' isn't installed on this machine` on
+a fresh Windows account, and separately `captain charter` silently falling back to
+local-only right after a fresh `christen`. Both traced back to the same root pattern:
+first-run-on-a-new-machine/ship gaps that this project's existing tooling didn't yet
+cover, in a project where ships are meant to be sunk and re-christened routinely (not
+long-lived), so every one of these gaps is hit repeatedly, not once.
+
+**Strongbox/age (Windows)**: `erda strongbox init` asked to confirm overwriting
+`ship.key` (a scary, hard-to-undo prompt per §4q) *before* even checking `age-keygen`
+was installed — reordered so the dependency check runs first. `erda install` now
+auto-installs `age` via `winget install --id FiloSottile.age` on first run, so the
+gap doesn't reappear on the next fresh machine at all. Separately, and worse: the
+PowerShell recipient extraction (`Select-String "age1"`) returned the whole matched
+line (`# public key: age1...`), not just the key — `age -r` was silently encrypting
+to a bogus recipient, so `keys.env.age`/`captain.env.age` decrypted to 0 bytes with no
+hard failure at the time they were written. Fixed with a proper regex extraction
+(`[regex]::Match(..., 'age1[a-z0-9]+')`), verified against the real key file. Eric
+regenerated the strongbox for real afterward (new `GH_TOKEN` scope needed anyway);
+both `.env.age` files now decrypt to real byte counts.
+
+**`captain list charters`**: new subcommand (`ship/bin/captain`) — lists every
+`$FLEET` directory with completed charter setup (`.ship/` present, same check `sail`
+uses), showing tmux deck status (up/down) and git origin (or `(local only)`). Tested
+against fake populated/empty fleets and a bad-subcommand path.
+
+**`charter` auto-unlocks captain scope**: the real cause of the local-only fallback
+above — `GH_TOKEN` only ever loaded into whatever one shell had manually run `eval
+"$(unlock captain)"`, and `charter` never did this itself (unlike `sail`'s bridge
+window, which always has). Fixed by having `charter` attempt `eval "$(unlock
+captain)"` quietly, before the `gh auth status` check, whenever gh isn't already
+authenticated — same privilege the bridge already gets automatically, not a new
+escalation. Verified with fake `gh`/`unlock` binaries: succeeds silently when unlock
+has real credentials to offer, falls back to the existing local-only message
+unchanged when it doesn't (e.g. `ship.key` never deployed to this ship at all).
+
+**`erda board` absorbs `erda open lockbox`**: Eric's framing — "I should not need to
+do this every time... maybe [unlocking] is always a part of boarding." `open lockbox`
+is gone as a separate command; `board` now does everything it did automatically,
+every time: deploys `strongbox/ship.key` to the ship if missing, then connects with
+captain scope unlocked — falling back to a plain connect (with a clear notice, not a
+hard failure) only if no local `strongbox/ship.key` exists at all yet (i.e. `erda
+strongbox init` was never run on this machine). Verified both branches in both
+`erda.sh` and `erda.ps1` against fake `multipass`/`ssh`/`scp`. Updated every doc
+reference (`docs/cheatsheet.md`, `docs/vm-cheatsheet.md`, `strongbox/README.md`) and
+caught one live bug the removal would otherwise have introduced: `erda strongbox
+restore`'s own success message in both scripts still pointed at the now-deleted `erda
+open lockbox <ship>` — fixed to say `erda board <ship>`.
+
+Net effect: a fresh Windows machine + a freshly sunk/christened ship should now reach
+a working `captain charter` with zero manual unlock steps, as long as `erda strongbox
+init` has been run once on the host — which is the one step that's structurally
+impossible to automate away (a private key has to get onto the machine somehow).
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -912,3 +967,4 @@ Next up, in rough priority order:
 - v15 (Claude Code, July 3, 2026): Eric asked to re-drill the whole system on this Mac since a lot had landed since the last real macOS test. Full drill passed end-to-end: `erda` global install, `christen`, all agent CLIs + `fitout.sh` idempotency + git identity, the rest of the `erda` command surface, and a real charter → sail → hand-written order → `muster` with real `pi`/GLM-5.2 → manual dry-dock merge → fast-forward `main`, all against a real ship. Found and fixed a real bug: `ship_ip()` in `erda.sh`/`erda.ps1` (and, defensively, both `christen` wait-loops) accepted multipass's `--` placeholder (shown for a stopped/mid-restart instance) as a valid IP, since it only checked non-empty — caused a confusing `ssh: hostname contains invalid characters` instead of erda's own clear not-running message; fixed by requiring a real dotted-quad match in all four spots, shellcheck clean. Also hit a real `multipassd` hang on this host (stuck mid-`resail`/restart, needed two rounds of `sudo launchctl kickstart` plus killing an orphaned qemu process holding a disk lock — all needed Eric directly, since sudo needs a real TTY this tool doesn't have) — root-caused to a Multipass/qemu-on-macOS quirk, not a repo bug; the wedged test VM was purged and redrilled clean rather than debugged further, matching this project's own disposable-ship convention. See §4o.
 - v16 (Claude Code, July 3, 2026): Eric asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.
 - v17 (Claude Code, July 3, 2026): Eric lost `strongbox/ship.key` (likely deleted along with an old ship, reasonably but incorrectly assuming it was ship-scoped — it's host-side infrastructure, `erda sink` can't touch it) and, since the committed `.env.age` files were encrypted to that specific key, recovery meant regenerating the keypair and re-entering both secrets, not just making a new key. Walked Eric through the recovery in a real terminal (secrets need hidden interactive input my tools can't capture) and verified it worked via exact byte-length match against earlier-session values (32/93 bytes) plus a real `gh auth status`. Found one more real bug during verification: the test ship's own git checkout still had the *old* encrypted bundles (cloned before the key rotation), so `unlock` failed with a recipient mismatch even after the new key was deployed — not a script bug, a genuine gap in the mental model (the `.env.age` files travel with the repo, the key doesn't) now documented in `strongbox/README.md`. Built `erda strongbox init/backup/restore` (both `erda.sh` and `erda.ps1`) at Eric's request to make this recoverable/preventable next time — `init` folds the whole manual README recipe into one guided command with the same byte-length verification discipline as §4f, `backup`/`restore` are plain path-based file copies with no assumed cloud/vault provider (Eric's explicit choice over a macOS-Keychain-integrated alternative). Caught a real PowerShell 5.1 footgun in the new `Invoke-Strongbox` before it shipped (`age-keygen`'s stderr output redirected under the script's global `$ErrorActionPreference = "Stop"`) by checking it against the same pattern `Invoke-Christen` already had to work around. See §4q.
+- v18 (Claude Code, July 3–4, 2026): fixed a real Windows-only strongbox bug found while Eric actually used `erda strongbox init` for the first time on a fresh account — the age-not-installed check ran after the destructive "overwrite ship.key" confirmation prompt (reordered), and, more seriously, the PowerShell recipient extraction returned the whole `# public key: age1...` comment line instead of just the key, so `age -r` silently encrypted to a bogus recipient (`.env.age` files decrypted to 0 bytes with no hard failure at the time). Added `winget`-based auto-install of `age` to `erda install` so the missing-dependency gap doesn't recur on the next fresh machine. Added `captain list charters`. Found and fixed the actual cause of a `captain charter` "gh not authenticated" fallback right after a fresh `christen`: `charter` never auto-unlocked captain scope itself (unlike `sail`'s bridge window, which always has) — fixed, verified against fake `gh`/`unlock` binaries in both the success and genuinely-no-key-deployed-yet paths. Merged `erda open lockbox` into `erda board` at Eric's request ("ships get sunk/christened regularly, I shouldn't need to do this every time") — `board` now always deploys the age key and unlocks captain scope automatically, falling back to a plain connect only if no local `strongbox/ship.key` exists at all; updated every doc reference and caught one live bug the removal would otherwise have shipped (`erda strongbox restore`'s own success message in both scripts still pointed at the now-deleted `open lockbox`). See §4r.

@@ -9,10 +9,10 @@
                                               again after moving/updating the repo)
     christen [name] [cpus] [memory] [disk]   launch a new ship
     strongbox <init|backup|restore>          manage the local age keypair (see below)
-    board [ship]                             connect: multipass info + ssh in
-    open lockbox [ship]                      deploy the age key if needed, connect
-                                              with the strongbox already unlocked
-                                              (captain scope: model keys + GH_TOKEN)
+    board [ship]                             connect: multipass info + ssh in, deploying
+                                              the age key if needed and connecting with
+                                              the strongbox already unlocked (captain
+                                              scope: model keys + GH_TOKEN)
     anchor [ship]                            multipass stop
     force-anchor [ship]                      multipass stop --force
     sail [ship]                              multipass start
@@ -70,8 +70,8 @@ usage: erda <command> [ship] [args...]
   strongbox init                            generate a new keypair + encrypt secrets
   strongbox backup <path>                   copy ship.key to a path of your choosing
   strongbox restore <path>                  copy ship.key back from a path
-  board [ship]                              connect (multipass info + ssh)
-  open lockbox [ship]                       deploy the age key if needed, connect unlocked
+  board [ship]                              connect (multipass info + ssh), deploying the
+                                             age key if needed and unlocking the strongbox
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
   sail [ship]                               start
@@ -369,7 +369,7 @@ function Invoke-Strongbox {
       }
       Copy-Item -Path $Src -Destination $KeyPath -Force
       Write-Host "restored $KeyPath from $Src"
-      Write-Host "verify with: erda open lockbox <ship>"
+      Write-Host "verify with: erda board <ship>"
     }
 
     default {
@@ -398,41 +398,34 @@ switch ($Command) {
   }
 
   "board" {
+    # Ships get sunk and christened often enough that a separate "now unlock
+    # it" step was pure friction -- boarding always deploys ship.key (if
+    # missing) and connects with the strongbox already unlocked, as long as a
+    # local strongbox\ship.key exists at all. Before `erda strongbox init` has
+    # ever been run there's nothing to deploy, so it falls back to a plain
+    # connect rather than failing hard.
     $Name = Get-Arg0
     $Ip = Get-ShipIp $Name
     Write-Host "boarding '$Name' ($Ip)..."
-    ssh -i $SshPriv eric@$Ip
-  }
-
-  "open" {
-    if ($Rest.Count -lt 1 -or $Rest[0] -ne "lockbox") {
-      Write-Error "erda: 'open' only supports 'open lockbox [ship]'"
-      exit 1
-    }
-    $Name = if ($Rest.Count -ge 2 -and $Rest[1]) { $Rest[1] } else { "ship" }
-    $Ip = Get-ShipIp $Name
-    Write-Host "opening the lockbox on '$Name' ($Ip)..."
 
     $KeyPath = Join-Path $RepoRoot "strongbox\ship.key"
     if (-not (Test-Path $KeyPath)) {
-      Write-Error "erda: no local strongbox\ship.key -- generate/place it first (see strongbox/README.md)"
-      exit 1
+      Write-Warning "erda: no local strongbox\ship.key yet -- connecting without the strongbox unlocked (see strongbox/README.md)"
+      ssh -i $SshPriv eric@$Ip
+    } else {
+      # -o LogLevel=ERROR: suppress ssh's routine notices at the ssh level
+      # rather than redirecting PowerShell's stream (see Invoke-Christen's own
+      # note on why -- redirected native stderr + strict error handling is a
+      # real PowerShell 5.1 footgun).
+      $KeyPresent = ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "test -f ~/.config/age/ship.key && echo yes || echo no"
+      if ($KeyPresent -ne "yes") {
+        Write-Host "no age key on '$Name' yet -- copying strongbox\ship.key..."
+        ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "mkdir -p ~/.config/age"
+        scp -i $SshPriv -o LogLevel=ERROR $KeyPath eric@${Ip}:~/.config/age/ship.key
+        ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "chmod 600 ~/.config/age/ship.key"
+      }
+      ssh -i $SshPriv -t eric@$Ip 'eval "$(unlock captain)"; exec bash -l'
     }
-
-    # -o LogLevel=ERROR: suppress ssh's routine notices at the ssh level
-    # rather than redirecting PowerShell's stream (see Invoke-Christen's own
-    # note on why -- redirected native stderr + strict error handling is a
-    # real PowerShell 5.1 footgun).
-    $KeyPresent = ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "test -f ~/.config/age/ship.key && echo yes || echo no"
-    if ($KeyPresent -ne "yes") {
-      Write-Host "no age key on '$Name' yet -- copying strongbox\ship.key..."
-      ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "mkdir -p ~/.config/age"
-      scp -i $SshPriv -o LogLevel=ERROR $KeyPath eric@${Ip}:~/.config/age/ship.key
-      ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "chmod 600 ~/.config/age/ship.key"
-    }
-
-    Write-Host "connecting with the lockbox unlocked (captain scope: model keys + GH_TOKEN if present)..."
-    ssh -i $SshPriv -t eric@$Ip 'eval "$(unlock captain)"; exec bash -l'
   }
 
   "anchor" {
