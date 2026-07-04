@@ -199,11 +199,13 @@ EOF
 sudo chmod 644 /etc/profile.d/shipyard.sh
 
 # --- the strongbox: decrypt each compartment if the age key is already on this ship ---
-# Two compartments (D15): crew (keys.env.age) and captain (captain.env.age,
-# added with GitHub access) verify independently so a missing/bad captain
-# compartment doesn't block crew from working, and vice versa.
+# Three compartments (D15, extended for the shipwright pane): crew
+# (keys.env.age), captain (captain.env.age, added with GitHub access), and
+# shipwright (shipwright.env.age, ANTHROPIC_API_KEY) verify independently so a
+# missing/bad compartment never blocks the others from working.
 CREW_BOX="$SHIPYARD_DIR/strongbox/keys.env.age"
 CAPTAIN_BOX="$SHIPYARD_DIR/strongbox/captain.env.age"
+SHIPWRIGHT_BOX="$SHIPYARD_DIR/strongbox/shipwright.env.age"
 AGE_KEY="$HOME/.config/age/ship.key"
 if [[ -f "$AGE_KEY" ]]; then
   if [[ -f "$CREW_BOX" ]]; then
@@ -220,8 +222,15 @@ if [[ -f "$AGE_KEY" ]]; then
   else
     log "strongbox: captain compartment not present yet — skipping"
   fi
+  if [[ -f "$SHIPWRIGHT_BOX" ]]; then
+    log "strongbox: verifying shipwright compartment decrypt"
+    age -d -i "$AGE_KEY" "$SHIPWRIGHT_BOX" >/dev/null
+    log "strongbox: shipwright OK — load into a shell with: eval \"\$(unlock shipwright)\""
+  else
+    log "strongbox: shipwright compartment not present yet — skipping"
+  fi
 else
-  log "strongbox: no age key at $AGE_KEY yet — skipping (drop your key there, then 'eval \"\$(unlock)\"' or 'eval \"\$(unlock captain)\"')"
+  log "strongbox: no age key at $AGE_KEY yet — skipping (drop your key there, then 'eval \"\$(unlock)\"', 'eval \"\$(unlock captain)\"', or 'eval \"\$(unlock shipwright)\"')"
 fi
 
 log "fitout complete"

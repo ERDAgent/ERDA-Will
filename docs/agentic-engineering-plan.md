@@ -140,7 +140,7 @@ What lives in `shipyard/scuttlebutt/`: `config.json` (JSONC), a ship theme, and 
 | **pi** | `npm i -g --ignore-scripts @earendil-works/pi-coding-agent` | **The orchestration host** — the ship's command structure runs here |
 | **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | The relief vessel: rigged, provisioned, ready to take over if pi ever becomes a liability |
 
-Shipwrights repair the ship; they don't sail her. Auth model: Claude Code and Codex via your existing subscriptions (`/login` flows); pi and OpenCode pointed at the Trade Winds (DeepInfra) via API key from the Strongbox.
+Shipwrights repair the ship; they don't sail her. Auth model: Claude Code's shipwright pane (one window in every charter's deck, `~/shipyard` cwd) uses `ANTHROPIC_API_KEY` from the Strongbox's shipwright compartment — chosen over the `/login` subscription flow so it can be provisioned unattended like every other credential here, at the cost of pay-per-token billing on that key. Codex still uses your existing subscription via `/login`. pi and OpenCode are pointed at the Trade Winds (DeepInfra) via their own API key from the Strongbox.
 
 ## 5. Layer 3 — The Trade Winds: GLM-5.2 via DeepInfra
 

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # unlock — decrypt the strongbox and print export lines for the current shell
-# usage: eval "$(unlock)"            # crew scope: model keys only (keys.env.age)
-#        eval "$(unlock captain)"    # bridge/integration scope: adds captain.env.age
+# usage: eval "$(unlock)"              # crew scope: model keys only (keys.env.age)
+#        eval "$(unlock captain)"      # bridge/integration scope: adds captain.env.age
+#        eval "$(unlock shipwright)"   # system-level scope: adds shipwright.env.age too
 #
-# Two compartments on purpose: crew agents need model keys to work, but must
+# Three compartments on purpose: crew agents need model keys to work, but must
 # never hold push/publish credentials — "crew never push" (D10) is enforced
 # here as a capability boundary, not just a line in crew.md. GH_TOKEN and any
-# future publish credentials live only in captain.env.age.
+# future publish credentials live only in captain.env.age. shipwright.env.age
+# (ANTHROPIC_API_KEY) is scoped narrower still in a different dimension: it's
+# for the one pane doing system-level work on ERDA-Will itself, not charter
+# work — but that pane also needs push access, so shipwright scope is a
+# strict superset of captain, not a sibling to it.
 set -euo pipefail
 SCOPE="${1:-crew}"
 BOXDIR="${STRONGBOX_DIR:-$HOME/shipyard/strongbox}"
@@ -14,9 +19,10 @@ KEY="${AGE_KEY:-$HOME/.config/age/ship.key}"
 [[ -f "$KEY" ]] || { echo "echo 'age key not found: $KEY (drop your private key there)' >&2"; exit 1; }
 
 case "$SCOPE" in
-  crew)    FILES=("$BOXDIR/keys.env.age") ;;
-  captain) FILES=("$BOXDIR/keys.env.age" "$BOXDIR/captain.env.age") ;;
-  *) echo "echo 'unlock: unknown scope: $SCOPE (crew|captain)' >&2"; exit 1 ;;
+  crew)       FILES=("$BOXDIR/keys.env.age") ;;
+  captain)    FILES=("$BOXDIR/keys.env.age" "$BOXDIR/captain.env.age") ;;
+  shipwright) FILES=("$BOXDIR/keys.env.age" "$BOXDIR/captain.env.age" "$BOXDIR/shipwright.env.age") ;;
+  *) echo "echo 'unlock: unknown scope: $SCOPE (crew|captain|shipwright)' >&2"; exit 1 ;;
 esac
 
 FOUND=0

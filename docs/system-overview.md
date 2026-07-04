@@ -123,7 +123,12 @@ agent against the same order, so there's no drift between what was reviewed and 
 ### Shipwrights — Claude Code, Codex
 System-level repair and support for the ship/scripts themselves (this repo,
 `fitout.sh`, `ship/bin/*`) — not daily project work, and not part of the charter/crew
-system at all. Used for exactly the kind of work that produced this document.
+system at all. Used for exactly the kind of work that produced this document. Claude
+Code gets its own tmux window (`sail`'s window 7, "shipwright") in every charter's
+deck for reachability — one tmux-switch away no matter which charter you're
+working — but its cwd is always `~/shipyard`, never the charter, and it loads its own
+strongbox compartment (`ANTHROPIC_API_KEY`, see `strongbox/README.md`), not the
+charter's model keys.
 
 ## How they interact: the mission lifecycle
 

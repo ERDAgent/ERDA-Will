@@ -15,7 +15,7 @@ Run `harbor\install.cmd` on Windows, or `harbor/erda.sh install` on mac/linux, t
 From host OS
 
   - `erda christen [name] [cpus] [memory] [disk]`: launches a new ship.
-  - `erda strongbox init`: input github and deepinfra keys.
+  - `erda strongbox init`: input deepinfra, github, and claude (anthropic) keys.
   - `erda strongbox backup/restore`: backs up or restores the strongbox.
   - `erda board [ship]`: connects to a ship, deploying the age key if needed and unlocking the strongbox (captain scope) automatically.
   - `erda anchor [ship]`: gracefully shuts down.
@@ -31,3 +31,5 @@ From a ship
 
   - `captain charter [name] --local`: creates or continues a github repo.
   - `captain work [charter]`: starts work on a charter.
+  - `captain list charters`: lists existing charters and their status.
+  - `captain work`'s deck has a "shipwright" window (Claude Code, cwd `~/shipyard`) for system-level changes to ERDA-Will itself — not the charter.

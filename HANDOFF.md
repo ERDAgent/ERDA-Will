@@ -40,6 +40,7 @@ A portable Linux dev environment (VM bootable identically on macOS, Windows, and
 | D14 | GitHub access via gh CLI + `GH_TOKEN` fine-grained PAT (ERDAgent account) in the strongbox; NO `gh auth login` state on disk | Eric's call (July 2, 2026), from the Captain's maiden-voyage review. Env-var auth is headless, rotates by re-encrypting one file, and inherits the strongbox's existing trust model. PAT scoped to charter repos only, Contents RW (see strongbox/README.md) |
 | D15 | Two-compartment strongbox: `keys.env.age` (crew scope: model keys) + `captain.env.age` (captain scope: GH_TOKEN). `unlock` defaults to crew; only sail's bridge window loads `unlock captain` | Push credentials must never reach crew agents — D10's "crew never push" becomes a capability boundary instead of a prompt rule. Muster's crew windows call plain `unlock` (unchanged, back-compatible) and get model keys only |
 | D16 | Fleet naming + the one-charter-one-ship rule. Ship classes: Flagship (Will-class virtue names: resolve, endeavour, tenacity…), Skiff (`skiff-<purpose>`, purged same day), Named vessel (client isolation). A charter resides on exactly ONE ship at a time; it may move (push → purge → re-charter) but never live on two | Eric's call (July 2, 2026), with the name lore recorded: ERDA = EricRoseDevAgent, Will = the impetus — "the will of the people that drives the navy to sail." The residency rule became load-bearing the moment D14 gave ships push credentials: two Captains on one charter = push races on integration/main. keel.yaml verified name-agnostic, so multi-ship needs zero code changes — this is convention + docs only |
+| D17 | Shipwright (D6) gets a real, live deck window (`sail`'s window 7, one per charter's tmux session, cwd `~/shipyard`) and a third strongbox compartment (`shipwright.env.age`: `ANTHROPIC_API_KEY`), superset of captain scope. Auth via API key, not Claude Code's `/login` subscription flow | Eric's call (July 4, 2026), overriding `docs/agentic-engineering-plan.md`'s original `/login`-for-shipwrights choice: consistency with how every other role's credentials load (unattended, strongbox-driven) outweighed the pay-per-token cost of a dedicated key. "A pane like the other roles" meant living inside every charter's own deck, even though Shipwright's actual scope (`~/shipyard`) is deliberately charter-independent (D6) |
 
 ## 3. Facts verified during planning (with as-of dates)
 
@@ -908,6 +909,64 @@ a working `captain charter` with zero manual unlock steps, as long as `erda stro
 init` has been run once on the host — which is the one step that's structurally
 impossible to automate away (a private key has to get onto the machine somehow).
 
+## 4s. Shipwright gets a real deck window + strongbox compartment (July 4, 2026)
+
+Eric asked for the "Claude Shipwright" role from `docs/shipyard-architecture.mermaid`
+(previously just a Layer 1–2 toolbelt concept — Claude Code installed on every ship
+per D6, but with no dedicated pane, credential, or scope of its own) to become an
+actual live tmux window, with its own key addable alongside `DEEPINFRA_API_KEY`/
+`GH_TOKEN`, scoped specifically to system-level changes on ERDA-Will itself (as
+opposed to the Captain, who oversees a charter).
+
+Two real conflicts with the existing plan surfaced before writing any code, both
+resolved by asking rather than guessing (see D17):
+
+1. `docs/agentic-engineering-plan.md` had already decided shipwrights authenticate via
+   Claude Code's `/login` subscription flow, specifically *not* an API key, to keep
+   them off the strongbox's pay-per-token model. Eric's literal request ("add my
+   claude key at the same time as deepinfra and gh") pointed the other way — he chose
+   the API-key path once the conflict was surfaced, prioritizing unattended
+   provisioning consistency with every other role over avoiding per-token billing.
+2. Every doc describes Shipwright as "not part of the charter/crew system at all,"
+   but Eric wanted "a pane like the other roles" — which are all per-charter tmux
+   windows. Resolved as: one Shipwright window in *every* charter's deck (always one
+   tmux-switch away, whichever charter you're in), but its cwd is always `~/shipyard`
+   and it loads its own strongbox scope — never the charter's.
+
+Implemented: `ship/bin/unlock` gained a third scope (`shipwright` = crew + captain +
+shipwright compartments — a superset of captain, since this pane needs `GH_TOKEN` to
+push system changes too, not just its own `ANTHROPIC_API_KEY`). `erda strongbox init`
+(both `erda.sh`/`erda.ps1`) now optionally prompts for `ANTHROPIC_API_KEY` and
+encrypts it to a new `strongbox/shipwright.env.age`, verified the same
+byte-length-not-presence way as the other two compartments — tested end-to-end
+against a real (throwaway) age keypair, all three compartments round-tripping
+correctly. `fitout.sh`'s strongbox verification loop extended to check this third
+compartment independently, same pattern as the existing two. `sail` gained window 7
+("shipwright"): `claude` at `$SHIPYARD_DIR`, unlocking shipwright scope automatically
+first, falling back to a plain shell if `claude` isn't installed — same robustness
+pattern as the bridge window's `pi` fallback; crew windows now start at 8+ instead of
+7+ (verified `muster` doesn't hardcode window indices, so this shift is safe).
+No new git-identity work needed: `docs/git-and-github.md` already documented that
+every commit on a ship, shipwright included, inherits the ship-wide `ERDAgent` config
+from `fitout.sh` (D13) — confirmed by reading, not assumed.
+
+Couldn't functionally test the actual tmux window creation or a real `claude`
+session end-to-end (no tmux on this Windows host, and no ship was live this
+session) — verified by close structural analogy to the six existing, already-proven
+`sail` windows instead, plus a real round-trip test of the new strongbox/unlock
+plumbing in isolation. Updated every doc that described the old shipwright model:
+`docs/agentic-engineering-plan.md` (auth model), `docs/system-overview.md` (now notes
+the concrete window + cwd + compartment), `strongbox/README.md` (new compartment row
++ an `ANTHROPIC_API_KEY` setup section mirroring the existing `GH_TOKEN` one),
+`docs/cheatsheet.md`, and `docs/shipyard-architecture.mermaid` (added the `SW` node
+inside the Layer 4 subgraph with a dotted edge from `CC`, rather than leaving the
+diagram describing a toolbelt-only concept that's no longer the whole picture).
+
+**Not yet verified on a real ship** — next session (or Eric) should confirm: `sail`
+actually creates 8 windows in the right order with no tmux errors, the shipwright
+window's `claude` picks up `ANTHROPIC_API_KEY` from `unlock shipwright` and skips
+`/login`, and a real shipwright-authored commit to ERDA-Will shows up as `ERDAgent`.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -968,3 +1027,4 @@ Next up, in rough priority order:
 - v16 (Claude Code, July 3, 2026): Eric asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.
 - v17 (Claude Code, July 3, 2026): Eric lost `strongbox/ship.key` (likely deleted along with an old ship, reasonably but incorrectly assuming it was ship-scoped — it's host-side infrastructure, `erda sink` can't touch it) and, since the committed `.env.age` files were encrypted to that specific key, recovery meant regenerating the keypair and re-entering both secrets, not just making a new key. Walked Eric through the recovery in a real terminal (secrets need hidden interactive input my tools can't capture) and verified it worked via exact byte-length match against earlier-session values (32/93 bytes) plus a real `gh auth status`. Found one more real bug during verification: the test ship's own git checkout still had the *old* encrypted bundles (cloned before the key rotation), so `unlock` failed with a recipient mismatch even after the new key was deployed — not a script bug, a genuine gap in the mental model (the `.env.age` files travel with the repo, the key doesn't) now documented in `strongbox/README.md`. Built `erda strongbox init/backup/restore` (both `erda.sh` and `erda.ps1`) at Eric's request to make this recoverable/preventable next time — `init` folds the whole manual README recipe into one guided command with the same byte-length verification discipline as §4f, `backup`/`restore` are plain path-based file copies with no assumed cloud/vault provider (Eric's explicit choice over a macOS-Keychain-integrated alternative). Caught a real PowerShell 5.1 footgun in the new `Invoke-Strongbox` before it shipped (`age-keygen`'s stderr output redirected under the script's global `$ErrorActionPreference = "Stop"`) by checking it against the same pattern `Invoke-Christen` already had to work around. See §4q.
 - v18 (Claude Code, July 3–4, 2026): fixed a real Windows-only strongbox bug found while Eric actually used `erda strongbox init` for the first time on a fresh account — the age-not-installed check ran after the destructive "overwrite ship.key" confirmation prompt (reordered), and, more seriously, the PowerShell recipient extraction returned the whole `# public key: age1...` comment line instead of just the key, so `age -r` silently encrypted to a bogus recipient (`.env.age` files decrypted to 0 bytes with no hard failure at the time). Added `winget`-based auto-install of `age` to `erda install` so the missing-dependency gap doesn't recur on the next fresh machine. Added `captain list charters`. Found and fixed the actual cause of a `captain charter` "gh not authenticated" fallback right after a fresh `christen`: `charter` never auto-unlocked captain scope itself (unlike `sail`'s bridge window, which always has) — fixed, verified against fake `gh`/`unlock` binaries in both the success and genuinely-no-key-deployed-yet paths. Merged `erda open lockbox` into `erda board` at Eric's request ("ships get sunk/christened regularly, I shouldn't need to do this every time") — `board` now always deploys the age key and unlocks captain scope automatically, falling back to a plain connect only if no local `strongbox/ship.key` exists at all; updated every doc reference and caught one live bug the removal would otherwise have shipped (`erda strongbox restore`'s own success message in both scripts still pointed at the now-deleted `open lockbox`). See §4r.
+- v19 (Claude Code, July 4, 2026): built the Shipwright role a real tmux window and strongbox compartment at Eric's request, surfacing and resolving two real conflicts with the original plan first (API-key auth over `/login`, per-charter-deck placement despite Shipwright's charter-independent scope — both decided by Eric, see D17) rather than guessing either way. `unlock` gained a `shipwright` scope (superset of captain), `erda strongbox init` gained an `ANTHROPIC_API_KEY` prompt → `shipwright.env.age`, `fitout.sh` verifies the third compartment independently, and `sail` gained window 7 (`claude` at `~/shipyard`, unlocking automatically, falling back to a plain shell like the bridge window does). Verified the new strongbox/unlock plumbing end-to-end against a real throwaway age keypair; the tmux window itself and a live `claude` session are unverified pending a real ship (no tmux on this Windows host). Updated every doc describing the old toolbelt-only shipwright model. See §4s.

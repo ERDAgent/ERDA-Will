@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sail — open (or reattach) the deck for a charter
 # usage: sail <charter>
-# One tmux session per charter: ship-<charter>, windows 0-6 = roles, 7+ = crew.
+# One tmux session per charter: ship-<charter>, windows 0-7 = roles, 8+ = crew.
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
@@ -78,6 +78,21 @@ if ! tmux has-session -t "=$SES" 2>/dev/null; then
   # window 6 — engine-room
   ER="top"; command -v htop >/dev/null && ER="htop"
   tmux new-window -t "$SES:6" -c "$DIR" -n "$(g ⚙)engine-room" "$ER"
+
+  # window 7 — shipwright: system-level Claude Code, scoped to the shipyard
+  # repo itself ($SHIPYARD_DIR), never the charter -- this is the one pane
+  # that touches erda/ship/bin/fitout.sh etc., per CLAUDE.md's "Shipwrights"
+  # role (not part of the charter/crew system at all). Loads shipwright scope
+  # (crew + captain + its own ANTHROPIC_API_KEY) so it can both work and push
+  # changes back to ERDA-Will. Falls back to a plain shell if claude isn't
+  # installed, same pattern as the bridge window's pi fallback.
+  if command -v claude >/dev/null 2>&1; then
+    SHIPWRIGHT_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock shipwright)\"; \
+      echo \"[shipwright] system-level session on ERDA-Will -- not this charter\"; exec claude'"
+  else
+    SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright] claude not found, dropping to a shell\"; exec bash'"
+  fi
+  tmux new-window -t "$SES:7" -c "$SHIPYARD_DIR" -n "$(g 🔨)shipwright" "$SHIPWRIGHT_CMD"
 
   tmux select-window -t "$SES:0"
 fi

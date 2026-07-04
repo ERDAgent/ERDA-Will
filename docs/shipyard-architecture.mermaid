@@ -32,7 +32,10 @@ flowchart TB
         BOSUN -->|"muster: tmux + worktree"| C1["Crew T-014<br/>berth berths/T-014<br/>branch crew/T-014"]
         BOSUN --> C2["Crew T-015<br/>berth berths/T-015<br/>branch crew/T-015"]
         BOSUN --> C3["Crew T-016<br/>berth berths/T-016<br/>branch crew/T-016"]
+        SW["Shipwright<br/>Claude Code, cwd ~/shipyard<br/>(sail window 7 — every deck,<br/>never the charter itself)"]
     end
+
+    CC -.->|"one deck window per charter,<br/>ANTHROPIC_API_KEY from strongbox"| SW
 
     HOST_AGENT --> SHIP
 

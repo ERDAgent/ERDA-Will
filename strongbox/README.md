@@ -15,7 +15,8 @@ comes from: HANDOFF §4q). **Back it up the moment you create it.**
 
 The easy way — `erda strongbox init` generates the keypair, prompts for
 `DEEPINFRA_API_KEY` (hidden input), optionally sets up the captain compartment
-(`GH_TOKEN`), encrypts both, and verifies each decrypts to a non-empty value:
+(`GH_TOKEN`) and the shipwright compartment (`ANTHROPIC_API_KEY`), encrypts
+each, and verifies every one decrypts to a non-empty value:
 
     erda strongbox init
 
@@ -63,10 +64,13 @@ files are committed and pushed) to match the new key.
 |---|---|---|---|
 | `keys.env.age` | crew | Model keys only (`DEEPINFRA_API_KEY`) | Every agent context: `eval "$(unlock)"` — muster's crew windows do this |
 | `captain.env.age` | captain | Push/publish credentials (`GH_TOKEN`) | Bridge + integration only: `eval "$(unlock captain)"` — sail's bridge window does this automatically, and `charter` does too (quietly, before its gh-auth check) so a bare `captain charter` works from any shell once `ship.key` is deployed |
+| `shipwright.env.age` | shipwright | System-level Claude Code credential (`ANTHROPIC_API_KEY`) | Shipwright window only: `eval "$(unlock shipwright)"` — sail's shipwright window does this automatically. Superset of captain scope (also gets `GH_TOKEN`), since this pane pushes system-level changes to ERDA-Will itself |
 
 Crew agents must never hold push credentials — "crew never push" is enforced
 by this split, not just by crew.md's prose. Never move GH_TOKEN into
-keys.env.age "for convenience."
+keys.env.age "for convenience." Likewise, `ANTHROPIC_API_KEY` stays in
+shipwright.env.age only — it has nothing to do with charter work, and crew/
+captain never need it.
 
 ## GH_TOKEN — creating the captain compartment (operator, one time)
 
@@ -107,3 +111,27 @@ clear message explaining why — not a hard failure.
 
 5. Commit `captain.env.age`. On the ship: `eval "$(unlock captain)" && gh auth status`
    should report ERDAgent.
+
+## ANTHROPIC_API_KEY — creating the shipwright compartment (operator, one time)
+
+Powers the shipwright tmux window (`sail`'s window 7): a real Claude Code
+instance, on the ship, scoped to system-level work on ERDA-Will itself — not
+charter work. Chosen over Claude Code's interactive `/login` (subscription)
+flow specifically so this pane can be provisioned the same unattended way as
+every other credential here, at the cost of pay-per-token API billing on this
+key rather than riding your existing subscription.
+
+1. **Mint an API key** at [console.anthropic.com](https://console.anthropic.com)
+   (Settings → API Keys). No fine-grained scoping like GitHub's PATs — it's a
+   single capability, budget/usage limits are the only real lever.
+2. **Encrypt** (same `bash -c` wrapper, same reason as GH_TOKEN above):
+
+       bash -c 'read -rs -p "ANTHROPIC_API_KEY: " T; echo; printf "ANTHROPIC_API_KEY=%s\n" "$T" \
+         | age -r "$(grep -o "age1.*" ship.key)" -o shipwright.env.age -'
+
+3. **Verify a non-empty value, not just presence:**
+
+       age -d -i ship.key shipwright.env.age | wc -c    # must be > 10
+
+4. Commit `shipwright.env.age`. On the ship: `eval "$(unlock shipwright)" && claude --version`
+   should run without a `/login` prompt.

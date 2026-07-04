@@ -250,6 +250,20 @@ cmd_strongbox() {
       fi
 
       echo
+      read -rp "Also set up the shipwright compartment (ANTHROPIC_API_KEY) now? [y/N] " ADD_CC
+      if [[ "$ADD_CC" =~ ^[Yy]$ ]]; then
+        read -rs -p "ANTHROPIC_API_KEY (input hidden): " ANTHROPIC_API_KEY
+        echo
+        [[ -n "$ANTHROPIC_API_KEY" ]] || { echo "strongbox: empty value entered, skipping shipwright compartment" >&2; }
+        if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+          printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" | age -r "$recipient" -o "$REPO_ROOT/strongbox/shipwright.env.age" -
+          local shipwright_len
+          shipwright_len="$(age -d -i "$key_path" "$REPO_ROOT/strongbox/shipwright.env.age" | wc -c | tr -d ' ')"
+          echo "wrote shipwright.env.age (decrypts to $shipwright_len bytes)"
+        fi
+      fi
+
+      echo
       echo "strongbox initialized. Back up $key_path now: erda strongbox backup <path>"
       echo "(without a backup, losing this file again means repeating this whole process)"
       ;;

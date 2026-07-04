@@ -345,6 +345,21 @@ function Invoke-Strongbox {
       }
 
       Write-Host ""
+      $AddCc = Read-Host "Also set up the shipwright compartment (ANTHROPIC_API_KEY) now? [y/N]"
+      if ($AddCc -match '^[Yy]$') {
+        $CcKey = Read-Host "ANTHROPIC_API_KEY (input hidden)" -AsSecureString
+        $PlainCc = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($CcKey))
+        if (-not $PlainCc) {
+          Write-Warning "strongbox: empty value entered, skipping shipwright compartment"
+        } else {
+          $ShipwrightEnvPath = Join-Path $RepoRoot "strongbox\shipwright.env.age"
+          "ANTHROPIC_API_KEY=$PlainCc" | & age -r $Recipient -o $ShipwrightEnvPath -
+          $ShipwrightLen = (& age -d -i $KeyPath $ShipwrightEnvPath | Measure-Object -Character).Characters
+          Write-Host "wrote shipwright.env.age (decrypts to $ShipwrightLen bytes)"
+        }
+      }
+
+      Write-Host ""
       Write-Host "strongbox initialized. Back up $KeyPath now: erda strongbox backup <path>"
       Write-Host "(without a backup, losing this file again means repeating this whole process)"
     }
