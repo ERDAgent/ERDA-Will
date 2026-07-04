@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# preview — run a charter's dev server against the integration branch (crew's
+# merged, reviewed work -- "dry dock"), reading the command/port from
+# charter.md's "## Dev server" section. This is the command sail's "preview"
+# window runs; host-side access is via `erda preview <charter>` (SSH tunnel),
+# never a raw exposed port -- the dev server only ever needs to bind
+# localhost on the ship.
+# usage: preview <charter>
+set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
+NAME="${1:?usage: preview <charter>}"
+DIR="$FLEET/$NAME"
+WORKTREE="$DIR/berths/integration"
+CHARTER_MD="$DIR/charter.md"
+
+[[ -d "$DIR/.ship" ]] || { echo "preview: no such charter: $NAME (run: charter $NAME [git-url])" >&2; exit 1; }
+
+# The integration worktree isn't created at charter time (there's no
+# `integration` branch yet on a fresh charter -- only `main`, from
+# lay_the_keel). Create it on first use, once the Captain has actually
+# merged something. captain.md's INTEGRATE step keeps it in sync afterward
+# (`reset --hard integration`), same treatment as berths/home-port gets for
+# `main` -- so a running dev server picks up new merged work via its own
+# file-watcher/hot-reload, no restart needed.
+if [[ ! -d "$WORKTREE" ]]; then
+  if git -C "$DIR/.hold.git" show-ref --verify --quiet refs/heads/integration; then
+    echo "preview: setting up the integration worktree..."
+    git -C "$DIR/.hold.git" worktree add "$WORKTREE" integration >/dev/null
+  else
+    echo "preview: no 'integration' branch yet -- nothing merged from crew yet (run a mission first)."
+    exec bash
+  fi
+fi
+
+# charter.md's placeholder text always starts with "(" (matching this file's
+# own template convention) -- treat that as "not configured yet", not a
+# literal command to execute.
+extract() {
+  sed -n "/^## Dev server/,/^## /{/^- $1:/s/^- $1: *//p}" "$CHARTER_MD" 2>/dev/null | head -1
+}
+CMD="$(extract command)"
+PORT="$(extract port)"
+[[ "$CMD" == \(* ]] && CMD=""
+[[ "$PORT" == \(* ]] && PORT=""
+
+if [[ -z "$CMD" ]]; then
+  echo "preview: no dev server command configured -- fill in the '## Dev server' section of $CHARTER_MD"
+  exec bash
+fi
+
+echo "preview: serving '$NAME' (integration branch) -- $CMD${PORT:+ (port $PORT)}"
+cd "$WORKTREE"
+exec bash -lc "$CMD"

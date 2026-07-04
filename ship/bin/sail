@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sail — open (or reattach) the deck for a charter
 # usage: sail <charter>
-# One tmux session per charter: ship-<charter>, windows 0-7 = roles, 8+ = crew.
+# One tmux session per charter: ship-<charter>, windows 0-8 = roles, 9+ = crew.
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
@@ -93,6 +93,14 @@ if ! tmux has-session -t "=$SES" 2>/dev/null; then
     SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright] claude not found, dropping to a shell\"; exec bash'"
   fi
   tmux new-window -t "$SES:7" -c "$SHIPYARD_DIR" -n "$(g 🔨)shipwright" "$SHIPWRIGHT_CMD"
+
+  # window 8 — preview: dev server against the integration branch (crew's
+  # merged, reviewed work), so Eric can see current progress from the host
+  # without touching a crew berth. Reads its command/port from charter.md's
+  # "## Dev server" section (see ship/bin/preview) -- localhost-only by
+  # convention, reached from the host via `erda preview <charter>`'s SSH
+  # tunnel, never a raw exposed port.
+  tmux new-window -t "$SES:8" -c "$DIR" -n "$(g 🌐)preview" "bash -lc 'exec preview $NAME'"
 
   tmux select-window -t "$SES:0"
 fi

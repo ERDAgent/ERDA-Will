@@ -13,6 +13,9 @@
                                               the age key if needed and connecting with
                                               the strongbox already unlocked (captain
                                               scope: model keys + GH_TOKEN)
+    preview <charter> [ship] [port]          SSH-tunnel to a charter's dev server
+                                              (integration branch); port read from
+                                              charter.md if not given
     anchor [ship]                            multipass stop
     force-anchor [ship]                      multipass stop --force
     sail [ship]                              multipass start
@@ -72,6 +75,8 @@ usage: erda <command> [ship] [args...]
   strongbox restore <path>                  copy ship.key back from a path
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
+  preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
+                                             read from charter.md if not given)
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
   sail [ship]                               start
@@ -441,6 +446,37 @@ switch ($Command) {
       }
       ssh -i $SshPriv -t eric@$Ip 'eval "$(unlock captain)"; exec bash -l'
     }
+  }
+
+  "preview" {
+    # SSH port-forward to a charter's dev server (see ship/bin/preview,
+    # sail's "preview" window) -- never a raw exposed port, so the dev
+    # server only ever needs to bind localhost on the ship itself.
+    if ($Rest.Count -lt 1 -or -not $Rest[0]) {
+      Write-Error "usage: erda preview <charter> [ship] [port]"
+      exit 1
+    }
+    $Name = $Rest[0]
+    $ShipName = if ($Rest.Count -ge 2 -and $Rest[1]) { $Rest[1] } else { "ship" }
+    $Port = if ($Rest.Count -ge 3 -and $Rest[2]) { $Rest[2] } else { $null }
+    $Ip = Get-ShipIp $ShipName
+
+    Write-Host "ensuring the deck is up for '$Name' on '$ShipName' ($Ip)..."
+    ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "SHIP_NO_ATTACH=1 sail $Name"
+
+    if (-not $Port) {
+      $Port = ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "sed -n '/^## Dev server/,/^## /{/^- port:/s/^- port: *//p}' ~/fleet/$Name/charter.md 2>/dev/null | head -1"
+      if (-not $Port -or $Port -match '^\(') {
+        Write-Error "erda: no port configured in ~/fleet/$Name/charter.md's '## Dev server' section (and none given as an argument)"
+        Write-Error "  fill it in, or run: erda preview $Name $ShipName <port>"
+        exit 1
+      }
+    }
+
+    Write-Host "tunneling localhost:$Port -> ${ShipName}:$Port ..."
+    Write-Host "open: http://localhost:$Port"
+    Write-Host "(Ctrl+C to close the tunnel)"
+    ssh -i $SshPriv -N -L "${Port}:localhost:${Port}" eric@$Ip
   }
 
   "anchor" {

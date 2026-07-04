@@ -133,6 +133,14 @@ if [[ ! -f charter.md ]]; then
 ## Test commands
 - (fill in: how crew prove their work, e.g. \`npm test\`)
 
+## Dev server
+Read by \`ship/bin/preview\` (the deck's "preview" window) and \`erda preview\` (the
+host-side tunnel). Bind localhost only, never 0.0.0.0 -- access is always via SSH
+tunnel, never a raw exposed port. Runs against the integration branch (crew's
+merged, reviewed work), not any one crew berth.
+- command: (fill in, e.g. \`npm run dev\`)
+- port: (fill in, e.g. 5173)
+
 ## No-touch paths
 - (paths crew may never modify, e.g. deploy configs, secrets)
 

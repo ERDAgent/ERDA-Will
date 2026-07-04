@@ -452,3 +452,46 @@ freely (push everything → `delete --purge` → `charter` again elsewhere —
 that's the portability working as intended); they must never *live* on two
 at once. Before chartering on a new ship, be sure the old berth is gone or
 was never there.
+
+## 10. Previewing a charter's dev server (D18)
+
+Every charter's deck has a "preview" window (`sail`'s window 8) running a dev
+server against the `integration` branch — crew's merged, reviewed work, kept
+in sync every time the Captain runs INTEGRATE. Not any one crew berth; not a
+raw exposed port — the dev server only ever needs to bind `localhost` on the
+ship itself.
+
+### The easy way: `erda preview`
+
+```bash
+erda preview <charter> [ship] [port]
+```
+
+Ensures the charter's deck is up (idempotent — a no-op if it already is),
+reads the port from the charter's `charter.md` ("## Dev server" section) if
+you don't pass one explicitly, then opens an SSH local port-forward and
+prints the URL to open (`http://localhost:<port>`). No external tunneling
+service (ngrok, Cloudflare Tunnel, etc.) — this rides the same SSH
+connection everything else in this project uses. `Ctrl+C` closes the tunnel;
+the dev server itself keeps running in its tmux window regardless.
+
+### Setup (once per charter)
+
+Fill in `charter.md`'s "## Dev server" section:
+```
+## Dev server
+- command: npm run dev
+- port: 5173
+```
+Leave it as the placeholder text (starts with `(`) and both `ship/bin/preview`
+(the window) and `erda preview` (the tunnel) will tell you it isn't configured
+yet, rather than trying to run garbage as a command.
+
+### By hand
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -N -L 5173:localhost:5173 eric@<ship-ip>
+```
+Then browse to `http://localhost:5173`. Requires the dev server to already be
+running on the ship (`tmux attach`, jump to the "preview" window — or run
+`ship/bin/preview <charter>` yourself in any shell on the ship).

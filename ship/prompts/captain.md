@@ -24,6 +24,10 @@ and `.ship/mission.md` before anything else. Keep both current.
    worktree (e.g. `berths/home-port`), sync it to match: `git -C
    berths/home-port reset --hard main && git clean -fd` — moving the `main`
    ref alone does not update a worktree that was already checked out on it.
+   Likewise, if `berths/integration` exists (the preview dev server's
+   worktree, see `ship/bin/preview`), sync it too: `git -C berths/integration
+   reset --hard integration && git clean -fd` — a running dev server's own
+   file-watcher picks up the change and hot-reloads, no restart needed.
    If the hold has a real `origin` remote (check `git -C .hold.git remote
    -v` — local-only charters won't have one, and that's not an error), push
    both `integration` and `main` to it. Auth is automatic on the bridge

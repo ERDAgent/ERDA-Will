@@ -41,6 +41,7 @@ A portable Linux dev environment (VM bootable identically on macOS, Windows, and
 | D15 | Two-compartment strongbox: `keys.env.age` (crew scope: model keys) + `captain.env.age` (captain scope: GH_TOKEN). `unlock` defaults to crew; only sail's bridge window loads `unlock captain` | Push credentials must never reach crew agents — D10's "crew never push" becomes a capability boundary instead of a prompt rule. Muster's crew windows call plain `unlock` (unchanged, back-compatible) and get model keys only |
 | D16 | Fleet naming + the one-charter-one-ship rule. Ship classes: Flagship (Will-class virtue names: resolve, endeavour, tenacity…), Skiff (`skiff-<purpose>`, purged same day), Named vessel (client isolation). A charter resides on exactly ONE ship at a time; it may move (push → purge → re-charter) but never live on two | Eric's call (July 2, 2026), with the name lore recorded: ERDA = EricRoseDevAgent, Will = the impetus — "the will of the people that drives the navy to sail." The residency rule became load-bearing the moment D14 gave ships push credentials: two Captains on one charter = push races on integration/main. keel.yaml verified name-agnostic, so multi-ship needs zero code changes — this is convention + docs only |
 | D17 | Shipwright (D6) gets a real, live deck window (`sail`'s window 7, one per charter's tmux session, cwd `~/shipyard`) and a third strongbox compartment (`shipwright.env.age`: `ANTHROPIC_API_KEY`), superset of captain scope. Auth via API key, not Claude Code's `/login` subscription flow | Eric's call (July 4, 2026), overriding `docs/agentic-engineering-plan.md`'s original `/login`-for-shipwrights choice: consistency with how every other role's credentials load (unattended, strongbox-driven) outweighed the pay-per-token cost of a dedicated key. "A pane like the other roles" meant living inside every charter's own deck, even though Shipwright's actual scope (`~/shipyard`) is deliberately charter-independent (D6) |
+| D18 | Captains get a "preview" deck window (`sail`'s window 8) running the charter's dev server against `integration` (not a crew berth), reached from the host via `erda preview <charter>` — an SSH local port-forward, no external tunneling service | Eric's call (July 4, 2026): explicitly ruled out ngrok/Cloudflare-Tunnel-style services unless a local option proved cumbersome — it didn't, since ships already have a directly-reachable IP over the same SSH connection everything else here uses. The dev server only ever needs to bind `localhost` on the ship; SSH forwarding (not a raw exposed port) is what makes that safe to generalize to a future public-IP OVHcloud ship too |
 
 ## 3. Facts verified during planning (with as-of dates)
 
@@ -976,6 +977,52 @@ confirmed empirically, not just by reading `muster`: a plain auto-indexed
 `tmux new-window` landed at 8, no collision with `shipwright` at 7. Still open:
 a real shipwright-authored commit to ERDA-Will, and the actual skip-`/login` path —
 both need Eric's real `ANTHROPIC_API_KEY` in the strongbox to test.
+
+## 4t. Captains get a "preview" dev-server window, reached via SSH tunnel (July 4, 2026)
+
+Eric asked for a way for Captains to spin up a dev server showing crew's current
+work, viewable from the host, preferring no external cloud service if avoidable. The
+good news, confirmed before designing anything: neither serious option here needs
+one — ships already get a directly-reachable IP over the same SSH connection this
+whole project already uses, so "no ngrok" was never actually in tension with "not
+cumbersome." Three real design choices were surfaced and resolved by asking (now
+D18): SSH port-forward over a raw exposed IP:port (chosen — works identically on a
+future public-IP OVHcloud ship without ever needing a firewall rule, since the dev
+server only binds `localhost`); the `integration` branch over one crew berth (chosen
+— matches "current work from the crew" as a whole, and dry-dock is always
+testable-state by design); and a tmux deck window over a headless background process
+(chosen — matches the "everything is a window you can look at" pattern the Shipwright
+window just established).
+
+Implemented: `charter.md`'s template gained a "## Dev server" section
+(`command`/`port`, same placeholder-text convention as Stack/Test commands — anything
+still starting with `(` is treated as unconfigured, not a literal command to run).
+New `ship/bin/preview <charter>`: creates the `berths/integration` worktree on first
+use (deferred rather than done at charter time, since a fresh charter has no
+`integration` branch yet — only `main`), reads the configured command/port, `cd`s in
+and execs it; falls back to a clear message (and a plain shell) if the branch or
+config isn't there yet. `sail` gained window 8 ("preview") running it automatically;
+crew windows now start at 9+ (`muster` doesn't hardcode indices, unaffected).
+`captain.md`'s INTEGRATE step now also syncs `berths/integration` the same way it
+already synced `berths/home-port` — without this the preview server would silently
+serve a stale checkout forever after the first integrate; with it, a running dev
+server's own file-watcher picks up the change and hot-reloads with no restart needed.
+Host-side `erda preview <charter> [ship] [port]` (both `erda.sh`/`erda.ps1`):
+idempotently ensures the deck is up first (`SHIP_NO_ATTACH=1 sail`), reads the port
+from `charter.md` over SSH if not given explicitly, then opens `ssh -N -L
+port:localhost:port` and prints the URL.
+
+Verified: the full `preview` script logic (no branch yet → branch-but-no-config →
+fully configured, including the placeholder-text filter) against a real throwaway
+git hold, not just read-through. Both `erda preview`'s port-resolution paths
+(explicit port / read-from-charter.md / unconfigured error) against fake `ssh`
+stubs in both bash and PowerShell — the PowerShell test needed in-session function
+stubs instead of `.cmd` batch shims after batch's argument mangling on the `sed`
+command string produced a misleading failure unrelated to the actual script (a test
+double it was, not a real bug — resolved by switching test approach, not by changing
+the code being tested). Not yet verified: the actual tmux window (needs a real ship,
+see next session's task if not done live this session — check §7's session log for
+whether a v21+ closes this the same way v20 closed out Shipwright's).
 
 ## 5. NEXT TASK
 

@@ -11,6 +11,9 @@
 #                                             the age key if needed and connecting with
 #                                             the strongbox already unlocked (captain
 #                                             scope: model keys + GH_TOKEN)
+#   preview <charter> [ship] [port]          SSH-tunnel to a charter's dev server
+#                                             (integration branch); port read from
+#                                             charter.md if not given
 #   anchor [ship]                            multipass stop
 #   force-anchor [ship]                      multipass stop --force
 #   sail [ship]                              multipass start
@@ -59,6 +62,8 @@ usage: erda <command> [ship] [args...]
   strongbox restore <path>                  copy ship.key back from a path
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
+  preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
+                                             read from charter.md if not given)
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
   sail [ship]                               start
@@ -344,6 +349,38 @@ case "$CMD" in
       echo "erda: no local strongbox/ship.key yet -- connecting without the strongbox unlocked (see strongbox/README.md)" >&2
       ssh -i "$SSH_PRIV" eric@"$IP"
     fi
+    ;;
+
+  preview)
+    # SSH port-forward to a charter's dev server (see ship/bin/preview,
+    # sail's "preview" window) -- never a raw exposed port, so the dev
+    # server only ever needs to bind localhost on the ship itself.
+    NAME="${1:-}"
+    [[ -n "$NAME" ]] || { echo "usage: erda preview <charter> [ship] [port]" >&2; exit 1; }
+    shift
+    SHIP_NAME="${1:-ship}"
+    [[ $# -gt 0 ]] && shift
+    PORT="${1:-}"
+    IP="$(ship_ip "$SHIP_NAME")"
+
+    echo "ensuring the deck is up for '$NAME' on '$SHIP_NAME' ($IP)..."
+    ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" "SHIP_NO_ATTACH=1 sail $NAME"
+
+    if [[ -z "$PORT" ]]; then
+      PORT="$(ssh -i "$SSH_PRIV" -o LogLevel=ERROR eric@"$IP" "sed -n '/^## Dev server/,/^## /{/^- port:/s/^- port: *//p}' ~/fleet/$NAME/charter.md 2>/dev/null | head -1")"
+      case "$PORT" in
+        \(*|"")
+          echo "erda: no port configured in ~/fleet/$NAME/charter.md's '## Dev server' section (and none given as an argument)" >&2
+          echo "  fill it in, or run: erda preview $NAME $SHIP_NAME <port>" >&2
+          exit 1
+          ;;
+      esac
+    fi
+
+    echo "tunneling localhost:$PORT -> $SHIP_NAME:$PORT ..."
+    echo "open: http://localhost:$PORT"
+    echo "(Ctrl+C to close the tunnel)"
+    ssh -i "$SSH_PRIV" -N -L "$PORT:localhost:$PORT" eric@"$IP"
     ;;
 
   anchor)
