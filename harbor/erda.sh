@@ -210,6 +210,8 @@ cmd_strongbox() {
 
   case "$sub" in
     init)
+      command -v age-keygen >/dev/null 2>&1 || { echo "strongbox: 'age' isn't installed on this machine (brew install age)" >&2; exit 1; }
+
       if [[ -f "$key_path" ]]; then
         echo "strongbox: $key_path already exists." >&2
         echo "  Overwriting it orphans anything already encrypted with the old key" >&2
@@ -218,7 +220,6 @@ cmd_strongbox() {
         [[ "$CONFIRM" == "overwrite" ]] || { echo "cancelled." >&2; exit 1; }
       fi
 
-      command -v age-keygen >/dev/null 2>&1 || { echo "strongbox: 'age' isn't installed on this machine (brew install age)" >&2; exit 1; }
       age-keygen -o "$key_path" 2>&1 | grep -v '^$' || true
       chmod 600 "$key_path"
       local recipient

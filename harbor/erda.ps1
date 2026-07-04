@@ -113,6 +113,26 @@ function Invoke-Install {
     Write-Warning "run 'Get-ExecutionPolicy -List' to see what's overriding CurrentUser (likely MachinePolicy or UserPolicy via Group Policy)."
   }
 
+  # 'erda strongbox init' needs age-keygen. Installing it here (once, at
+  # first-time setup) means that command never has to fail partway through
+  # -- otherwise a user would confirm the scary "overwrite ship.key" prompt
+  # only to then discover the tool it needed isn't present.
+  if (-not (Get-Command age-keygen -ErrorAction SilentlyContinue)) {
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      Write-Host "'age' (needed by 'erda strongbox') isn't installed -- installing via winget..."
+      try {
+        winget install --id FiloSottile.age -e --accept-package-agreements --accept-source-agreements
+        Write-Host "age installed. Open a new terminal (so PATH updates take effect) before running 'erda strongbox init'."
+      } catch {
+        Write-Warning "couldn't install age automatically: $($_.Exception.Message)"
+        Write-Warning "install it yourself: winget install --id FiloSottile.age"
+      }
+    } else {
+      Write-Warning "'age' (needed by 'erda strongbox') isn't installed, and winget isn't available to install it automatically."
+      Write-Warning "install it from https://github.com/FiloSottile/age/releases and put age-keygen.exe on your PATH."
+    }
+  }
+
   $ErdaPath = Join-Path $PSScriptRoot "erda.ps1"
 
   if (-not (Test-Path $PROFILE)) {
@@ -279,6 +299,11 @@ function Invoke-Strongbox {
 
   switch ($Sub) {
     "init" {
+      if (-not (Get-Command age-keygen -ErrorAction SilentlyContinue)) {
+        Write-Error "strongbox: 'age' isn't installed on this machine (winget install --id FiloSottile.age, then open a new terminal so PATH updates take effect)"
+        exit 1
+      }
+
       if (Test-Path $KeyPath) {
         Write-Warning "strongbox: $KeyPath already exists."
         Write-Warning "  Overwriting it orphans anything already encrypted with the old key"
@@ -287,13 +312,13 @@ function Invoke-Strongbox {
         if ($Confirm -ne "overwrite") { Write-Host "cancelled."; exit 1 }
       }
 
-      if (-not (Get-Command age-keygen -ErrorAction SilentlyContinue)) {
-        Write-Error "strongbox: 'age' isn't installed on this machine"
-        exit 1
-      }
       & age-keygen -o $KeyPath 2>&1 | Out-Null
       Write-Host "generated $KeyPath"
-      $Recipient = (Get-Content $KeyPath | Select-String "age1").ToString().Trim()
+      # Select-String returns the whole matched line ("# public key: age1...");
+      # extract just the age1... token itself, matching what `grep -o 'age1.*'`
+      # does on the bash side -- otherwise `age -r` gets handed the comment
+      # prefix as the recipient and silently fails to encrypt.
+      $Recipient = [regex]::Match((Get-Content $KeyPath -Raw), 'age1[a-z0-9]+').Value
 
       Write-Host ""
       $DeepInfraKey = Read-Host "DEEPINFRA_API_KEY (input hidden)" -AsSecureString
