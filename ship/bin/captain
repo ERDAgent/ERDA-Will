@@ -3,7 +3,10 @@
 # usage: captain <command> [args...]
 #   captain charter <name> [git-url] [--local]   -- charter <name> [git-url] [--local]
 #   captain work <name>                          -- sail <name>
+#   captain list charters                        -- list existing charters
 set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
 
 # resolve the real shipyard checkout even when invoked via the
 # /usr/local/bin symlink fitout.sh sets up (readlink -f, not just
@@ -17,7 +20,33 @@ usage: captain <command> [args...]
                                         GitHub repo if no url given and none
                                         exists yet; --local skips that)
   work <name>                          open the deck for a charter
+  list charters                        list existing charters and their status
 USAGE
+}
+
+list_charters() {
+  # a directory only counts as a charter once `charter` has fully set it up
+  # (.ship/ is the last thing it creates) -- a half-finished mkdir shouldn't
+  # show up as something you can `work` on.
+  shopt -s nullglob
+  local dirs=("$FLEET"/*/)
+  shopt -u nullglob
+
+  local found=0
+  printf '%-20s %-6s %s\n' "CHARTER" "DECK" "ORIGIN"
+  for dir in "${dirs[@]}"; do
+    [[ -d "$dir/.ship" ]] || continue
+    found=1
+    local name deck origin
+    name="$(basename "$dir")"
+    if tmux has-session -t "=ship-$name" 2>/dev/null; then deck="up"; else deck="down"; fi
+    origin="$(git -C "$dir/.hold.git" remote get-url origin 2>/dev/null || echo "(local only)")"
+    printf '%-20s %-6s %s\n' "$name" "$deck" "$origin"
+  done
+
+  if [[ "$found" -eq 0 ]]; then
+    echo "no charters yet -- run 'captain charter <name>' to create one" >&2
+  fi
 }
 
 CMD="${1:-}"
@@ -29,6 +58,11 @@ case "$CMD" in
     ;;
   work)
     exec "$SCRIPT_DIR/sail" "$@"
+    ;;
+  list)
+    SUB="${1:-}"
+    [[ "$SUB" == "charters" ]] || { echo "usage: captain list charters" >&2; exit 1; }
+    list_charters
     ;;
   ""|-h|--help)
     usage
