@@ -1,0 +1,11 @@
+# Priority order for Captain/crew model selection on DeepInfra, read by
+# ship/bin/pick-model. One model ID per line, most-preferred first; comments
+# and blank lines are ignored. pick-model health-checks these in order with a
+# real (cheap, max_tokens=1) completion call and uses the first one that
+# actually responds -- edit this list to add, remove, or reorder models, no
+# code changes needed. Each entry must also exist under the "deepinfra"
+# provider in ship/pi/models.json so pi knows its context window/cost/
+# thinking-level mapping.
+zai-org/GLM-5.2
+moonshotai/Kimi-K2.7-Code
+zai-org/GLM-5.1

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# pick-model — health-check the priority list in ship/models-priority.txt
+# against DeepInfra's real chat-completions endpoint (one cheap, max_tokens=1
+# call per model) and print the first model that actually responds. Read by
+# sail's bridge window (Captain) and muster's crew windows so neither blindly
+# launches pi against a model that's hanging or overloaded.
+#
+# Why this exists: GLM-5.2 (the only model previously hardcoded everywhere)
+# once hung completely on DeepInfra -- TLS handshake fine, request sent, then
+# zero bytes back even after 90s -- while every other model on the same
+# account responded normally within ~1s. pi itself has no fallback/failover
+# of its own (checked its docs before building this: --models only offers
+# manual Ctrl+P cycling, nothing automatic).
+#
+# usage: pick-model
+# needs DEEPINFRA_API_KEY in the environment (crew scope -- `unlock` already
+# loads it everywhere this is called from). Prints exactly one model ID to
+# stdout; any diagnostic/skip messages go to stderr so callers can safely
+# capture stdout via $(pick-model).
+set -uo pipefail
+# Deliberately no -e: one model failing its health check must not abort the
+# script, it just means "try the next one in the list."
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+LIST="${MODELS_PRIORITY_FILE:-$SHIPYARD_DIR/ship/models-priority.txt}"
+TIMEOUT="${PICK_MODEL_TIMEOUT:-12}"
+FALLBACK_DEFAULT="zai-org/GLM-5.2"
+
+if [[ ! -f "$LIST" ]]; then
+  echo "pick-model: no $LIST found -- using $FALLBACK_DEFAULT" >&2
+  echo "$FALLBACK_DEFAULT"
+  exit 0
+fi
+
+mapfile -t MODELS < <(grep -vE '^[[:space:]]*(#|$)' "$LIST" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+if [[ "${#MODELS[@]}" -eq 0 ]]; then
+  echo "pick-model: $LIST has no models listed -- using $FALLBACK_DEFAULT" >&2
+  echo "$FALLBACK_DEFAULT"
+  exit 0
+fi
+
+if [[ -z "${DEEPINFRA_API_KEY:-}" ]]; then
+  echo "pick-model: DEEPINFRA_API_KEY not set -- can't health-check, using ${MODELS[0]} (top of $LIST)" >&2
+  echo "${MODELS[0]}"
+  exit 0
+fi
+
+for m in "${MODELS[@]}"; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" \
+    -X POST https://api.deepinfra.com/v1/openai/chat/completions \
+    -H "Authorization: Bearer $DEEPINFRA_API_KEY" -H "Content-Type: application/json" \
+    -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" \
+    2>/dev/null)"
+  [[ -z "$code" ]] && code=000
+  if [[ "$code" == "200" ]]; then
+    echo "pick-model: $m healthy -- using it" >&2
+    echo "$m"
+    exit 0
+  fi
+  echo "pick-model: $m unhealthy (HTTP $code) -- trying next" >&2
+done
+
+echo "pick-model: every model in $LIST failed its health check -- using ${MODELS[0]} anyway (pi's own error will show what's actually wrong)" >&2
+echo "${MODELS[0]}"

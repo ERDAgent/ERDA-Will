@@ -1154,6 +1154,84 @@ coreutils) can silently normalize away exactly the kind of corruption that break
 Ubuntu ship. `doctor`'s CR-check exists because of this gap specifically, not as
 generic defensive coding.
 
+## 4w. `sail` is now self-healing for accidentally-closed windows (July 5, 2026)
+
+Eric asked: if he accidentally closes a deck window mid-work, can he get it back, and
+can that be "a captain command" — clarified to mean `sail`/`captain work` (which already
+delegates to `sail`) should just handle this automatically on re-run, no new subcommand
+needed.
+
+Root cause of why this didn't already work: `sail` only ever built the whole 9-window
+deck inside one `if ! tmux has-session ...` block, so once the session existed, re-
+running `sail <charter>` skipped straight to attaching — a closed individual window was
+never noticed, let alone recreated.
+
+Refactored `sail` around a single table of (dir, name, command) per window index (0-8),
+checked independently every time it runs: the session itself is created bare (window 0)
+only if fully absent, then each of windows 1-8 is created only if `tmux list-windows`
+doesn't already show that index. This one mechanism covers both things Eric asked for
+without any special-casing: closing one window and re-running `sail` recreates just that
+window; closing all of them (which kills the whole tmux session) makes `sail` rebuild
+the entire deck from scratch, i.e. "reset to the original view" for the total-loss case.
+
+Verified for real on a live ship, not just by reading the diff: fresh `sail` still
+creates all 9 windows correctly; killing window 3 (bosun) and re-running `sail` reopened
+only that window (confirmed via `tmux list-panes -F '#{pane_pid}'` before/after — every
+other window's pane PID was byte-identical, proving they were never touched, not just
+"looked the same"); killing the entire session and re-running `sail` rebuilt all 9
+windows from nothing, same as a first-time sail. Shellcheck clean (only the pre-existing
+SC2015 info note already accepted in §4i).
+
+## 4x. Model fallback: `pick-model` + an Eric-editable priority list (July 5, 2026)
+
+Origin: GLM-5.2 (the only model ever hardcoded, D5) hung completely on DeepInfra during
+this same session (§4v/v23's diagnostic work) — TLS handshake fine, request sent, zero
+bytes back even after 90s — while `moonshotai/Kimi-K2.7-Code` and `zai-org/GLM-5.1` on
+the same account responded normally. Eric asked for Kimi-K2.7-Code as a backup, plus a
+priority list he can manage himself, with automatic fallback through it. Checked pi's
+own docs before building anything: no automatic failover exists (`--models` is manual
+Ctrl+P cycling only), so this needed building from scratch. Two scope decisions, both
+Eric's explicit call: covers Captain *and* crew (not just the bridge), and is a
+pre-flight health check only — not an attempt to hot-swap models mid-conversation if one
+dies partway through, which would need restarting pi and losing context (flagged as
+future work, not solved here).
+
+Built `ship/bin/pick-model`: reads `ship/models-priority.txt` (Eric-editable, one model
+ID per line, comments/blank lines OK — the actual "priority list I can manage" ask),
+health-checks each in order with a real, cheap (`max_tokens: 1`) DeepInfra completion
+call (12s timeout), and prints the first one that returns HTTP 200. Falls through
+silently on anything else (429 `engine_overloaded` included — treated the same as a hard
+failure, not "busy but usable," since the whole point is picking something that works
+*now*). If literally everything fails its check, prints a warning and returns the
+top-priority model anyway so the caller still gets something to try (matches this
+project's existing "degrade, don't hard-block" philosophy elsewhere — `charter`'s
+local-only fallback, `unlock`'s graceful-skip). Added Kimi-K2.7-Code and GLM-5.1 to
+`ship/pi/models.json` (verified their real slugs, context windows, and pricing directly
+against DeepInfra's live `/models` endpoint rather than guessing) with the same
+`thinkingLevelMap` shape as GLM-5.2 — both are DeepInfra-tagged `reasoning` models,
+though the high/max mapping itself wasn't independently re-verified per model since it
+wasn't the point of this change.
+
+Wired into `sail`'s bridge window and `muster`'s crew `AGENT_CMD`: both now run
+`MODEL=$(pick-model ...)` immediately before `exec pi ...`, resolved at the window's
+*actual start time* (after `unlock` has loaded `DEEPINFRA_API_KEY`), not baked into the
+command string ahead of time the way the old hardcoded model was. `SHIP_CAPTAIN_AGENT`/
+`SHIP_AGENT` overrides skip `pick-model` entirely, unchanged from before — an explicit
+override still means "run exactly this." Getting the nested shell-quoting right for a
+`MODEL=$(...); exec pi ...` sequence spliced into an already-escaped string (twice, for
+muster's heredoc) was fiddly enough that it was verified by literally printing the
+fully-resolved command string in isolation before ever touching a real ship — cheaper
+than debugging a quoting bug live.
+
+**Verified end-to-end against the real, still-ongoing GLM-5.2 outage (not simulated):**
+`pick-model` correctly reported `zai-org/GLM-5.2 unhealthy (HTTP 000)` and fell through
+to Kimi-K2.7-Code; killed the bridge window and re-sailed, and the Captain actually
+launched on `moonshotai/Kimi-K2.7-Code` (confirmed in pi's own status bar); sent it a
+real message and got a real reply ("Online.") with genuine token usage logged. `fitout.sh`
+updated to symlink `pick-model` alongside `charter`/`sail`/`muster`/`unlock`/`captain`/
+`preview`. Shellcheck clean on every touched/new file (only the same pre-existing SC2015
+info note in `sail` already accepted since §4i).
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1219,3 +1297,5 @@ Next up, in rough priority order:
 - v21 (Claude Code, July 4, 2026): built the Preview role (dev-server deck window + `erda preview` SSH tunnel) at Eric's request, ruling out any external tunneling service before designing anything (ships already have a directly-reachable IP over existing SSH, so it was never actually a tradeoff) and resolving three real design choices by asking rather than guessing (SSH tunnel over raw IP, `integration` branch over a crew berth, tmux window over a headless process — now D18). Caught a real `core.fileMode=false` bug before pushing (same class as v14/§4o) by checking `git ls-files -s` directly rather than assuming `chmod +x` had taken effect on the new `ship/bin/preview` file. Verified fully live on a throwaway ship: the preview window's graceful no-branch fallback, auto-creation of `berths/integration` once a branch existed, the dev server actually starting, and — from this Windows host — a real `erda preview` SSH tunnel serving a genuine HTTP 200 fetched via `Invoke-WebRequest` against `localhost:8123`. Ship torn down after. See §4t.
 - v22 (Claude Code, July 4, 2026): gave crew members human-readable names at Eric's request — pitched three themed options, Eric chose to specify his own theme (hobbit-like, explicitly not actual Tolkien lore names) rather than pick from the pitches. Landed on a 31-name invented pool, deliberately avoiding the specific flower names Tolkien used for Sam Gamgee's children (the real collision risk, more than the obviously-famous names). `muster` now assigns one per crew member, avoiding collision with other currently-active crew in the same charter; it replaces the task ID in the tmux window title and status messages, while task IDs/branches/order paths stay unchanged underneath. Verified the random-pick-with-collision-avoidance logic standalone (`jq` isn't installed on this Windows host, so the roster.json field additions rely on close analogy to already-proven expressions rather than independent testing); an actual live `muster` run wasn't exercised this session. See §4u.
 - v23 (Claude Code, July 5, 2026): investigated Eric's `captain charter` local-only fallback and built `erda doctor` (hard-blocking `christen`/`board`, his explicit choice) to catch dead credentials before they cause confusing downstream failures. Live-diagnosed against a real ship rather than guessing: not an expired/revoked PAT as suspected, but a genuine encoding bug — `erda.ps1`'s old `"KEY=value" | & age ...` pattern baked a stray CRLF into every Windows-encrypted secret, invisible because PowerShell's and even git-bash's own tools silently launder it back out, so it only ever broke on a real Ubuntu ship's bash. Fixed `unlock` defensively (works immediately on already-corrupted secrets, no re-mint needed), fixed the root cause in `Invoke-Strongbox init` (writes via a real LF-only temp file now), re-encrypted the existing compartments in place with Eric's existing, still-valid credentials, and gave `doctor` a byte-safe CRLF check that can't be fooled by either platform's own text-mode laundering. Verified end-to-end on a live ship: `gh auth status` clean, and the originally-failing `captain charter ERDA-utility-belt` succeeded for real (reused the existing GitHub repo, cloned, chartered). See §4v.
+- v24 (Claude Code, July 5, 2026): made `sail` self-healing at Eric's request — closing a deck window by accident used to lose it permanently, since `sail` only ever built all 9 windows in one shot, and only when the tmux session didn't exist yet at all. Refactored around one per-window-index table checked independently on every run: a missing window (whether one got closed, or the whole session died from closing the last one) is recreated; a live window is left completely alone. Verified on a real ship with pane-PID comparison before/after healing a killed window — every untouched window's PID was byte-identical, not just visually the same — and separately verified killing the entire session causes a full, correct rebuild. See §4w.
+- v25 (Claude Code, July 5, 2026): built model fallback at Eric's request, prompted directly by GLM-5.2's real outage earlier this session — `ship/bin/pick-model` health-checks an Eric-editable priority list (`ship/models-priority.txt`) against real DeepInfra calls and picks the first model that responds; wired into both `sail`'s Captain and `muster`'s crew (his explicit call to cover both), as a pre-flight check only, not mid-conversation hot-swapping (also his call, flagged as future work). Added Kimi-K2.7-Code and GLM-5.1 to `models.json` with real slugs/pricing verified against DeepInfra's live catalog. Verified against the actual ongoing outage, not a simulation: `pick-model` correctly detected GLM-5.2 still down, fell through to Kimi-K2.7-Code, and a real Captain session launched on it and replied normally with genuine token usage logged. See §4x.

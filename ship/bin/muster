@@ -19,7 +19,17 @@ FLEET="${FLEET:-$HOME/fleet}"
 # with it. Override for tests or the relief vessel: SHIP_AGENT="opencode run",
 # or escalate a stuck task with SHIP_AGENT="pi -p --provider deepinfra --model
 # zai-org/GLM-5.2 --thinking xhigh --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md"
-AGENT_CMD="${SHIP_AGENT:-pi -p --provider deepinfra --model zai-org/GLM-5.2 --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md}"
+#
+# The model itself is resolved by `pick-model` at the crew window's actual
+# run time (inside .crew-run.sh below, once unlock has loaded
+# DEEPINFRA_API_KEY), not hardcoded here -- health-checks
+# ship/models-priority.txt against a real DeepInfra call and falls through
+# to the next entry if the top-priority model isn't responding. The `\$`
+# escaping is deliberate: this text is embedded literally into the generated
+# .crew-run.sh heredoc below and must stay unexpanded until that script
+# actually runs. Skipped entirely if SHIP_AGENT is set -- an explicit
+# override means "run exactly this."
+AGENT_CMD="${SHIP_AGENT:-MODEL=\$(pick-model 2>&2 || echo zai-org/GLM-5.2); pi -p --provider deepinfra --model \"\$MODEL\" --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md}"
 
 NAME="${1:?usage: muster <charter> <task-id> <order-file>}"
 TASK="${2:?usage: muster <charter> <task-id> <order-file>}"
