@@ -197,9 +197,9 @@ function Invoke-Install {
 function Invoke-Christen {
   param(
     [string]$Name = "ship",
-    [int]$Cpus = 2,
+    [int]$Cpus = 1,
     [string]$Memory = "4G",
-    [string]$Disk = "20G"
+    [string]$Disk = "10G"
   )
 
   # Deliberately NOT inheriting the script's $ErrorActionPreference = "Stop"
