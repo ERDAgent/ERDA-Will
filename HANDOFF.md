@@ -1073,6 +1073,87 @@ DEEPINFRA-backed crew agent run, not just the naming logic) — worth confirming
 time a real mission musters crew, rather than spinning up a throwaway ship + paid
 model call just for a cosmetic feature this late in the session.
 
+## 4v. `erda doctor` + real root cause of a `captain charter` "invalid token" failure (July 5, 2026)
+
+Eric reported `captain christen`/`board` succeeding but `captain charter ERDA-utility-belt`
+silently falling back to a local-only charter, and separately noted `gh auth status` on
+this host showed logged out — reasonably suspecting an expired/revoked `GH_TOKEN`. He
+asked for a preflight step that determines "no key / wrong key / right key" before
+`christen`/`board`/giving the Captain orders can proceed at all (hard-block, his explicit
+choice over warn-only, since a missing/dead credential silently downstream is exactly
+what caused this confusion).
+
+Built `erda doctor` (both `erda.sh`/`erda.ps1`): host-side, no ship needed. Decrypts each
+`.env.age` compartment with the local `ship.key` and, for any that's present, makes a
+real live call to the credential's own API (DeepInfra's models endpoint, `gh auth
+status` with `GH_TOKEN` set, Anthropic's models endpoint) rather than treating "decrypts
+to a non-empty value" as sufficient — that distinction turned out to be exactly what
+this bug needed. `keys.env.age` is required baseline (nothing works without a model
+key); `captain.env.age`/`shipwright.env.age` are optional compartments, so a missing one
+is silently skipped (charter's own local-only fallback is a legitimate choice, not an
+error) but a *present-and-broken* one fails doctor. Wired as a hard gate at the top of
+`christen` and `board` — both refuse to proceed until `doctor` passes, per Eric's
+explicit call.
+
+**Root-caused the actual failure live against a real ship, and it was not an
+expired/revoked PAT.** Live-diagnosed by christening a fresh ship (Eric's prior one,
+`noodle`, was sunk mid-session) and deploying the strongbox to it directly: both
+`keys.env.age`/`captain.env.age` decrypted to plausible, correct-length-looking values,
+but `gh auth status` on the ship failed with "The token in GH_TOKEN is invalid" — a real
+401 from GitHub's API, ruling out a gh-CLI-only quirk. The *same* token succeeded (real
+200) when tested from this Windows host, which was the key anomaly: same ciphertext (
+verified identical sha256 on both host and ship), same `ship.key`, same GitHub token,
+different result depending on which machine decrypted it.
+
+Root cause: `erda.ps1`'s `Invoke-Strongbox init` wrote each secret via `"KEY=$Value" | &
+age -r $Recipient -o $Path -` — piping a string to a native process's stdin in
+PowerShell appends a Windows-style CRLF, not a bare LF, silently baking a stray `\r`
+into the encrypted plaintext (confirmed directly: the last two decrypted bytes were
+`0d 0a`, not just `0a`). That `\r` decrypts to a value that's non-empty and only one
+character longer than the real secret — invisible in normal display — and is silently
+laundered back out by *both* PowerShell's own line-splitting pipeline *and* even
+Windows git-bash's `sed`/`$(...)` (both treat `\r\n` as a line ending and drop the `\r`),
+which is exactly why this host's own tools, including the first version of `erda
+doctor` itself, reported everything as valid. Only real Ubuntu bash on an actual ship
+preserves the `\r` (POSIX `$()` strips trailing `\n` only, never `\r`; GNU `sed` doesn't
+strip it either), so `GH_TOKEN` there ends up genuinely one byte longer than the real
+token, which GitHub's API correctly rejects (`Requires authentication`, at the
+*unauthenticated* rate-limit tier — consistent with the credential essentially not being
+recognized at all). Ruled out several other theories before landing on this one: not a
+gh-CLI-version difference (raw `curl`/`Invoke-WebRequest` reproduced the same host-vs-ship
+split), not IP-based blocking (identical public egress IP on both sides, confirmed via
+`api.ipify.org`), not generic proxy/NAT header mangling (a dummy `Authorization` header
+survived the ship's network path intact against an independent echo endpoint).
+
+**No credential was actually invalid — nothing needed to be re-minted.** Fixed
+`ship/bin/unlock` defensively (strip a trailing `\r` before the `export` substitution,
+regardless of which platform produced the ciphertext) so already-corrupted secrets work
+immediately on any ship without re-encrypting anything — verified by deploying the
+patched `unlock` to the live ship and re-running `gh auth status` (now a clean pass) and
+the originally-failing `captain charter ERDA-utility-belt` end to end (real repo reuse,
+real clone, chartered successfully). Fixed the root cause in `erda.ps1`'s `Invoke-Strongbox
+init` too (new `Write-AgeSecret` helper writes plaintext to a real temp file via
+`[IO.File]::WriteAllText` with an explicit LF, then hands `age` that file instead of
+piping a string to its stdin — no more Windows tool ever gets a chance to inject a CRLF).
+Re-encrypted the *existing* `keys.env.age`/`captain.env.age` in place using the existing
+key and existing secret values (decrypt → `tr -d '\r'` → re-encrypt, piped end to end,
+values never printed) rather than having Eric mint new credentials he didn't need.
+
+Gave `erda doctor` a dedicated, byte-safe CRLF-contamination check (`grep -qU $'\r'` in
+bash; a `cmd /c`-redirected raw file write + `[IO.File]::ReadAllBytes` in PowerShell,
+since neither platform's normal capture path can be trusted to preserve the very byte
+being checked for) so this exact class of corruption is caught immediately at
+`erda doctor`/`christen`/`board` time in the future, on either compartment, regardless of
+source. Shellcheck-clean on all touched files (`erda.sh`, `unlock`), verified on the real
+ship.
+
+**Worth remembering**: host-side credential validation is not equivalent to ship-side
+validation when the two run genuinely different toolchains — Windows tools (PowerShell,
+and even git-bash, which is more POSIX-faithful but still not identical to real Linux
+coreutils) can silently normalize away exactly the kind of corruption that breaks a real
+Ubuntu ship. `doctor`'s CR-check exists because of this gap specifically, not as
+generic defensive coding.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1137,3 +1218,4 @@ Next up, in rough priority order:
 - v20 (Claude Code, July 4, 2026): pushed v19's Shipwright work, then christened a throwaway Multipass ship on this Windows host specifically to verify it for real rather than leave it as an untested claim — `git pull`ed the new code onto it, deployed the age key, chartered a `--local` test charter, and `sail`ed it. Confirmed via `tmux list-windows`/`display-message`/`capture-pane`: all 8 role windows created correctly, `shipwright` at index 7 with cwd genuinely `~/shipyard`, `claude` launched and (correctly, with no key present yet) fell through to its normal `/login` menu. Confirmed `unlock shipwright` loads real `DEEPINFRA_API_KEY`/`GH_TOKEN` while cleanly reporting the absent `ANTHROPIC_API_KEY` rather than erroring (checked byte-lengths only, never printed real values — a permission classifier correctly blocked a first attempt that would have leaked them into the transcript, redone safely via a script file instead). Confirmed empirically (not just by reading `muster`) that a plain auto-indexed `tmux new-window` lands at 8, not colliding with `shipwright`. Sunk the test ship after. Still open, needing Eric's real `ANTHROPIC_API_KEY`: the actual skip-`/login` path and a real shipwright-authored commit to ERDA-Will. See §4s.
 - v21 (Claude Code, July 4, 2026): built the Preview role (dev-server deck window + `erda preview` SSH tunnel) at Eric's request, ruling out any external tunneling service before designing anything (ships already have a directly-reachable IP over existing SSH, so it was never actually a tradeoff) and resolving three real design choices by asking rather than guessing (SSH tunnel over raw IP, `integration` branch over a crew berth, tmux window over a headless process — now D18). Caught a real `core.fileMode=false` bug before pushing (same class as v14/§4o) by checking `git ls-files -s` directly rather than assuming `chmod +x` had taken effect on the new `ship/bin/preview` file. Verified fully live on a throwaway ship: the preview window's graceful no-branch fallback, auto-creation of `berths/integration` once a branch existed, the dev server actually starting, and — from this Windows host — a real `erda preview` SSH tunnel serving a genuine HTTP 200 fetched via `Invoke-WebRequest` against `localhost:8123`. Ship torn down after. See §4t.
 - v22 (Claude Code, July 4, 2026): gave crew members human-readable names at Eric's request — pitched three themed options, Eric chose to specify his own theme (hobbit-like, explicitly not actual Tolkien lore names) rather than pick from the pitches. Landed on a 31-name invented pool, deliberately avoiding the specific flower names Tolkien used for Sam Gamgee's children (the real collision risk, more than the obviously-famous names). `muster` now assigns one per crew member, avoiding collision with other currently-active crew in the same charter; it replaces the task ID in the tmux window title and status messages, while task IDs/branches/order paths stay unchanged underneath. Verified the random-pick-with-collision-avoidance logic standalone (`jq` isn't installed on this Windows host, so the roster.json field additions rely on close analogy to already-proven expressions rather than independent testing); an actual live `muster` run wasn't exercised this session. See §4u.
+- v23 (Claude Code, July 5, 2026): investigated Eric's `captain charter` local-only fallback and built `erda doctor` (hard-blocking `christen`/`board`, his explicit choice) to catch dead credentials before they cause confusing downstream failures. Live-diagnosed against a real ship rather than guessing: not an expired/revoked PAT as suspected, but a genuine encoding bug — `erda.ps1`'s old `"KEY=value" | & age ...` pattern baked a stray CRLF into every Windows-encrypted secret, invisible because PowerShell's and even git-bash's own tools silently launder it back out, so it only ever broke on a real Ubuntu ship's bash. Fixed `unlock` defensively (works immediately on already-corrupted secrets, no re-mint needed), fixed the root cause in `Invoke-Strongbox init` (writes via a real LF-only temp file now), re-encrypted the existing compartments in place with Eric's existing, still-valid credentials, and gave `doctor` a byte-safe CRLF check that can't be fooled by either platform's own text-mode laundering. Verified end-to-end on a live ship: `gh auth status` clean, and the originally-failing `captain charter ERDA-utility-belt` succeeded for real (reused the existing GitHub repo, cloned, chartered). See §4v.

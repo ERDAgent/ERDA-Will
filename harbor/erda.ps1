@@ -9,6 +9,10 @@
                                               again after moving/updating the repo)
     christen [name] [cpus] [memory] [disk]   launch a new ship
     strongbox <init|backup|restore>          manage the local age keypair (see below)
+    doctor                                   host-side credential health check (no ship
+                                              needed) -- also runs automatically before
+                                              christen/board, which refuse to proceed if
+                                              it fails
     board [ship]                             connect: multipass info + ssh in, deploying
                                               the age key if needed and connecting with
                                               the strongbox already unlocked (captain
@@ -73,6 +77,9 @@ usage: erda <command> [ship] [args...]
   strongbox init                            generate a new keypair + encrypt secrets
   strongbox backup <path>                   copy ship.key to a path of your choosing
   strongbox restore <path>                  copy ship.key back from a path
+  doctor                                    host-side credential health check (no ship
+                                             needed); christen/board also run this first
+                                             and refuse to proceed if it fails
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
   preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
@@ -330,7 +337,7 @@ function Invoke-Strongbox {
       $PlainDeepInfra = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DeepInfraKey))
       if (-not $PlainDeepInfra) { Write-Error "strongbox: empty value entered, aborting"; exit 1 }
       $KeysEnvPath = Join-Path $RepoRoot "strongbox\keys.env.age"
-      "DEEPINFRA_API_KEY=$PlainDeepInfra" | & age -r $Recipient -o $KeysEnvPath -
+      Write-AgeSecret "DEEPINFRA_API_KEY=$PlainDeepInfra" $Recipient $KeysEnvPath
       $KeysLen = (& age -d -i $KeyPath $KeysEnvPath | Measure-Object -Character).Characters
       Write-Host "wrote keys.env.age (decrypts to $KeysLen bytes)"
 
@@ -343,7 +350,7 @@ function Invoke-Strongbox {
           Write-Warning "strongbox: empty value entered, skipping captain compartment"
         } else {
           $CaptainEnvPath = Join-Path $RepoRoot "strongbox\captain.env.age"
-          "GH_TOKEN=$PlainGh" | & age -r $Recipient -o $CaptainEnvPath -
+          Write-AgeSecret "GH_TOKEN=$PlainGh" $Recipient $CaptainEnvPath
           $CaptainLen = (& age -d -i $KeyPath $CaptainEnvPath | Measure-Object -Character).Characters
           Write-Host "wrote captain.env.age (decrypts to $CaptainLen bytes)"
         }
@@ -358,7 +365,7 @@ function Invoke-Strongbox {
           Write-Warning "strongbox: empty value entered, skipping shipwright compartment"
         } else {
           $ShipwrightEnvPath = Join-Path $RepoRoot "strongbox\shipwright.env.age"
-          "ANTHROPIC_API_KEY=$PlainCc" | & age -r $Recipient -o $ShipwrightEnvPath -
+          Write-AgeSecret "ANTHROPIC_API_KEY=$PlainCc" $Recipient $ShipwrightEnvPath
           $ShipwrightLen = (& age -d -i $KeyPath $ShipwrightEnvPath | Measure-Object -Character).Characters
           Write-Host "wrote shipwright.env.age (decrypts to $ShipwrightLen bytes)"
         }
@@ -399,6 +406,179 @@ function Invoke-Strongbox {
   }
 }
 
+# Writes plaintext to a real temp file with an explicit LF terminator, then
+# hands that file to `age` as its input argument -- NOT `"text" | & age ...`.
+# Piping a string to a native process's stdin in PowerShell appends CRLF, not
+# a bare LF, which silently bakes a stray \r into the encrypted secret. That
+# \r decrypts to a plausible, right-length-looking value on Windows (both
+# PowerShell's own pipeline and even git-bash's sed launder it back out
+# transparently), so it only ever breaks on a real Linux ship's bash/sed --
+# GitHub rejected the resulting GH_TOKEN outright, indistinguishable from a
+# genuinely revoked/expired one, until traced to this encoding bug.
+function Write-AgeSecret([string]$PlainText, [string]$Recipient, [string]$OutPath) {
+  $Tmp = [IO.Path]::GetTempFileName()
+  try {
+    [IO.File]::WriteAllText($Tmp, "$PlainText`n", (New-Object Text.UTF8Encoding $false))
+    & age -r $Recipient -o $OutPath $Tmp
+  } finally {
+    Remove-Item $Tmp -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# Detects a stray CR byte in a decrypted secret. Can't just check the
+# PowerShell-captured `& age -d ...` output for this: PowerShell's own
+# pipeline splits native stdout into line objects and silently drops the
+# very \r this needs to catch, same as git-bash's sed does -- both would
+# report a false "clean" result for exactly the corruption this exists to
+# find. Routing the redirection through cmd.exe instead keeps it a raw
+# byte-for-byte file write, bypassing PowerShell's pipeline entirely.
+function Test-HasCR([string]$KeyPath, [string]$AgeFile) {
+  $Tmp = [IO.Path]::GetTempFileName()
+  try {
+    cmd /c "age -d -i `"$KeyPath`" `"$AgeFile`" > `"$Tmp`" 2>nul" | Out-Null
+    $Bytes = [IO.File]::ReadAllBytes($Tmp)
+    return ($Bytes -contains 0x0D)
+  } finally {
+    Remove-Item $Tmp -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Test-KeyLive([string]$Url, [hashtable]$Headers) {
+  try {
+    $Resp = Invoke-WebRequest -Uri $Url -Headers $Headers -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    return [int]$Resp.StatusCode
+  } catch {
+    if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+    return 0
+  }
+}
+
+# doctor — host-side credential health check, no ship needed. Distinguishes
+# the three states an operator actually cares about (no key at all / a key
+# that can't decrypt the committed .env.age files / a key that decrypts fine
+# but the credential inside has gone bad upstream) instead of letting all
+# three surface identically, deep inside charter's or muster's own silent
+# fallback. That collapse is real, not hypothetical: an expired/revoked
+# GH_TOKEN decrypts to a perfectly valid-looking string and produces the
+# exact same "gh not authenticated" fallback message a missing token does --
+# only a live call to GitHub itself tells them apart.
+#
+# DEEPINFRA_API_KEY and GH_TOKEN are treated differently on purpose:
+# keys.env.age is required baseline (nothing works without a model key), but
+# captain.env.age/shipwright.env.age are optional compartments -- not having
+# them at all is a legitimate "local-only, no push" choice charter already
+# supports gracefully. Only a compartment that EXISTS but is broken fails
+# doctor; one that was never provisioned is silently skipped.
+function Invoke-Doctor {
+  # Local override, same reasoning as Invoke-Strongbox: `age -d` (and gh/curl
+  # failures below) must not become terminating exceptions under the script's
+  # global "Stop" preference just because we check $LASTEXITCODE ourselves.
+  $ErrorActionPreference = "Continue"
+  $KeyPath = Join-Path $RepoRoot "strongbox\ship.key"
+  $Ok = $true
+
+  if (-not (Get-Command age -ErrorAction SilentlyContinue)) {
+    Write-Warning "doctor: 'age' isn't installed on this machine (winget install --id FiloSottile.age)"
+    return $false
+  }
+
+  if (-not (Test-Path $KeyPath)) {
+    Write-Warning "doctor: NO KEY -- $KeyPath doesn't exist yet. Run: erda strongbox init"
+    return $false
+  }
+
+  $KeysAge = Join-Path $RepoRoot "strongbox\keys.env.age"
+  if (-not (Test-Path $KeysAge)) {
+    Write-Warning "doctor: NO KEY -- $KeysAge doesn't exist yet. Run: erda strongbox init"
+    return $false
+  }
+
+  $KeysPlain = & age -d -i $KeyPath $KeysAge 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "doctor: WRONG KEY -- $KeyPath can't decrypt $KeysAge (stale/regenerated ship.key? see strongbox/README.md's stale-checkout note)"
+    return $false
+  }
+  if (Test-HasCR $KeyPath $KeysAge) {
+    Write-Warning "doctor: $KeysAge has a Windows CRLF baked into its plaintext (stray \r) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship"
+    $Ok = $false
+  }
+  $DeepInfraMatch = $KeysPlain | Select-String '^DEEPINFRA_API_KEY=(.*)$'
+  $DeepInfraKey = if ($DeepInfraMatch) { $DeepInfraMatch.Matches[0].Groups[1].Value } else { $null }
+  if (-not $DeepInfraKey) {
+    Write-Warning "doctor: keys.env.age decrypts but DEEPINFRA_API_KEY is empty -- re-run erda strongbox init"
+    $Ok = $false
+  } else {
+    $Code = Test-KeyLive "https://api.deepinfra.com/v1/openai/models" @{ Authorization = "Bearer $DeepInfraKey" }
+    if ($Code -ne 200) {
+      Write-Warning "doctor: DEEPINFRA_API_KEY decrypts fine but DeepInfra rejected it (HTTP $Code) -- mint a new key and re-encrypt keys.env.age"
+      $Ok = $false
+    } else {
+      Write-Host "doctor: DEEPINFRA_API_KEY OK"
+    }
+  }
+
+  $CaptainAge = Join-Path $RepoRoot "strongbox\captain.env.age"
+  if (Test-Path $CaptainAge) {
+    $CaptainPlain = & age -d -i $KeyPath $CaptainAge 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "doctor: WRONG KEY -- $KeyPath can't decrypt $CaptainAge"
+      $Ok = $false
+    } elseif (Test-HasCR $KeyPath $CaptainAge) {
+      Write-Warning "doctor: $CaptainAge has a Windows CRLF baked into its plaintext (stray \r) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship"
+      $Ok = $false
+    } else {
+      $GhMatch = $CaptainPlain | Select-String '^GH_TOKEN=(.*)$'
+      $GhToken = if ($GhMatch) { $GhMatch.Matches[0].Groups[1].Value } else { $null }
+      if (-not $GhToken) {
+        Write-Warning "doctor: captain.env.age decrypts but GH_TOKEN is empty -- re-encrypt captain.env.age"
+        $Ok = $false
+      } elseif (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Write-Warning "doctor: 'gh' isn't installed on this machine -- can't live-check GH_TOKEN, only that it decrypts"
+      } else {
+        $env:GH_TOKEN = $GhToken
+        & gh auth status *> $null
+        $GhOk = ($LASTEXITCODE -eq 0)
+        Remove-Item Env:\GH_TOKEN -ErrorAction SilentlyContinue
+        if (-not $GhOk) {
+          Write-Warning "doctor: GH_TOKEN decrypts fine but GitHub rejected it (expired/revoked?) -- mint a new fine-grained PAT (Repository access: All repositories, Administration: Read and write) and re-encrypt captain.env.age, see strongbox/README.md"
+          $Ok = $false
+        } else {
+          Write-Host "doctor: GH_TOKEN OK"
+        }
+      }
+    }
+  }
+
+  $ShipwrightAge = Join-Path $RepoRoot "strongbox\shipwright.env.age"
+  if (Test-Path $ShipwrightAge) {
+    $ShipwrightPlain = & age -d -i $KeyPath $ShipwrightAge 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "doctor: WRONG KEY -- $KeyPath can't decrypt $ShipwrightAge"
+      $Ok = $false
+    } elseif (Test-HasCR $KeyPath $ShipwrightAge) {
+      Write-Warning "doctor: $ShipwrightAge has a Windows CRLF baked into its plaintext (stray \r) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship"
+      $Ok = $false
+    } else {
+      $AnthropicMatch = $ShipwrightPlain | Select-String '^ANTHROPIC_API_KEY=(.*)$'
+      $AnthropicKey = if ($AnthropicMatch) { $AnthropicMatch.Matches[0].Groups[1].Value } else { $null }
+      if (-not $AnthropicKey) {
+        Write-Warning "doctor: shipwright.env.age decrypts but ANTHROPIC_API_KEY is empty"
+        $Ok = $false
+      } else {
+        $Code = Test-KeyLive "https://api.anthropic.com/v1/models" @{ "x-api-key" = $AnthropicKey; "anthropic-version" = "2023-06-01" }
+        if ($Code -ne 200) {
+          Write-Warning "doctor: ANTHROPIC_API_KEY decrypts fine but Anthropic rejected it (HTTP $Code)"
+          $Ok = $false
+        } else {
+          Write-Host "doctor: ANTHROPIC_API_KEY OK"
+        }
+      }
+    }
+  }
+
+  return $Ok
+}
+
 if ([string]::IsNullOrEmpty($Command)) {
   Write-Host $Usage
   exit 1
@@ -410,11 +590,19 @@ switch ($Command) {
   }
 
   "christen" {
+    if (-not (Invoke-Doctor)) {
+      Write-Error "christen: fix the strongbox issues above first (see 'erda doctor')"
+      exit 1
+    }
     Invoke-Christen @Rest
   }
 
   "strongbox" {
     Invoke-Strongbox @Rest
+  }
+
+  "doctor" {
+    if (Invoke-Doctor) { Write-Host "doctor: all checks passed" } else { exit 1 }
   }
 
   "board" {
@@ -424,6 +612,10 @@ switch ($Command) {
     # local strongbox\ship.key exists at all. Before `erda strongbox init` has
     # ever been run there's nothing to deploy, so it falls back to a plain
     # connect rather than failing hard.
+    if (-not (Invoke-Doctor)) {
+      Write-Error "board: fix the strongbox issues above first (see 'erda doctor')"
+      exit 1
+    }
     $Name = Get-Arg0
     $Ip = Get-ShipIp $Name
     Write-Host "boarding '$Name' ($Ip)..."

@@ -28,6 +28,23 @@ By hand, if you want to see every step:
     age -r "$(grep -o 'age1.*' ship.key)" -o keys.env.age keys.env
     shred -u keys.env
 
+## Checking credential health: `erda doctor`
+
+Run `erda doctor` any time you want to know whether the strongbox is actually
+usable — no ship needed. It decrypts each compartment present and makes a
+real live call to the credential's own API (DeepInfra, `gh auth status`,
+Anthropic), rather than treating "decrypts to something non-empty" as good
+enough. `christen` and `board` both run it automatically first and refuse to
+proceed if it fails. A `.env.age` file that decrypts fine but whose value is
+dead upstream (expired/revoked) is a real, silent failure mode this is
+built specifically to catch — see HANDOFF §4v for the incident that proved
+it: a Windows-only CRLF encoding bug baked a stray `\r` into a still-valid
+GitHub PAT, which decrypted to a plausible value and passed every host-side
+tool's own check (including an early version of `doctor` itself), yet was
+rejected by GitHub as invalid the moment a real Ubuntu ship's plain `bash`
+decrypted it. Fixed in `erda.ps1`'s `strongbox init`; `doctor` also checks
+for this specific contamination directly.
+
 ## Back it up (do this now, not after you lose it)
 
     erda strongbox backup <path>       # copy ship.key somewhere durable and

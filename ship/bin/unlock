@@ -28,7 +28,18 @@ esac
 FOUND=0
 for f in "${FILES[@]}"; do
   if [[ -f "$f" ]]; then
-    age -d -i "$KEY" "$f" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=/export \1=/'
+    # Strip a trailing \r before the export-prefix substitution. Secrets
+    # encrypted via erda.ps1's `strongbox init` on Windows can end up with a
+    # stray \r baked into the plaintext (PowerShell appends CRLF when piping
+    # a string to a native process's stdin), which decrypts to a
+    # plausible-looking, non-empty value with the right length +/- one
+    # character -- and both PowerShell and even Windows git-bash's own tools
+    # silently launder it away, so it only ever surfaces here, on a real
+    # ship. A raw \r embedded in an exported env var is invisible in most
+    # terminal output but breaks HTTP header values outright (GitHub
+    # rejected it as "invalid", indistinguishable from a genuinely bad
+    # token, until traced to this).
+    age -d -i "$KEY" "$f" | sed -E 's/\r$//; s/^([A-Za-z_][A-Za-z0-9_]*)=/export \1=/'
     FOUND=1
   fi
 done

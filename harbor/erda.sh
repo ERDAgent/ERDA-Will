@@ -7,6 +7,10 @@
 #                                             again after moving/updating the repo)
 #   christen [name] [cpus] [memory] [disk]   launch a new ship
 #   strongbox <init|backup|restore>          manage the local age keypair (see below)
+#   doctor                                   host-side credential health check (no ship
+#                                             needed) -- also runs automatically before
+#                                             christen/board, which refuse to proceed if
+#                                             it fails
 #   board [ship]                             connect: multipass info + ssh in, deploying
 #                                             the age key if needed and connecting with
 #                                             the strongbox already unlocked (captain
@@ -60,6 +64,9 @@ usage: erda <command> [ship] [args...]
   strongbox init                            generate a new keypair + encrypt secrets
   strongbox backup <path>                   copy ship.key to a path of your choosing
   strongbox restore <path>                  copy ship.key back from a path
+  doctor                                    host-side credential health check (no ship
+                                             needed); christen/board also run this first
+                                             and refuse to proceed if it fails
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
   preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
@@ -308,6 +315,133 @@ cmd_strongbox() {
   esac
 }
 
+# doctor — host-side credential health check, no ship needed. Distinguishes
+# the three states an operator actually cares about (no key at all / a key
+# that can't decrypt the committed .env.age files / a key that decrypts fine
+# but the credential inside has gone bad upstream) instead of letting all
+# three surface identically, deep inside charter's or muster's own silent
+# fallback. That collapse is real, not hypothetical: an expired/revoked
+# GH_TOKEN decrypts to a perfectly valid-looking 94-byte string and produces
+# the exact same "gh not authenticated" fallback message a missing token
+# does -- only a live call to GitHub itself tells them apart.
+#
+# DEEPINFRA_API_KEY and GH_TOKEN are treated differently on purpose:
+# keys.env.age is required baseline (nothing works without a model key), but
+# captain.env.age/shipwright.env.age are optional compartments -- not having
+# them at all is a legitimate "local-only, no push" choice charter already
+# supports gracefully. Only a compartment that EXISTS but is broken fails
+# doctor; one that was never provisioned is silently skipped.
+cmd_doctor() {
+  local key_path="$REPO_ROOT/strongbox/ship.key"
+  local ok=1
+
+  command -v age >/dev/null 2>&1 || {
+    echo "doctor: 'age' isn't installed on this machine (brew install age / winget install --id FiloSottile.age)" >&2
+    return 1
+  }
+
+  if [[ ! -f "$key_path" ]]; then
+    echo "doctor: NO KEY -- $key_path doesn't exist yet. Run: erda strongbox init" >&2
+    return 1
+  fi
+
+  local keys_age="$REPO_ROOT/strongbox/keys.env.age"
+  if [[ ! -f "$keys_age" ]]; then
+    echo "doctor: NO KEY -- $keys_age doesn't exist yet. Run: erda strongbox init" >&2
+    return 1
+  fi
+
+  local keys_plain
+  if ! keys_plain="$(age -d -i "$key_path" "$keys_age" 2>/dev/null)"; then
+    echo "doctor: WRONG KEY -- $key_path can't decrypt $keys_age (stale/regenerated ship.key? see strongbox/README.md's stale-checkout note)" >&2
+    return 1
+  fi
+  # Raw byte check, not on $keys_plain: bash's own "$(...)" capture (used
+  # just above) already strips a trailing \r along with the \n, same as
+  # PowerShell's pipeline does -- so it would silently launder away exactly
+  # the corruption this is trying to catch. Only a check against the
+  # untouched byte stream still sees it.
+  if age -d -i "$key_path" "$keys_age" 2>/dev/null | grep -qU $'\r'; then
+    echo "doctor: $keys_age has a Windows CRLF baked into its plaintext (a stray carriage return) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship" >&2
+    ok=0
+  fi
+  local deepinfra_key
+  deepinfra_key="$(printf '%s\n' "$keys_plain" | sed -n 's/^DEEPINFRA_API_KEY=//p')"
+  if [[ -z "$deepinfra_key" ]]; then
+    echo "doctor: keys.env.age decrypts but DEEPINFRA_API_KEY is empty -- re-run erda strongbox init" >&2
+    ok=0
+  elif ! command -v curl >/dev/null 2>&1; then
+    echo "doctor: 'curl' isn't installed -- can't live-check DEEPINFRA_API_KEY, only that it decrypts" >&2
+  else
+    local di_code
+    di_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "Authorization: Bearer $deepinfra_key" https://api.deepinfra.com/v1/openai/models || echo 000)"
+    if [[ "$di_code" != "200" ]]; then
+      echo "doctor: DEEPINFRA_API_KEY decrypts fine but DeepInfra rejected it (HTTP $di_code) -- mint a new key and re-encrypt keys.env.age" >&2
+      ok=0
+    else
+      echo "doctor: DEEPINFRA_API_KEY OK"
+    fi
+  fi
+
+  local captain_age="$REPO_ROOT/strongbox/captain.env.age"
+  if [[ -f "$captain_age" ]]; then
+    local captain_plain
+    if ! captain_plain="$(age -d -i "$key_path" "$captain_age" 2>/dev/null)"; then
+      echo "doctor: WRONG KEY -- $key_path can't decrypt $captain_age" >&2
+      ok=0
+    elif age -d -i "$key_path" "$captain_age" 2>/dev/null | grep -qU $'\r'; then
+      echo "doctor: $captain_age has a Windows CRLF baked into its plaintext (a stray carriage return) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship" >&2
+      ok=0
+    else
+      local gh_token
+      gh_token="$(printf '%s\n' "$captain_plain" | sed -n 's/^GH_TOKEN=//p')"
+      if [[ -z "$gh_token" ]]; then
+        echo "doctor: captain.env.age decrypts but GH_TOKEN is empty -- re-encrypt captain.env.age" >&2
+        ok=0
+      elif ! command -v gh >/dev/null 2>&1; then
+        echo "doctor: 'gh' isn't installed on this machine -- can't live-check GH_TOKEN, only that it decrypts" >&2
+      elif ! GH_TOKEN="$gh_token" gh auth status >/dev/null 2>&1; then
+        echo "doctor: GH_TOKEN decrypts fine but GitHub rejected it (expired/revoked?) -- mint a new fine-grained PAT (Repository access: All repositories, Administration: Read and write) and re-encrypt captain.env.age, see strongbox/README.md" >&2
+        ok=0
+      else
+        echo "doctor: GH_TOKEN OK"
+      fi
+    fi
+  fi
+
+  local shipwright_age="$REPO_ROOT/strongbox/shipwright.env.age"
+  if [[ -f "$shipwright_age" ]]; then
+    local shipwright_plain
+    if ! shipwright_plain="$(age -d -i "$key_path" "$shipwright_age" 2>/dev/null)"; then
+      echo "doctor: WRONG KEY -- $key_path can't decrypt $shipwright_age" >&2
+      ok=0
+    elif age -d -i "$key_path" "$shipwright_age" 2>/dev/null | grep -qU $'\r'; then
+      echo "doctor: $shipwright_age has a Windows CRLF baked into its plaintext (a stray carriage return) -- likely encrypted via a PowerShell 'string | age' pipe before that was fixed. Re-encrypt via 'erda strongbox init'; it silently 'looks' fine from Windows tools but breaks on a real Linux ship" >&2
+      ok=0
+    else
+      local anthropic_key
+      anthropic_key="$(printf '%s\n' "$shipwright_plain" | sed -n 's/^ANTHROPIC_API_KEY=//p')"
+      if [[ -z "$anthropic_key" ]]; then
+        echo "doctor: shipwright.env.age decrypts but ANTHROPIC_API_KEY is empty" >&2
+        ok=0
+      elif ! command -v curl >/dev/null 2>&1; then
+        echo "doctor: 'curl' isn't installed -- can't live-check ANTHROPIC_API_KEY, only that it decrypts" >&2
+      else
+        local an_code
+        an_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "x-api-key: $anthropic_key" -H "anthropic-version: 2023-06-01" https://api.anthropic.com/v1/models || echo 000)"
+        if [[ "$an_code" != "200" ]]; then
+          echo "doctor: ANTHROPIC_API_KEY decrypts fine but Anthropic rejected it (HTTP $an_code)" >&2
+          ok=0
+        else
+          echo "doctor: ANTHROPIC_API_KEY OK"
+        fi
+      fi
+    fi
+  fi
+
+  [[ "$ok" -eq 1 ]]
+}
+
 CMD="${1:-}"
 [[ $# -gt 0 ]] && shift
 
@@ -317,6 +451,7 @@ case "$CMD" in
     ;;
 
   christen)
+    cmd_doctor || { echo "christen: fix the strongbox issues above first (see 'erda doctor')" >&2; exit 1; }
     cmd_christen "$@"
     ;;
 
@@ -324,7 +459,12 @@ case "$CMD" in
     cmd_strongbox "$@"
     ;;
 
+  doctor)
+    cmd_doctor && echo "doctor: all checks passed"
+    ;;
+
   board)
+    cmd_doctor || { echo "board: fix the strongbox issues above first (see 'erda doctor')" >&2; exit 1; }
     # Ships get sunk and christened often enough that a separate "now unlock
     # it" step was pure friction -- boarding always deploys ship.key (if
     # missing) and connects with the strongbox already unlocked, as long as a
