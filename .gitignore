@@ -1,5 +1,11 @@
 .DS_Store
 
+# Neptune's narrow permission lockdown (see neptune/README.md) belongs only on
+# Eric's own host machine, never on a ship -- keeping it untracked is what
+# makes that true even though .claude/settings.json is a plain git clone away
+# on every ship.
+.claude/settings.local.json
+
 # strongbox: only the encrypted bundle is ever committed
 strongbox/*.key
 strongbox/keys.env

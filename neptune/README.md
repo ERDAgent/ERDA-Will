@@ -31,6 +31,86 @@ itself.
    `neptune/reports/<ID>.report.md` (template below), commits, pushes.
 4. Shipwright reads the report on its next `git pull`.
 
+## Neptune's permission lockdown lives on Eric's machine only
+
+`.claude/settings.json` is tracked, so `keel.yaml`'s clone ships whatever's in
+it onto every ship — a checked-in deny-list meant for Neptune alone ends up
+blocking the Shipwright on its own ship too (found live, July 7 2026: it
+denied the Shipwright's `Edit`/`Write` tools *and* Bash file redirects
+outright, no prompt, on paths well outside `neptune/`). Fix: the tracked
+`.claude/settings.json` only keeps guardrails that are safe to apply
+everywhere (force-push, rsync); Neptune's actual narrow scope
+(`Edit`/`Write` limited to `neptune/reports/**`) lives in an **untracked**
+`~/shipyard/.claude/settings.local.json` on Eric's host machine, which
+`.gitignore` now excludes so it can never round-trip onto a ship. Claude Code
+merges `settings.local.json` over `settings.json`, so this is where any
+future Neptune-only restriction belongs — never in the tracked file.
+
+Put this in `~/shipyard/.claude/settings.local.json` on the host (not on any
+ship):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit(neptune/reports/**)",
+      "Write(neptune/reports/**)",
+      "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git add neptune/reports/*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(multipass *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(curl *)"
+    ],
+    "deny": [
+      "Edit(.claude/**)",
+      "Edit(CLAUDE.md)",
+      "Edit(HANDOFF.md)",
+      "Edit(.gitignore)",
+      "Edit(keel.yaml)",
+      "Edit(fitout.sh)",
+      "Edit(docs/**)",
+      "Edit(dotfiles/**)",
+      "Edit(harbor/**)",
+      "Edit(scuttlebutt/**)",
+      "Edit(ship/**)",
+      "Edit(strongbox/**)",
+      "Edit(neptune/README.md)",
+      "Edit(neptune/requests/**)",
+      "Write(.claude/**)",
+      "Write(CLAUDE.md)",
+      "Write(HANDOFF.md)",
+      "Write(.gitignore)",
+      "Write(keel.yaml)",
+      "Write(fitout.sh)",
+      "Write(docs/**)",
+      "Write(dotfiles/**)",
+      "Write(harbor/**)",
+      "Write(scuttlebutt/**)",
+      "Write(ship/**)",
+      "Write(strongbox/**)",
+      "Write(neptune/README.md)",
+      "Write(neptune/requests/**)",
+      "Bash(rsync*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push*--force*)"
+    ]
+  }
+}
+```
+
+Not yet verified live (same caveat as before, just relocated): confirm a
+fresh Neptune session on the host actually gets blocked outside
+`neptune/reports/**` with this file in place.
+
 ## ID convention
 
 `N-001`, `N-002`, ... — sequential, matching crew's `T-NNN` task-id style but

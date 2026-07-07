@@ -18,38 +18,6 @@
       "Bash(curl *)"
     ],
     "deny": [
-      "Edit(.claude/**)",
-      "Edit(CLAUDE.md)",
-      "Edit(HANDOFF.md)",
-      "Edit(.gitignore)",
-      "Edit(keel.yaml)",
-      "Edit(fitout.sh)",
-      "Edit(docs/**)",
-      "Edit(dotfiles/**)",
-      "Edit(harbor/**)",
-      "Edit(scuttlebutt/**)",
-      "Edit(ship/**)",
-      "Edit(strongbox/**)",
-      "Edit(neptune/README.md)",
-      "Edit(neptune/requests/**)",
-      "Write(.claude/**)",
-      "Write(CLAUDE.md)",
-      "Write(HANDOFF.md)",
-      "Write(.gitignore)",
-      "Write(keel.yaml)",
-      "Write(fitout.sh)",
-      "Write(docs/**)",
-      "Write(dotfiles/**)",
-      "Write(harbor/**)",
-      "Write(scuttlebutt/**)",
-      "Write(ship/**)",
-      "Write(strongbox/**)",
-      "Write(neptune/README.md)",
-      "Write(neptune/requests/**)",
-      "Bash(rsync*)",
-      "Bash(git push --force*)",
-      "Bash(git push -f*)",
-      "Bash(git push*--force*)"
-    ]
+     ]
   }
 }
