@@ -69,6 +69,23 @@ projects, deliberately, for context purity and cost attribution. Its loop:
    full test suite, fast-forwards `main` (home port), removes berths, logs everything.
 7. **DEBRIEF** — summarizes to you: shipped, blocked, cost.
 
+**Phase 4 plugin (`ship/plugin/`, real, working today)**: a pi extension, symlinked
+globally by `fitout.sh` into every ship (`~/.pi/agent/extensions/shipyard`), so it's
+active in every charter's bridge window automatically. Adds four slash commands
+mapping onto the loop above: `/mission <goal>` (PLAN — hands the goal to the Captain's
+own planning conversation via `sendUserMessage`, after ensuring `.ship/orders/`
+exists; the extension doesn't do any planning itself), `/muster <task-id>
+[order-file]` (MUSTER — a pure, deterministic wrapper around `ship/bin/muster`, no LLM
+turn at all; auto-resolves the order file from `.ship/orders/` if omitted), `/harbor
+[task-id]` (WATCH — reads `.ship/roster.json` + reports directly and shows them,
+interactively picking a task if none is given; also pure, no LLM turn), and `/debrief`
+(DEBRIEF — reads the real roster, recent commits, and `log/ledger.tsv` deterministically,
+then hands those facts to the Captain to narrate; the summary's numbers are always
+real, never re-derived or guessed by the model). The split is deliberate: anything
+that's just files and one subprocess call (`/muster`, `/harbor`) never touches the LLM;
+anything that's inherently a language task (planning, narrating) still goes through the
+Captain's own judgment, just grounded in facts the extension gathered first.
+
 Hard rules it operates under: never merge to `main` without dry-dock tests passing,
 never exceed a mission budget without asking, never touch (or let an order touch) a
 charter's no-touch paths, and — the one crew members don't have — **never write

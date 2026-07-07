@@ -78,6 +78,11 @@ It will not muster anything until you explicitly say so. Useful phrasings:
 
 If you never approve, nothing runs — that's the intended failure mode, not a bug.
 
+**Shortcut**: `/mission <goal>` does the same BRIEF→PLAN kickoff as typing it out in
+plain English — it just saves you re-explaining the mission.md/order-template.md
+convention every time. Same approval gate applies either way; `/mission` still stops
+and waits.
+
 ## While crew is working
 
 The Captain runs `muster <charter> <task-id> <order-file>` itself (you don't need to
@@ -90,7 +95,11 @@ You can just ask:
 > "Status?" / "How's T-002 doing?" / "Anything stuck?"
 
 and the Captain checks the real files and answers — it's not guessing from memory of
-what it mustered.
+what it mustered. Or type `/harbor` yourself — a pure file read (roster.json +
+reports), no LLM turn, same data the Captain would check, just without spending a
+turn to ask for it. `/muster <task-id>` is the same idea for the MUSTER step itself:
+the Captain already runs `muster` on your approval, but you can also invoke it
+directly if you want to re-run one order without a full conversational round trip.
 
 ## Reviewing finished work
 
@@ -121,10 +130,12 @@ interrupting the Captain's context if you just want a quick look:
 
 ## Ending a mission / DEBRIEF
 
-> "Debrief." / "Wrap up and report."
+> "Debrief." / "Wrap up and report." (or type `/debrief` directly)
 
-The Captain summarizes: shipped, blocked, cost so far (from the ledger, once that's
-real). Merging to `main` happens as part of its own INTEGRATE step (dry-dock tests on
+The Captain summarizes: shipped, blocked, and the real cost so far — `/debrief`
+(and the plain-English version) both read `log/ledger.tsv` and the roster directly
+before narrating, so the number is always the real DeepInfra total, never a guess.
+Merging to `main` happens as part of its own INTEGRATE step (dry-dock tests on
 `integration` → fast-forward `main` → remove berths) — `captain.md` doesn't gate that
 specific step on your approval the way it gates muster, only mission-level
 scope/budget changes require asking. If you want an explicit checkpoint before
@@ -149,3 +160,8 @@ Per `captain.md`, the Captain should never:
 - *"Reject T-003, redo with: `<feedback>`."* — REVIEW
 - *"Debrief."* / *"Wrap up and report."* — DEBRIEF
 - *"Cap this mission at `<budget>`."* / *"Use xhigh thinking for T-004, it's tricky."* — per-mission/per-order overrides
+
+Or skip the conversation for the mechanical steps: `/mission <goal>`, `/muster
+<task-id>`, `/harbor [task-id]`, `/debrief` — see `ship/plugin/index.ts`. `/muster`
+and `/harbor` never spend a model turn; `/mission` and `/debrief` still go through the
+Captain's own judgment, just grounded in real files/ledger data gathered first.

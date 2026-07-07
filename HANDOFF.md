@@ -1497,6 +1497,103 @@ finds something inspection alone wouldn't have caught. That pattern held again h
 which is itself worth weighing before treating Phase 3 as fully exhausted — but its
 core defined scope is done.
 
+## 4aa. Phase 4: the pi extension — /mission, /muster, /harbor, /debrief (July 6, 2026)
+
+Eric asked to move onto Phase 4 after §4z's Phase 3 drill. Per the plan
+(`agentic-engineering-plan.md` §9): "pi extension... adding /mission, /muster,
+/harbor, /debrief. Crew are plain headless instances; the extension only manages
+files, tmux, and worktrees." Built `ship/plugin/index.ts` accordingly, with one
+design rule applied uniformly: `/muster` and `/harbor` are pure deterministic
+wrappers (files + one subprocess call, zero LLM turns — there's nothing to reason
+about); `/mission` and `/debrief` gather deterministic ground truth (the raw goal
+text; the real roster/git/ledger data) and hand it to the Captain's own conversation
+via `sendUserMessage` — planning and narration are language tasks captain.md already
+handles, the extension's job is only to make sure the Captain never has to construct
+the exact bash invocation or forget to check the ledger.
+
+**Grounded the whole design in the real API, not doc summaries, before writing
+code.** Doc-summary fetches earlier in this project (see §4y's `baseUrl`
+interpolation confusion) had already shown real inconsistency risk. This session had
+a better option: `pi` was already installed locally from §4y's testing, so the
+*actual shipped TypeScript declarations and example extensions* in
+`node_modules/@earendil-works/pi-coding-agent/{dist,examples}` were read directly —
+ground truth, not a paraphrase. Confirmed from real `.d.ts` files: `pi.registerCommand
+(name, {description, getArgumentCompletions, handler: (args, ctx) => Promise<void>})`,
+`pi.exec(cmd, args, opts): Promise<ExecResult>`, `ctx.ui.{notify,select,confirm,input}`,
+`ctx.cwd`, and the exact `RegisteredCommand`/`ExtensionCommandContext` shapes. The
+shipped `examples/extensions/commands.ts` became the direct template for `/harbor`'s
+select-a-task-then-show-detail pattern.
+
+**Verified every code path against the real pi runtime before ever touching a ship,**
+using a testing technique not previously needed in this project: RPC mode's
+documented behavior that `{"type":"prompt","message":"/command"}` dispatches directly
+to a registered extension command (confirmed in `docs/rpc.md`: "If the message is an
+extension command... it executes immediately"). This let every success and error path
+of all four commands be driven with plain piped JSON lines against a hand-built fake
+charter directory (`.ship/roster.json`, reports, `ledger.tsv`) — no live ship, no real
+credentials, fully scriptable. Found and correctly diagnosed one real gotcha during
+this: `/debrief`'s `await pi.exec(...)` call appeared to silently die with zero
+output — traced to the test harness itself, not a bug: closing stdin immediately
+after one prompt line tears the RPC process down before an in-flight async command
+handler resolves; confirmed by isolating a minimal `pi.exec` call and showing it
+completes fine once stdin is held open a few seconds longer. Also drove the one truly
+interactive path (`/harbor`'s bare `ctx.ui.select()` picker) through a real two-way
+RPC round trip (a small Node harness that watches stdout for the
+`extension_ui_request`, then writes back the matching `extension_ui_response` with a
+chosen value) — confirmed the full request/response protocol from `rpc.md` works
+exactly as documented, using the shipped `pi` binary itself as ground truth rather
+than trusting the doc's example payloads blindly.
+
+Wired into `fitout.sh`: `ship/plugin/` symlinked as
+`~/.pi/agent/extensions/shipyard` (directory form, matching the documented
+`~/.pi/agent/extensions/*/index.ts` global-discovery convention — confirmed locally,
+without `-e`, before deploying anywhere). Same idempotent warn-if-not-a-symlink guard
+as the existing `models.json` block.
+
+**Live-drilled end-to-end on a real throwaway ship (`phase4-drill`)**, same
+rsync-local-code approach as §4y/§4z (still hasn't needed to push to `main` to test
+anything this session). Confirmed `[Extensions] shipyard` in the real bridge window's
+own startup banner — the global symlink discovery working in the one context that
+actually matters. Then drove a genuinely real, live mission through all four commands
+in the actual interactive TUI (not RPC, not a script — real `tmux send-keys`, real
+GLM-5.2):
+- `/mission add an is_palindrome(s) function...` → Captain planned for real, wrote
+  `.ship/mission.md` + `.ship/orders/P-1-palindrome.md` with a sensible task ID it
+  chose itself, then correctly stopped for approval exactly as instructed.
+- `/muster P-1` → resolved the order file automatically, mustered crew "Meadow"
+  instantly with **zero added token cost** (confirmed via the footer's cost readout
+  not moving) — direct proof the deterministic-wrapper design goal actually holds,
+  not just in theory.
+- Crew worked with full live thinking/tool-call visibility (§4y's `pi-monitor`, still
+  holding up), finished cleanly, committed.
+- `/harbor` → the real interactive picker rendered live in the actual TUI, selecting
+  the task showed the real report content.
+- Hand-ran the real REVIEW/INTEGRATE merge (clean, independently re-verified the
+  tests myself from `berths/home-port` after fast-forwarding `main` — same discipline
+  as §4z).
+- `/debrief` → correctly narrated real shipped/blocked/cost facts: "$0.0181 — 11
+  DeepInfra calls (captain $0.0085, crew Meadow $0.0095)" — cross-checked directly
+  against `purser-totals` afterward (which by then showed $0.0207/12 calls, the extra
+  call being `/debrief`'s own narration turn happening *after* the read it summarized
+  — correct behavior, not a discrepancy) — and volunteered a genuinely useful,
+  unprompted observation that `charter.md` was still a blank skeleton, worth filling in
+  before the next voyage.
+
+Test ship destroyed after (`erda sink phase4-drill -y`); confirmed nothing left
+running. Updated `docs/system-overview.md` (Captain's loop section, new Phase-4
+paragraph) and `docs/captain-cheatsheet.md` (shortcuts noted at each relevant step
+plus the quick-reference list) to describe the four commands as real, not aspirational.
+
+**Where this leaves Phase 4**: its literal deliverable (a pi extension adding
+`/mission`, `/muster`, `/harbor`, `/debrief`, managing only files/tmux/worktrees) is
+built, verified against the real API and real runtime before ever touching a ship, and
+then live-drilled end-to-end with a real mission, real crew, and a real merge — the
+same "build, verify locally, drill live" shape as §4y/§4z. Officer agents and the
+Chartroom Fresh plugin (Phase 5+) are the next real threshold; per the standing
+pattern noted in §4z, treat the plugin's interaction with `muster`/`sail`/the `.ship/`
+bus as a fresh surface worth its own scrutiny going forward, not a closed question
+just because this session's specific drill went cleanly.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1510,7 +1607,10 @@ all. Phase 2 (DeepInfra wiring) is done and, per §4y, now exceeds its original 
 real per-call cost tracking (originally scoped to Phase 5) is live. Phase 3 (manual
 drills) has now been formally exercised for real per §4z: concurrent crew, a real
 rejection/redo cycle, and a real hand-run REVIEW/INTEGRATE merge to `main` — not just
-single-crew smoke tests. Two more real bugs found and fixed there too.
+single-crew smoke tests. Two more real bugs found and fixed there too. **Phase 4 (the
+pi extension) is now done** per §4aa: `/mission`/`/muster`/`/harbor`/`/debrief` built,
+verified against the real pi API and runtime, and live-drilled end-to-end (a real
+mission, real crew, real merge, real cost narration) on a real ship.
 
 Next up, in rough priority order:
 
@@ -1524,21 +1624,22 @@ Next up, in rough priority order:
    disposable/reproducible). Not abandoned, just resequenced behind item 1, and
    possibly reshaped: "aboard" may end up meaning "reprovision on demand," not "one
    long-lived ship Claude Code lives on."
-3. **Phase 4 — the pi extension** (wraps `muster` for the Captain: `/mission`,
-   `/muster`, `/harbor`, `/debrief`) is now the real next threshold — Phase 3's manual
-   drills have been exercised thoroughly enough (§4c–§4z) to have surfaced several real
-   failure modes already, which is exactly what the plan says should happen before
-   building the plugin. Officer agents (Phase 5) and the Chartroom Fresh plugin come
-   after this, not before.
-4. Every session that exercises a genuinely new code path for the first time
-   (concurrent real crew + rejection/redo + hand-run merge, most recently — §4z) still
-   finds at least one real bug that inspection alone wouldn't have caught. Worth
-   treating as a standing pattern, not a closed list: don't assume a code path is solid
-   just because it reads correctly, especially anything that hasn't yet been run for
-   real. `ship/prompts/*.md` specifically has now had real mileage (§4f, §4z), but the
-   Phase 4 plugin will exercise `muster`/`sail`/the whole `.ship/` bus from a
-   fundamentally different caller (an extension, not a human typing commands) — treat
-   that as a fresh unverified surface, not a re-run of what's already been proven.
+3. **Phase 5 — officer agents** (Quartermaster review pass, Bosun watchdog, First Mate
+   plan critique — see docs/system-overview.md's "Not yet an active agent" notes on
+   each) is now the real next threshold, plus the Chartroom Fresh plugin. Phase 4's
+   extension (§4aa) only ever wrapped existing, already-proven mechanics
+   (`muster`/roster/reports/ledger) in slash commands — it deliberately did not give
+   any officer role real judgment. That's what Phase 5 actually is.
+4. Most sessions that exercise a genuinely new code path for the first time find at
+   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z). §4aa
+   (Phase 4) is a useful counterpoint, not an exception to worry about: it found zero
+   new bugs in the shipyard's own code, but only because it verified against the real
+   pi runtime (real `.d.ts` files, real RPC round trips) *before* ever touching a ship
+   — the one apparent bug it did hit (an async `pi.exec()` call seeming to die
+   silently) was correctly diagnosed as a test-harness artifact, not shipped code.
+   Treat thorough pre-ship verification as the reason it went clean, not evidence the
+   bar can drop. Officer agents will be a fresh surface — don't assume any of
+   this session's clean drill generalizes to logic that hasn't been built yet.
 5. OVHcloud harbor (D2) — deferred per D12, not before item 1.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
@@ -1579,3 +1680,4 @@ Next up, in rough priority order:
 - v26 (Claude Code, July 6, 2026): Eric asked for Purser to show real cost (it was an explicit placeholder) and for crew windows to show live thinking/tool-call activity, "as long as it doesn't cost more or slow things down." Root-caused the "estimate" first: pi's own cost is computed from a local price table in `models.json`, not DeepInfra's real bill, which only appears in the raw `usage.estimated_cost` field pi never surfaces. Built `ship/bin/cost-proxy` (a ship-wide, zero-dependency Node daemon on a fixed `127.0.0.1:8790`) sitting in front of DeepInfra, logging real per-call cost to `log/ledger.tsv`, tagged via `X-Ship-*` headers each window sets from its own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports — chosen over an initial per-window-dynamic-`baseUrl` design after finding conflicting doc evidence on whether `baseUrl` actually supports env-var interpolation (headers definitely do, so the design was changed to not need the ambiguous part at all). `unlock` now ensures the proxy is running (silent, non-fatal, careful never to leak a byte onto the stdout `eval "$(unlock)"` depends on). Switched `muster`'s default crew invocation from `pi -p` (prints nothing until done) to `pi --mode json | pi-monitor` (new script) — confirmed empirically, via a real local pi install, that `--mode json` with a prompt argument exits on completion rather than hanging on stdin like RPC mode, before ever wiring it in, since getting that wrong would have hung every crew agent. Found and fixed two real bugs during local verification (no live ship this session): `cost-proxy` would have gone silently blind on any compressed upstream response (fixed by forcing `accept-encoding: identity`), and `pi-monitor`'s error-message branch was unreachable behind a branch that matched first and produced empty output. Verified via a local mock DeepInfra server (streaming + non-streaming, pass-through fidelity, forced `stream_options.include_usage`, correct ledger attribution, graceful no-context skip) and real/synthetic `pi --mode json` transcripts; shellcheck/`node --check`/`bash -n` clean throughout; confirmed new scripts land as `100755` after `git add`, the exact filemode gotcha from §4n/§4o. Not verified: real GLM-5.2 thinking-block shape, `cost-proxy` against real DeepInfra over real TLS, and the full loop end-to-end — all need a real ship and Eric's real `DEEPINFRA_API_KEY`. See §4y.
 - v27 (Claude Code, July 6, 2026): Eric asked to actually drill v26's work on a real ship. Christened a real throwaway Multipass VM (`cost-purser-drill`); since `keel.yaml` clones the published repo (not this session's uncommitted changes), `rsync`'d the local working tree onto it instead of pushing untested code to `main`. Asked before deploying `strongbox/ship.key` to the new VM rather than routing around the permission classifier that (reasonably) flagged it — Eric confirmed. Found and fixed a real, self-inflicted bug immediately: ran `fitout.sh` via `sudo bash` instead of the `su - eric` form `keel.yaml` actually uses, which put fnm/node under `/root` instead of `eric`, breaking non-login `node` resolution — the same PATH bug class as §4d/§4e/§4g, this time from an operator mistake rather than a real gap; fixed by cleaning up the stray root-owned fnm dir and re-running correctly. With that fixed, drilled for real: `cost-proxy` auto-started via `unlock` with zero manual steps; a real Captain message got a real GLM-5.2 reply and a real ledger line (`$0.00196407`, closely matching but more precise than pi's own displayed `$0.002` estimate); a real `muster`'d crew task (no stub) showed genuine live thinking, tool calls, and tool results streaming in the window the entire run, instead of the blank pane `pi -p` used to leave — confirmed `{type:"thinking", thinking:"..."}` really is GLM-5.2's actual content-block shape, matching what §4y inferred from docs alone; task completed correctly (file created, committed, report written, `roster.json` status `done`); Purser's running total correctly aggregated all six real calls across both roles. Found and fixed two cosmetic bugs only visible in a real 80-column tmux pane — the calls table wrapped (shortened columns, `HH:MM:SS` timestamps, dropped the model's `org/` prefix) and per-call cost showed inconsistent floating-point noise (`$0.0006732600044928` → `%.6f`) — both fixed and re-verified against the live pane before moving on. Test ship destroyed after (`erda sink -y`), confirmed nothing left running via `multipass list`. Every previously-"not verified" item from §4y is now real-ship-confirmed. See §4y.
 - v28 (Claude Code, July 6, 2026): Eric asked to "complete Phase 3" after being told the project was mid-Phase-3 — concurrency and the full review/merge cycle had only ever been drilled with stub agents, never real crew. Christened `phase3-drill`, ran `fitout.sh` correctly this time (learned from v27's own mistake), chartered `toolkit-drill --local`, wrote two orders with deliberately disjoint file scope, mustered both concurrently. Found and fixed two real bugs: (1) a crew agent committed a stray `__pycache__/*.pyc` file outside its declared scope while its own self-report claimed otherwise — crew.md's scope discipline is self-reported with no technical guard against `git add -A` sweeping up interpreter cache files; drilled the actual prescribed reject-and-redo mechanism for the first time (remove berth/branch, append reviewer feedback to the order, re-muster the same task ID against a fresh agent) rather than silently patching it; (2) that exact redo exposed a second, more serious bug — `muster`'s roster-append never removed a stale entry for a re-mustered task ID, so `roster.json` accumulated ghost rows and the completion-time status update (keyed by task ID alone) would silently mark all of them done/failed together regardless of which attempt actually ran. Fixed in `ship/bin/muster` (roster-append now drops any existing same-task entry before appending), verified against the actual buggy roster snapshot, then re-verified against a real third crew run. Wasted one redo cycle by deleting a branch before checking whether it had fixed the pycache issue — turned it into a second real verification pass instead of a pure loss. Ran `captain.md`'s REVIEW/INTEGRATE sequence by hand for the first time all the way through with real crew work: found and fixed a self-inflicted relative-path mistake (`git -C .hold.git worktree add` with a relative path resolves against `-C`'s target dir, not the caller's cwd), then merged both branches cleanly, ran the dry-dock suite for real, fast-forwarded `main`, synced `berths/home-port`, independently re-ran both test suites myself rather than trusting crew self-reports, and pruned both berths. Purser confirmed the whole drill's real cost as it happened: 29 calls, $0.0456, individually attributed across all three T-002 attempts — concrete evidence for why per-attempt cost attribution matters, since two of three were pure rework cost. Ship destroyed after, nothing left running. See §4z.
+- v29 (Claude Code, July 6, 2026): Eric asked to move onto Phase 4 — the pi extension adding `/mission`/`/muster`/`/harbor`/`/debrief`. Grounded the design in the real shipped TypeScript declarations and example extensions from the locally-installed `@earendil-works/pi-coding-agent` package (ground truth, not doc summaries, after §4y's `baseUrl`-interpolation doc inconsistency made clear that mattered) rather than trusting fetched-doc paraphrases. Built `ship/plugin/index.ts`: `/muster`/`/harbor` as pure deterministic wrappers (files + one subprocess call, zero LLM turns); `/mission`/`/debrief` gather real ground truth (goal text; roster/git/ledger data) and hand it to the Captain's own conversation via `sendUserMessage`, rather than reimplementing planning or narration. Verified every path against the real `pi` runtime before touching a ship, using RPC mode's documented `{"type":"prompt","message":"/command"}` command-dispatch behavior as a scriptable test harness (no live ship, no real credentials needed) — including the one genuinely interactive path (`/harbor`'s `ctx.ui.select()` picker) via a real two-way RPC round trip. Diagnosed one false alarm correctly during this (a `pi.exec()` call inside `/debrief` appeared to die silently; root-caused to the test harness closing stdin before the async handler resolved, not a real bug in the extension). Wired `ship/plugin/` into `fitout.sh` as a global extension symlink (`~/.pi/agent/extensions/shipyard`), confirmed the documented directory-discovery convention works locally without `-e` before deploying anywhere. Live-drilled end-to-end on a real throwaway ship: confirmed `[Extensions] shipyard` in the real bridge window's own startup banner, then drove an actual mission through all four commands with real GLM-5.2 in the real interactive TUI (`/mission` planned and stopped for approval correctly; `/muster` spawned crew instantly with zero added token cost, confirmed via the footer; crew showed full live thinking per §4y; `/harbor`'s real interactive picker worked live; hand-ran the real merge to `main`; `/debrief` narrated real shipped/blocked/cost facts that cross-checked correctly against `purser-totals`, plus volunteered a genuinely useful unprompted observation about the charter's blank conventions). Ship destroyed after, nothing left running. See §4aa.

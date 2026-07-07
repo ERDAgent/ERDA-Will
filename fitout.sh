@@ -107,6 +107,17 @@ else
   ln -sfn "$SHIPYARD_DIR/ship/pi/models.json" "$HOME/.pi/agent/models.json"
 fi
 
+# ship/plugin/ → ~/.pi/agent/extensions/shipyard (Phase 4: /mission, /muster,
+# /harbor, /debrief -- global, not per-charter, so it's active in every
+# charter's bridge window with no per-charter setup, same rationale as
+# models.json above)
+mkdir -p "$HOME/.pi/agent/extensions"
+if [[ -e "$HOME/.pi/agent/extensions/shipyard" && ! -L "$HOME/.pi/agent/extensions/shipyard" ]]; then
+  log "warning: ~/.pi/agent/extensions/shipyard exists and isn't a symlink — leaving it alone"
+else
+  ln -sfn "$SHIPYARD_DIR/ship/plugin" "$HOME/.pi/agent/extensions/shipyard"
+fi
+
 # --- Layer 2: the agent CLIs ---
 install_npm_global() {
   local bin="$1" pkg="$2"; shift 2
