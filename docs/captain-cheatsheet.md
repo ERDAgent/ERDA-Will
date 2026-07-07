@@ -129,7 +129,7 @@ interrupting the Captain's context if you just want a quick look:
 
 | # | Window | Shows | Check it directly when... |
 |---|--------|-------|---------------------------|
-| 1 | 🗺 chartroom | `mission.md`/orders/reports, live in Fresh (or a `watch` fallback) | you want to read the actual plan/order text, not a summary |
+| 1 | 🗺 chartroom | `mission.md`/orders/reports, live in Fresh, plus the real Chartroom plugin: Ctrl+P → "Chartroom: Open Order/Report" (flags SOS), "Chartroom: Jump to Crew Window" (real `tmux select-window`, contextual from a report), and a live dashboard panel with roster status + SOS reports | you want to read the actual plan/order text, jump straight to a crew window, or see mission status without a command |
 | 2 | 🧭 first-mate | latest `.ship/mission-critique.md`, live — the Captain writes this via `/critique` (a real agent as of Phase 5) as part of every PLAN step, advisory only, never a gate | you want to read First Mate's actual critique text, not the Captain's summary of it |
 | 3 | 📣 bosun | `roster.json` + real turn/token usage vs. each working order's declared budget + last 8 events, auto-refreshing every 5s — flags `OVER BUDGET` (and logs a `bosun-flag` event, once) the first time a task breaches; v1 is detect-only, it never kills or restarts anything itself | "is anything still running, right now" — or "is anything stuck/over budget" |
 | 4 | ⚖ quartermaster | git branches + last 10 commits across the whole hold (window itself is still just a dashboard; the Quartermaster *agent* runs headless via `/review`, not in this window) | "what's actually landed on `main`/`integration`" |

@@ -244,6 +244,22 @@ work, kept fresh by the Captain's INTEGRATE step. Eric views it from the host vi
 `erda telescope <charter>`, an SSH tunnel — no external service, and the dev server
 itself never needs to bind anything but `localhost` on the ship.
 
+### Chartroom — the deck's live mission view
+Not an agent role either, but the last piece of Phase 5: a real Fresh editor plugin
+(`scuttlebutt/plugins/chartroom.ts`, auto-loaded from `~/.config/fresh/plugins/` —
+symlinked to `scuttlebutt/` by `fitout.sh`), running in the chartroom window (`sail`'s
+window 1, `fresh mission.md`, cwd = the charter's `.ship/` dir). Three things, matching
+the original design: commands to open the current mission's orders and reports (Ctrl+P
+→ "Chartroom: Open Order"/"Chartroom: Open Report", prompting for a task id or prefix);
+flagging SOS reports (both in the listing before you pick one, and via a warning when
+you open one); and jumping to a crew member's tmux window from their report — "Chartroom:
+Jump to Crew Window" resolves the task directly if the active buffer is that crew
+member's report, or prompts otherwise, then runs `tmux select-window` for real via
+`spawnProcess`. On top of the commands, it registers a live section with Fresh's
+bundled `dashboard` plugin, so `roster.json`'s status and any SOS reports are visible
+at a glance without running a command at all — the "watching `.ship/` live" half of
+the vocabulary entry, not just request/response.
+
 ## How they interact: the mission lifecycle
 
 The seven Captain steps above (BRIEF → PLAN → MUSTER → WATCH → REVIEW → INTEGRATE →
@@ -283,13 +299,15 @@ just a live view of its own artifacts:
 | # | Window | Role | Real agent today? |
 |---|--------|------|---|
 | 0 | ⚓ bridge | Captain | **Yes** |
-| 1 | 🗺 chartroom | (mission/orders/reports, live in Fresh) | n/a — it's a viewer |
-| 2 | 🧭 first-mate | First Mate | No — dashboard/reminder only |
-| 3 | 📣 bosun | Bosun | No — dashboard only; Captain dispatches itself |
-| 4 | ⚖ quartermaster | Quartermaster | No — dashboard only; Captain reviews/merges itself |
+| 1 | 🗺 chartroom | Chartroom (Fresh plugin) | **Yes** — `scuttlebutt/plugins/chartroom.ts`: commands to open the mission/orders/reports (flagging SOS reports), jump to a crew member's tmux window (contextual from their report), and a live dashboard panel showing roster status + SOS reports |
+| 2 | 🧭 first-mate | First Mate | **Yes** — `/critique`, advisory only, wired into the Captain's own PLAN step |
+| 3 | 📣 bosun | Bosun | **Yes**, v1 scope — `ship/bin/bosun` detects and flags turn/token budget breaches; doesn't kill/restart yet (deliberately deferred) |
+| 4 | ⚖ quartermaster | Quartermaster | **Yes** — `/review <task-id>`, real merge gate (merges into `integration`, runs the dry-dock test, judges the diff) |
 | 5 | 🪙 purser | Purser | No — dashboard, but the numbers are real (cost-proxy logs actual DeepInfra cost) |
 | 6 | ⚙ engine-room | (system monitor) | n/a — it's `htop` |
 | 7+ | ⚒ crew-T### | Crew | **Yes**, one window per active task, auto-created/closed by `muster` |
+
+(Window 4's own contents are still just the git-branches dashboard — the Quartermaster *agent* runs headless via `/review`, not inside that window. Same pattern for window 2 and First Mate/`/critique`, and window 3's dashboard now also reflects Bosun's real budget checks each refresh.)
 
 One session (`ship-<charter>`) per active charter — parallel projects are parallel
 decks, each fully staffed the same way, switchable instantly via tmux's session
@@ -331,9 +349,14 @@ recurring pain in practice.
 Worth stating plainly, since the design doc (`docs/agentic-engineering-plan.md`) and
 the current implementation aren't the same document: **Captain and Crew are real,
 working, verified end-to-end** (a genuine mission has run start-to-finish against a
-real model). **First Mate, Bosun, Quartermaster, and Purser are dashboards today, not
-agents** — the Captain absorbs all four of those functions itself for now, which the
-design explicitly allows ("elastic hierarchy... don't build three tiers before two
-tiers hurts"). Nothing about talking to the Captain today is provisional or a demo —
-the officer layer activating later (Phase 5) changes *who* does review/dispatch/cost,
-not whether the mission loop works.
+real model, `/review` and `/critique` included). **Quartermaster, First Mate, and
+Bosun are now real too, as of Phase 5** — Quartermaster gates merges into
+`integration` for real; First Mate critiques the plan before the Captain shows it to
+Eric, advisory only; Bosun detects and flags real budget breaches (v1 scope,
+deliberately not yet killing/restarting anything). **Purser is still a dashboard, not
+an agent** — but the numbers on it are real (`cost-proxy` logs actual DeepInfra
+cost), and per-mission/per-role cost tallying was never gated on Purser becoming an
+agent to begin with. **Chartroom is the last piece of Phase 5, and it's real too** —
+a genuine Fresh plugin, not a placeholder viewer. Nothing about any of this was ever
+provisional or a demo; the officer layer arriving in Phase 5 changed *who* does
+review/planning-QA/dispatch, not whether the mission loop worked before they did.

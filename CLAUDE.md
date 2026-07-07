@@ -58,7 +58,9 @@ shipyard/
 ├── keel.yaml
 ├── fitout.sh
 ├── harbor/              # host-side tooling (runs before a ship exists): erda.sh/.ps1, install.cmd
-├── scuttlebutt/         # Fresh config.json (JSONC), theme, chartroom plugin (.ts)
+├── scuttlebutt/         # Fresh config.json (JSONC), theme, plugins/chartroom.ts
+│                        #   (types/ is Fresh's own auto-generated .d.ts output —
+│                        #   gitignored, regenerated the first time `fresh` runs)
 ├── dotfiles/tmux/       # ship.tmux.conf + deck-layout.svg (reference image)
 ├── strongbox/           # keys.env.age — NEVER commit plaintext keys
 ├── ship/

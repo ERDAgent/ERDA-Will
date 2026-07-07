@@ -2044,6 +2044,108 @@ trail is convincing.
 eventual auto-restart-with-feedback (§4be) is also still open, whenever Eric wants
 to revisit that autonomy call.
 
+## 4bg. Phase 5, part 4 (last piece): the Chartroom Fresh plugin (July 7, 2026)
+
+Eric said "let's do it" for the last Phase 5 piece. No scoping question this time —
+the plan's own text is already concrete about exactly three things (open orders/
+reports, highlight SOS reports, jump to a crew member's tmux window), and the blast
+radius is inherently low (local editor UI, no git/process-killing).
+
+**Found real, live-verified ground truth before writing anything, correcting a
+previous session's untracked, unfinished scaffolding along the way**: this repo had
+untracked `scuttlebutt/tsconfig.json` + `scuttlebutt/types/{fresh,plugins}.d.ts`
+sitting around all session (visible in every `git status` this session, never
+explained until now) — leftover from an incomplete earlier attempt. Verified rather
+than assumed: `fresh` (v0.4.3) is really installed on this ship, `~/.config/fresh` is
+really symlinked to `scuttlebutt/` already (fitout.sh's existing wiring), and
+critically — re-ran `fresh` for real and confirmed both `.d.ts` files get rewritten
+fresh on every launch with byte-identical content, proving they're genuinely
+Fresh's own auto-generated output (like `node_modules`), not hand-typed guesses from
+the earlier session. That earlier scaffolding's one wrong assumption: `tsconfig.json`
+pointed at a nonexistent `init.ts` as the plugin entry point. Checked `fresh --cmd
+config paths` for real and found the actual convention is a `~/.config/fresh/plugins/`
+directory (auto-discovered, separate from the single personal `init.ts`) — fixed by
+creating `scuttlebutt/plugins/chartroom.ts` there instead, and studied Fresh's own
+*real* bundled example plugins (`~/.cache/fresh/embedded-plugins/*/examples/`,
+`hello_world.ts`, `git_grep.ts`) for the actual registerCommand/spawnProcess/
+readFile/readDir conventions rather than guessing from the .d.ts alone.
+
+**Built** `scuttlebutt/plugins/chartroom.ts`: four commands (Open Mission, Open
+Order, Open Report — flags SOS both in the pre-pick listing and via `editor.warn()`
+on open, Jump to Crew Window — contextual from an open report's own path, prompts
+otherwise, then a real `tmux select-window` via `spawnProcess`) plus a live section
+registered with Fresh's bundled `dashboard` plugin (`getPluginApi("dashboard")`),
+showing roster status and any SOS reports at a glance — the actual "watching `.ship/`
+live" half of Chartroom's vocabulary entry, not just request/response commands.
+Deliberately did *not* build inline SOS-text overlay highlighting in an opened
+report: found in `fresh.d.ts`'s own doc comments that `getActiveBufferId()` right
+after `openFile()` reads a stale snapshot (a documented race — `markFileReadOnly`
+resolves by path for exactly this reason), and a wrong buffer id would highlight the
+wrong file. `editor.warn()` + the dashboard's SOS listing (both read the report file
+directly, no buffer id involved) give the same value without the race — a
+correctness call made from reading the docs, not discovered via a bug.
+
+**A real bug found and fixed via Fresh's own live error log, not by inspection**:
+first draft used `import type { DashboardColor, DashboardContext } from
+"../types/plugins"` for proper typing against Fresh's real `DashboardApi`. Typechecked
+clean with `tsc` — but loading it for real in a live Fresh session produced a hard
+load error: `fresh-*.log`: "Cannot resolve import '../types/plugins' ... Skipping" /
+"Failed to prepare plugin 'chartroom': Bundling failed." Root cause: Fresh's actual
+plugin bundler tries to resolve every import at runtime, `import type` included, and
+a `.d.ts` file has no runtime body to bundle — `tsc` accepted it because type-only
+resolution is exactly what `.d.ts` files are for, but that's not what Fresh's own
+loader does with the same statement. Fixed by dropping the import entirely and
+declaring minimal local interfaces covering only the members this file actually
+calls (`ChartroomDashboardCtx`/`ChartroomDashboardApi`) — same import-free choice
+`hello_world.ts` already makes, safer than depending on Fresh's bundler resolving a
+type-only path correctly.
+
+**Verified live and thoroughly, the same rigor every Phase 5 piece has gotten**: a
+scratch charter (`shipwright-chartroom-test`, never touching the real
+`ERDA-market-land`), a real `sail`-launched deck, two dummy tmux windows standing in
+for crew ("Alder"/"Birch") so the tmux-jump had something real to select. Started a
+real `fresh` daemon (needed `run_in_background: true` on this harness — a plain
+foreground `fresh --cmd daemon new` hit `Error: No such device or address (os error
+6)`, a TTY-allocation quirk of the harness's shell, not Fresh or the plugin) and
+confirmed clean load in `fresh-*.log`: "Plugin: Chartroom plugin loaded", all four
+commands registered, zero warnings. Drove every command for real through the actual
+command palette via `tmux send-keys` + `capture-pane` (the same technique §4aa and
+§4bd already established) — one real gotcha hit and worked around: `tmux send-keys
+"C-2"` (unquoted-as-literal) gets interpreted as the key combo Ctrl+2, not the
+literal text "C-2", because it happens to match a recognized tmux key-name token
+(unlike e.g. "C-1-first", which isn't one and sends literally); fixed by using
+`send-keys -l` for literal text from then on. Confirmed for real: Open Order/Report
+open the right file with real content; Open Report's SOS flag fires (both the
+pre-pick listing and the post-open `editor.warn()`, cross-checked against
+`fresh-*.log`'s own warnings file); Jump to Crew Window's contextual path (active
+buffer = a report) and prompted path both resolve the right roster entry and *really*
+change tmux's active window (`tmux list-windows` showed the target window newly
+`ACTIVE` after each jump, both times); the live dashboard panel (opened via its own
+bundled "Show Dashboard" command) rendered real roster rows with correct per-status
+coloring and the SOS report listed. Scratch charter and deck torn down after.
+
+Added `scuttlebutt/types/` to `.gitignore` (Fresh's own regenerated output, same
+category as `node_modules` — confirmed live it's not something Fresh reads, only
+writes, so nothing breaks by not tracking it; a machine that's never run `fresh`
+won't have it, which only matters if someone tries to `tsc -p scuttlebutt/tsconfig.json`
+before ever launching Fresh once — noted, not fixed, since it doesn't block the
+plugin working). Fixed `scuttlebutt/tsconfig.json`'s stale `init.ts` reference to the
+real `plugins/chartroom.ts`. Updated `docs/system-overview.md` (new Chartroom
+section, refreshed the whole "real agent today?" deck-window table and "what's real
+vs. designed" section — both had gone stale across the last three sessions, only
+Chartroom's own row was actually wrong for *this* task, but the whole table was
+worth fixing while touching it) and `docs/captain-cheatsheet.md`'s window-1 row.
+`fitout.sh` needed no change — `scuttlebutt/` is already symlinked wholesale to
+`~/.config/fresh`, so the new `plugins/chartroom.ts` is picked up automatically.
+
+**Phase 5 is now fully built**: Quartermaster (§4bc/§4bd), Bosun v1 (§4be), First
+Mate (§4bf), Chartroom (this section) are all real. What's still explicitly deferred
+by choice, not oversight: Bosun's auto-restart-with-feedback (still detect-and-flag
+only, per Eric's own scope call), and a live mission drill that specifically
+exercises Chartroom mid-mission (this session verified it thoroughly in isolation on
+synthesized state, same methodology as First Mate/Bosun — not yet watched update
+live while a real mission runs through it, the way §4bd drilled the Quartermaster).
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -2086,38 +2188,47 @@ advisory-only (never gates `/muster`), wired directly into `captain.md`'s PLAN
 step so Eric sees First Mate's critique alongside every plan. Found and fixed a
 real bug during testing (a trailing-slash glob bug in the no-touch-path check,
 caught by the LLM pass independently flagging what the mechanical check missed).
+**Phase 5, part 4 — the Chartroom Fresh plugin — is now done too**, per §4bg:
+`scuttlebutt/plugins/chartroom.ts` is real, live-verified through a real `fresh`
+session driven via `tmux send-keys` (open mission/order/report, SOS flagging, a
+real `tmux select-window` jump both contextually and via prompt, and a live
+dashboard panel). **Phase 5 is now fully built** — Quartermaster, Bosun (v1),
+First Mate, and Chartroom are all real, not dashboards/placeholders.
 
 Next up, in rough priority order:
 
-1. **Phase 5, part 4 (last piece)**: the Chartroom Fresh plugin — commands to open
-   the current mission's orders/reports, highlight SOS reports, jump to a crew
-   member's tmux window from their report. Ask Eric to scope it the way
-   Quartermaster/Bosun/First Mate were each scoped rather than assuming a fixed
-   shape. Bosun's own eventual auto-restart-with-feedback step (§4be) is also still
-   open, whenever Eric wants to revisit that autonomy call.
-2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+1. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on OVHcloud; nothing here should assume
-   it's done until Eric says so.
+   it's done until Eric says so. With Phase 5 built, this is now the most
+   load-bearing open item — everything else is either deferred-by-choice or
+   optional polish.
+2. **Optional follow-ups on already-built Phase 5 pieces, not new phases**: Bosun's
+   auto-restart-with-feedback (still detect-and-flag only, per Eric's own scope
+   call in §4be); a live mission drill that exercises Chartroom mid-mission
+   (verified thoroughly in isolation per §4bg, not yet watched update live during
+   a real running mission the way §4bd drilled Quartermaster); whether Quartermaster
+   reviews ever route to a stronger model (open question #4 below). None of these
+   block anything — raise them only if Eric asks what's left on Phase 5.
 3. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
    (christen new, confirm the shipwright window shows real Shipwright identity, not
    the old "who's the purser" confusion) — worth doing next time a ship gets sunk
    and re-christened anyway, not urgent enough to block on its own.
 4. Most sessions that exercise a genuinely new code path for the first time find at
-   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc/bf).
+   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc/bf/bg).
    §4aa (Phase 4) and §4bd (the mission drill) are useful counterpoints, not
    exceptions to worry about: both found zero *new* logic bugs, but only because
    the code being drilled had already been verified thoroughly beforehand. Treat
    thorough prior verification as the reason these went clean, not evidence the bar
-   can drop. The Chartroom plugin will be a fresh surface — don't assume any past
-   session's clean drill generalizes to logic that hasn't been built yet.
+   can drop. Whatever comes after Phase 5 will be a fresh surface — don't assume any
+   past session's clean drill generalizes to logic that hasn't been built yet.
 5. A pattern worth carrying forward, not just noting: two near-misses in two
    sessions now (§4be's `sudo pkill` scare, §4bf's stray `~/fleet/test/` deletion
    attempt) where a cleanup command reached for something broader/other-owned than
    intended. Both were self-caught or classifier-caught before damage, but
    verify-then-ask should be the default reflex for `~/fleet/<name>/` cleanup, not
    verify-then-act, even when confident.
-6. OVHcloud harbor (D2) — deferred per D12, not before item 2.
+6. OVHcloud harbor (D2) — deferred per D12, not before item 1.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 

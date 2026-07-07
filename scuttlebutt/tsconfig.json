@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "lib": ["ES2020"],
+    "types": []
+  },
+  "files": ["plugins/chartroom.ts", "types/fresh.d.ts", "types/plugins.d.ts"]
+}
