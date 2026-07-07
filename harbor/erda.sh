@@ -141,7 +141,7 @@ cmd_install() {
 # endeavour, tenacity...); skiffs use skiff-<purpose> and get purged same
 # day. This command doesn't enforce either -- name whatever you want.
 cmd_christen() {
-  local name="${1:-ship}" cpus="${2:-1}" memory="${3:-2G}" disk="${4:-10G}"
+  local name="${1:-ship}" cpus="${2:-2}" memory="${3:-4G}" disk="${4:-20G}"
 
   [[ "$name" =~ ^[A-Za-z]$ || "$name" =~ ^[A-Za-z][A-Za-z0-9-]*[A-Za-z0-9]$ ]] || {
     echo "christen: invalid name '$name' (letters, digits, hyphens; must start with a letter, end alphanumeric)" >&2
