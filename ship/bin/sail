@@ -104,7 +104,7 @@ WINDOW_DIRS=(
 )
 WINDOW_NAMES=(
   "$(g ⚓)bridge"       "$(g 🗺)chartroom"     "$(g 🧭)first-mate"   "$(g 📣)bosun"
-  "$(g ⚖)quartermaster" "$(g 🪙)purser"        "$(g ⚙)engine-room"  "$(g 🔨)shipwright" "$(g 🌐)preview"
+  "$(g ⚖)quartermaster" "$(g 🪙)purser"        "$(g ⚙)engine-room"  "$(g 🔨)shipwright" "$(g 🔭)telescope"
 )
 WINDOW_CMDS=(
   "$BRIDGE_CMD"
@@ -115,7 +115,7 @@ WINDOW_CMDS=(
   "bash -lc 'watch -t -n 5 purser-totals'"
   "$ENGINE_CMD"
   "$SHIPWRIGHT_CMD"
-  "bash -lc 'exec preview $NAME'"
+  "bash -lc 'exec telescope $NAME'"
 )
 
 NEW_SESSION=0

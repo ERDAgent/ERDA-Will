@@ -170,12 +170,12 @@ working — but its cwd is always `~/shipyard`, never the charter, and it loads 
 strongbox compartment (`ANTHROPIC_API_KEY`, see `strongbox/README.md`), not the
 charter's model keys.
 
-### Preview — the dev server window
+### Telescope — the dev server window
 Not an agent role, but the same "window in every deck" pattern: `sail`'s window 8
 runs the charter's dev server (`npm run dev` or equivalent, from `charter.md`'s
 "## Dev server" section) against the `integration` branch — crew's merged, reviewed
 work, kept fresh by the Captain's INTEGRATE step. Eric views it from the host via
-`erda preview <charter>`, an SSH tunnel — no external service, and the dev server
+`erda telescope <charter>`, an SSH tunnel — no external service, and the dev server
 itself never needs to bind anything but `localhost` on the ship.
 
 ## How they interact: the mission lifecycle

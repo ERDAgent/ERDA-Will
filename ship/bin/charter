@@ -134,7 +134,7 @@ if [[ ! -f charter.md ]]; then
 - (fill in: how crew prove their work, e.g. \`npm test\`)
 
 ## Dev server
-Read by \`ship/bin/preview\` (the deck's "preview" window) and \`erda preview\` (the
+Read by \`ship/bin/telescope\` (the deck's "telescope" window) and \`erda telescope\` (the
 host-side tunnel). Bind localhost only, never 0.0.0.0 -- access is always via SSH
 tunnel, never a raw exposed port. Runs against the integration branch (crew's
 merged, reviewed work), not any one crew berth.

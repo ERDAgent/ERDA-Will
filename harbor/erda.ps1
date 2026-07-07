@@ -17,7 +17,7 @@
                                               the age key if needed and connecting with
                                               the strongbox already unlocked (captain
                                               scope: model keys + GH_TOKEN)
-    preview <charter> [ship] [port]          SSH-tunnel to a charter's dev server
+    telescope <charter> [ship] [port]        SSH-tunnel to a charter's dev server
                                               (integration branch); port read from
                                               charter.md if not given
     anchor [ship]                            multipass stop
@@ -82,7 +82,7 @@ usage: erda <command> [ship] [args...]
                                              and refuse to proceed if it fails
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
-  preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
+  telescope <charter> [ship] [port]         SSH-tunnel to a charter's dev server (port
                                              read from charter.md if not given)
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
@@ -640,12 +640,12 @@ switch ($Command) {
     }
   }
 
-  "preview" {
-    # SSH port-forward to a charter's dev server (see ship/bin/preview,
-    # sail's "preview" window) -- never a raw exposed port, so the dev
+  "telescope" {
+    # SSH port-forward to a charter's dev server (see ship/bin/telescope,
+    # sail's "telescope" window) -- never a raw exposed port, so the dev
     # server only ever needs to bind localhost on the ship itself.
     if ($Rest.Count -lt 1 -or -not $Rest[0]) {
-      Write-Error "usage: erda preview <charter> [ship] [port]"
+      Write-Error "usage: erda telescope <charter> [ship] [port]"
       exit 1
     }
     $Name = $Rest[0]
@@ -660,7 +660,7 @@ switch ($Command) {
       $Port = ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip "sed -n '/^## Dev server/,/^## /{/^- port:/s/^- port: *//p}' ~/fleet/$Name/charter.md 2>/dev/null | head -1"
       if (-not $Port -or $Port -match '^\(') {
         Write-Error "erda: no port configured in ~/fleet/$Name/charter.md's '## Dev server' section (and none given as an argument)"
-        Write-Error "  fill it in, or run: erda preview $Name $ShipName <port>"
+        Write-Error "  fill it in, or run: erda telescope $Name $ShipName <port>"
         exit 1
       }
     }

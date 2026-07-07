@@ -18,7 +18,7 @@ From host OS
   - `erda strongbox init`: input deepinfra, github, and claude (anthropic) keys.
   - `erda strongbox backup/restore`: backs up or restores the strongbox.
   - `erda board [ship]`: connects to a ship, deploying the age key if needed and unlocking the strongbox (captain scope) automatically.
-  - `erda preview <charter> [ship] [port]`: SSH-tunnels to a charter's dev server (integration branch) so you can view it at `http://localhost:<port>` -- no external tunneling service, port comes from charter.md's "## Dev server" section if not given.
+  - `erda telescope <charter> [ship] [port]`: SSH-tunnels to a charter's dev server (integration branch) so you can view it at `http://localhost:<port>` -- no external tunneling service, port comes from charter.md's "## Dev server" section if not given.
   - `erda anchor [ship]`: gracefully shuts down.
   - `erda force-anchor [ship]`: immediate shuts down, can corrupt a running instance.
   - `erda sail [ship]`: starts a ship.
@@ -34,4 +34,4 @@ From a ship
   - `captain work [charter]`: starts work on a charter.
   - `captain list charters`: lists existing charters and their status.
   - `captain work`'s deck has a "shipwright" window (Claude Code, cwd `~/shipyard`) for system-level changes to ERDA-Will itself — not the charter.
-  - `captain work`'s deck also has a "preview" window running the charter's dev server against the integration branch (fill in charter.md's "## Dev server" section: `command` + `port`) -- view it from the host with `erda preview <charter>`.
+  - `captain work`'s deck also has a "telescope" window running the charter's dev server against the integration branch (fill in charter.md's "## Dev server" section: `command` + `port`) -- view it from the host with `erda telescope <charter>`.

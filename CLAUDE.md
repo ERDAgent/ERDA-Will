@@ -22,7 +22,7 @@ You are working in **Shipyard**: the bootstrap repo for Eric's portable agentic 
 | Dry Dock / Home Port | `integration` branch / `main` |
 | Trade Winds | DeepInfra serving GLM-5.2 (model `zai-org/GLM-5.2`) |
 | Shipwrights | Claude Code (you) & Codex — system-level repair and support, not the daily sailing crew |
-| Preview | The deck's dev-server window (`ship/bin/preview`), serving `integration`; viewed from the host via `erda preview <charter>` (SSH tunnel) |
+| Telescope | The deck's dev-server window (`ship/bin/telescope`), serving `integration`; viewed from the host via `erda telescope <charter>` (SSH tunnel) |
 
 ## Architecture in one paragraph
 

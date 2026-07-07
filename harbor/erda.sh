@@ -15,7 +15,7 @@
 #                                             the age key if needed and connecting with
 #                                             the strongbox already unlocked (captain
 #                                             scope: model keys + GH_TOKEN)
-#   preview <charter> [ship] [port]          SSH-tunnel to a charter's dev server
+#   telescope <charter> [ship] [port]        SSH-tunnel to a charter's dev server
 #                                             (integration branch); port read from
 #                                             charter.md if not given
 #   anchor [ship]                            multipass stop
@@ -69,7 +69,7 @@ usage: erda <command> [ship] [args...]
                                              and refuse to proceed if it fails
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
-  preview <charter> [ship] [port]           SSH-tunnel to a charter's dev server (port
+  telescope <charter> [ship] [port]         SSH-tunnel to a charter's dev server (port
                                              read from charter.md if not given)
   anchor [ship]                             stop
   force-anchor [ship]                       stop --force
@@ -491,12 +491,12 @@ case "$CMD" in
     fi
     ;;
 
-  preview)
-    # SSH port-forward to a charter's dev server (see ship/bin/preview,
-    # sail's "preview" window) -- never a raw exposed port, so the dev
+  telescope)
+    # SSH port-forward to a charter's dev server (see ship/bin/telescope,
+    # sail's "telescope" window) -- never a raw exposed port, so the dev
     # server only ever needs to bind localhost on the ship itself.
     NAME="${1:-}"
-    [[ -n "$NAME" ]] || { echo "usage: erda preview <charter> [ship] [port]" >&2; exit 1; }
+    [[ -n "$NAME" ]] || { echo "usage: erda telescope <charter> [ship] [port]" >&2; exit 1; }
     shift
     SHIP_NAME="${1:-ship}"
     [[ $# -gt 0 ]] && shift
@@ -511,7 +511,7 @@ case "$CMD" in
       case "$PORT" in
         \(*|"")
           echo "erda: no port configured in ~/fleet/$NAME/charter.md's '## Dev server' section (and none given as an argument)" >&2
-          echo "  fill it in, or run: erda preview $NAME $SHIP_NAME <port>" >&2
+          echo "  fill it in, or run: erda telescope $NAME $SHIP_NAME <port>" >&2
           exit 1
           ;;
       esac

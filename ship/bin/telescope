@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# preview — run a charter's dev server against the integration branch (crew's
+# telescope — run a charter's dev server against the integration branch (crew's
 # merged, reviewed work -- "dry dock"), reading the command/port from
-# charter.md's "## Dev server" section. This is the command sail's "preview"
-# window runs; host-side access is via `erda preview <charter>` (SSH tunnel),
+# charter.md's "## Dev server" section. This is the command sail's "telescope"
+# window runs; host-side access is via `erda telescope <charter>` (SSH tunnel),
 # never a raw exposed port -- the dev server only ever needs to bind
 # localhost on the ship.
-# usage: preview <charter>
+# usage: telescope <charter>
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
-NAME="${1:?usage: preview <charter>}"
+NAME="${1:?usage: telescope <charter>}"
 DIR="$FLEET/$NAME"
 WORKTREE="$DIR/berths/integration"
 CHARTER_MD="$DIR/charter.md"
 
-[[ -d "$DIR/.ship" ]] || { echo "preview: no such charter: $NAME (run: charter $NAME [git-url])" >&2; exit 1; }
+[[ -d "$DIR/.ship" ]] || { echo "telescope: no such charter: $NAME (run: charter $NAME [git-url])" >&2; exit 1; }
 
 # The integration worktree isn't created at charter time (there's no
 # `integration` branch yet on a fresh charter -- only `main`, from
@@ -25,10 +25,10 @@ CHARTER_MD="$DIR/charter.md"
 # file-watcher/hot-reload, no restart needed.
 if [[ ! -d "$WORKTREE" ]]; then
   if git -C "$DIR/.hold.git" show-ref --verify --quiet refs/heads/integration; then
-    echo "preview: setting up the integration worktree..."
+    echo "telescope: setting up the integration worktree..."
     git -C "$DIR/.hold.git" worktree add "$WORKTREE" integration >/dev/null
   else
-    echo "preview: no 'integration' branch yet -- nothing merged from crew yet (run a mission first)."
+    echo "telescope: no 'integration' branch yet -- nothing merged from crew yet (run a mission first)."
     exec bash
   fi
 fi
@@ -45,10 +45,10 @@ PORT="$(extract port)"
 [[ "$PORT" == \(* ]] && PORT=""
 
 if [[ -z "$CMD" ]]; then
-  echo "preview: no dev server command configured -- fill in the '## Dev server' section of $CHARTER_MD"
+  echo "telescope: no dev server command configured -- fill in the '## Dev server' section of $CHARTER_MD"
   exec bash
 fi
 
-echo "preview: serving '$NAME' (integration branch) -- $CMD${PORT:+ (port $PORT)}"
+echo "telescope: serving '$NAME' (integration branch) -- $CMD${PORT:+ (port $PORT)}"
 cd "$WORKTREE"
 exec bash -lc "$CMD"
