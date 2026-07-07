@@ -119,11 +119,19 @@ EXCL="$(git -C "$BERTH" rev-parse --git-path info/exclude)"
 grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n.crew-run.sh\n' >> "$EXCL"
 
 # --- roster entry ---
+# Drop any existing entry for this task before appending the new one -- a
+# rejected attempt re-mustered against the same task ID (crew.md's prescribed
+# "fresh agent, same order" redo loop) would otherwise leave the old, now-
+# meaningless entry sitting in the roster forever. Worse: the completion-time
+# status update below matches by task ID alone, so with two entries sharing
+# one task ID it would silently mark BOTH done/failed regardless of which one
+# actually ran -- found by actually exercising the redo loop for real, not by
+# reading the script.
 (
   flock 9
   TMPJ="$(mktemp)"
   jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$CREWNAME" --arg n "$CREWNAME" --arg s "$(date -Is)" \
-     '. += [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
+     '[.[] | select(.task != $t)] + [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
      "$BUS/roster.json" > "$TMPJ" && mv "$TMPJ" "$BUS/roster.json"
 ) 9>"$BUS/.roster.lock"
 log "muster" "$TASK $BRANCH"

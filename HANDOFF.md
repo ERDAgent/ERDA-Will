@@ -1404,6 +1404,99 @@ edited `ship/pi/models.json` (baseUrl + headers), `ship/bin/unlock`, `ship/bin/m
 `ship/bin/sail`, `fitout.sh` (symlink loop); docs updated: `docs/system-overview.md`,
 `docs/captain-cheatsheet.md`.
 
+## 4z. Phase 3 formally drilled for real: concurrent crew, rejection/redo, review, merge (July 6, 2026)
+
+Eric asked to "complete Phase 3." Everything up to this point had exercised one real
+crew agent at a time; concurrency (two real agents, two worktrees, two branches) had
+only ever been tested with *stub* agents, for roster-locking correctness — never with
+real pi/GLM-5.2 doing real work, and never carried through real review and a real
+merge to `main`. That gap is exactly Phase 3's own definition (two orders, `muster`
+two crew, review, merge, by hand — "teaches you the failure modes the plugin must
+handle"), so this session drilled it properly rather than declaring it done by
+inspection.
+
+Christened a fresh throwaway ship (`phase3-drill`), same rsync-local-code approach as
+§4y's drill — and, having learned from that session's own mistake, ran `fitout.sh`
+correctly this time (`bash ~/shipyard/fitout.sh` as `eric`, not `sudo bash`, which is
+what actually broke `node`'s PATH last time). Chartered a `--local` scratch project
+(`toolkit-drill`) and wrote two real work orders with deliberately disjoint file scope
+(`T-001`: a `strings_utils.py` module; `T-002`: a `math_utils.py` module — different
+files, so a clean merge was structurally guaranteed and any conflict would have been a
+real bug, not bad luck), then `muster`'d both back to back.
+
+**Real bug #1**: T-002's crew committed a stray `__pycache__/math_utils.cpython-312.pyc`
+binary file alongside its real source — outside its declared scope (only
+`math_utils.py`/`test_math_utils.py`), almost certainly from running the test file
+(which imports and byte-compiles the module) before staging broadly. Its own
+self-report claimed "no out-of-scope paths touched," which was simply wrong — crew.md's
+SOS/scope discipline is entirely self-reported, with no technical guard against
+`git add -A` sweeping up interpreter cache artifacts.
+
+Rather than silently fix it, drilled the actual prescribed mechanism for the first
+time: removed the rejected berth/branch, appended reviewer feedback to the order file
+(hit a real shell mistake authoring that feedback — an unquoted heredoc let backticks
+in the feedback text get interpreted as command substitution, eating the filename;
+caught immediately, fixed with a quoted heredoc), and re-mustered the *same* task ID
+against a fresh crew agent, per crew.md's "a reviewer's feedback always spawns a
+brand-new crew agent against the same order."
+
+**Real bug #2, found by that exact redo**: re-mustering `T-002` left the *old*,
+rejected roster entry sitting in `roster.json` alongside the new one — `muster`'s
+roster-append only ever appended, never removed a stale prior entry for the same task
+ID. Worse than cosmetic: the completion-time status update matches by task ID alone,
+so with two entries sharing one ID it silently marked *both* done together regardless
+of which attempt actually ran — a real correctness gap in Bosun's own data source, not
+just clutter. Fixed in `ship/bin/muster`: the roster-append jq filter now drops any
+existing entry for the same task before appending
+(`[.[] | select(.task != $t)] + [...]`), verified against the actual buggy roster
+snapshot this drill produced before redeploying, and confirmed no regression to the
+original (already-proven) concurrent-*different*-task-IDs locking behavior.
+
+Own process slip along the way: deleted the second attempt's branch before checking
+whether its redo had actually fixed the `__pycache__` issue, wasting a redo cycle —
+used it as an opportunity rather than a pure loss, since a third attempt against the
+now-fixed `muster` verified both the pycache fix *and* the roster fix against a real
+run in one pass. Third attempt: clean diff (`math_utils.py`/`test_math_utils.py`
+only), roster correctly held exactly one entry per task afterward.
+
+With both diffs clean, ran the Captain's REVIEW/INTEGRATE step from `captain.md`
+literally by hand for the first time all the way through with real crew work: created
+`berths/integration` (found and fixed a self-inflicted mistake immediately — passing a
+relative path to `git -C .hold.git worktree add` resolves it against `-C`'s target
+directory, not the invoking shell's cwd, so it first landed *inside*
+`.hold.git/berths/integration`; `muster`/`charter` already avoid this by always using
+absolute paths, which this hand-run of the same step hadn't followed at first — fixed
+by redoing with an absolute path), merged both crew branches (clean, no conflicts, as
+the disjoint scope guaranteed), ran the full dry-dock test suite for real, fast-forwarded
+`main` via a direct ref update, synced `berths/home-port` (`reset --hard && clean -fd`
+— exactly the resync captain.md calls out, since moving the ref alone doesn't touch an
+already-checked-out worktree), confirmed no `origin` remote to push to (`--local`
+charter, not an error), independently re-ran both test suites from the final
+`home-port` checkout myself rather than trusting either crew's self-reported test
+output, and pruned both merged crew berths (needed `--force` — muster's own untracked
+scaffolding files, deliberately excluded from commits via `info/exclude`, register as
+"modified/untracked" to `git worktree remove`, a real but harmless friction point worth
+knowing about).
+
+Purser (§4y) confirmed the whole drill's real cost as it happened: 29 real calls,
+$0.0456 total, entirely `crew` role, individually attributed across all three T-002
+attempts (Foxglove/Barley/Birch) — a concrete demonstration of exactly the "cost & blame
+attribution" D8 cites as a reason for per-charter ledgers, since two of those three
+attempts were pure rework cost from the rejection cycle, now visible as such rather than
+folded into an undifferentiated total. Test ship destroyed after
+(`erda sink phase3-drill -y`); confirmed via `multipass list` that nothing was left
+running.
+
+**Where this leaves Phase 3**: its literal deliverable (two orders, concurrent real
+`muster`, review, merge to `main`) is now genuinely exercised, including the
+previously-undrilled rejection/redo loop and the full REVIEW/INTEGRATE sequence by
+hand — not just described in docs or tested with stub agents. Two more real bugs found
+and fixed as a direct result, continuing the pattern §4d/§4e/§4g/§4o/§4y already
+established: every session that actually exercises a new code path for the first time
+finds something inspection alone wouldn't have caught. That pattern held again here,
+which is itself worth weighing before treating Phase 3 as fully exhausted — but its
+core defined scope is done.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1413,7 +1506,11 @@ consolidated down to one script per shell (`erda.sh`/`erda.ps1`/`install.cmd`) �
 §4o, §4p. Both ARM64 (Multipass/macOS) and x86_64 (Multipass/Windows-Hyper-V) are
 confirmed working from this side; per D12, Eric wants to confirm that himself,
 hands-on, using `docs/vm-cheatsheet.md`, before OVHcloud (the third harbor) is tried at
-all.
+all. Phase 2 (DeepInfra wiring) is done and, per §4y, now exceeds its original scope —
+real per-call cost tracking (originally scoped to Phase 5) is live. Phase 3 (manual
+drills) has now been formally exercised for real per §4z: concurrent crew, a real
+rejection/redo cycle, and a real hand-run REVIEW/INTEGRATE merge to `main` — not just
+single-crew smoke tests. Two more real bugs found and fixed there too.
 
 Next up, in rough priority order:
 
@@ -1427,13 +1524,21 @@ Next up, in rough priority order:
    disposable/reproducible). Not abandoned, just resequenced behind item 1, and
    possibly reshaped: "aboard" may end up meaning "reprovision on demand," not "one
    long-lived ship Claude Code lives on."
-3. pi extension (wraps `muster` for the Captain), officer agents, Chartroom Fresh
-   plugin — Phase 5+, not before the above.
-4. Worth a look before scaling up real usage: two independent sessions now (§4f, §4g)
-   have found a real, previously-invisible bug on the very first drill that actually
-   exercised a new code path — a good reminder that `ship/prompts/*.md` (captain.md,
-   order-template.md haven't been drilled with a real agent at all yet) is a live risk,
-   not resolved by inspection.
+3. **Phase 4 — the pi extension** (wraps `muster` for the Captain: `/mission`,
+   `/muster`, `/harbor`, `/debrief`) is now the real next threshold — Phase 3's manual
+   drills have been exercised thoroughly enough (§4c–§4z) to have surfaced several real
+   failure modes already, which is exactly what the plan says should happen before
+   building the plugin. Officer agents (Phase 5) and the Chartroom Fresh plugin come
+   after this, not before.
+4. Every session that exercises a genuinely new code path for the first time
+   (concurrent real crew + rejection/redo + hand-run merge, most recently — §4z) still
+   finds at least one real bug that inspection alone wouldn't have caught. Worth
+   treating as a standing pattern, not a closed list: don't assume a code path is solid
+   just because it reads correctly, especially anything that hasn't yet been run for
+   real. `ship/prompts/*.md` specifically has now had real mileage (§4f, §4z), but the
+   Phase 4 plugin will exercise `muster`/`sail`/the whole `.ship/` bus from a
+   fundamentally different caller (an extension, not a human typing commands) — treat
+   that as a fresh unverified surface, not a re-run of what's already been proven.
 5. OVHcloud harbor (D2) — deferred per D12, not before item 1.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
@@ -1473,3 +1578,4 @@ Next up, in rough priority order:
 - v25 (Claude Code, July 5, 2026): built model fallback at Eric's request, prompted directly by GLM-5.2's real outage earlier this session — `ship/bin/pick-model` health-checks an Eric-editable priority list (`ship/models-priority.txt`) against real DeepInfra calls and picks the first model that responds; wired into both `sail`'s Captain and `muster`'s crew (his explicit call to cover both), as a pre-flight check only, not mid-conversation hot-swapping (also his call, flagged as future work). Added Kimi-K2.7-Code and GLM-5.1 to `models.json` with real slugs/pricing verified against DeepInfra's live catalog. Verified against the actual ongoing outage, not a simulation: `pick-model` correctly detected GLM-5.2 still down, fell through to Kimi-K2.7-Code, and a real Captain session launched on it and replied normally with genuine token usage logged. See §4x.
 - v26 (Claude Code, July 6, 2026): Eric asked for Purser to show real cost (it was an explicit placeholder) and for crew windows to show live thinking/tool-call activity, "as long as it doesn't cost more or slow things down." Root-caused the "estimate" first: pi's own cost is computed from a local price table in `models.json`, not DeepInfra's real bill, which only appears in the raw `usage.estimated_cost` field pi never surfaces. Built `ship/bin/cost-proxy` (a ship-wide, zero-dependency Node daemon on a fixed `127.0.0.1:8790`) sitting in front of DeepInfra, logging real per-call cost to `log/ledger.tsv`, tagged via `X-Ship-*` headers each window sets from its own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports — chosen over an initial per-window-dynamic-`baseUrl` design after finding conflicting doc evidence on whether `baseUrl` actually supports env-var interpolation (headers definitely do, so the design was changed to not need the ambiguous part at all). `unlock` now ensures the proxy is running (silent, non-fatal, careful never to leak a byte onto the stdout `eval "$(unlock)"` depends on). Switched `muster`'s default crew invocation from `pi -p` (prints nothing until done) to `pi --mode json | pi-monitor` (new script) — confirmed empirically, via a real local pi install, that `--mode json` with a prompt argument exits on completion rather than hanging on stdin like RPC mode, before ever wiring it in, since getting that wrong would have hung every crew agent. Found and fixed two real bugs during local verification (no live ship this session): `cost-proxy` would have gone silently blind on any compressed upstream response (fixed by forcing `accept-encoding: identity`), and `pi-monitor`'s error-message branch was unreachable behind a branch that matched first and produced empty output. Verified via a local mock DeepInfra server (streaming + non-streaming, pass-through fidelity, forced `stream_options.include_usage`, correct ledger attribution, graceful no-context skip) and real/synthetic `pi --mode json` transcripts; shellcheck/`node --check`/`bash -n` clean throughout; confirmed new scripts land as `100755` after `git add`, the exact filemode gotcha from §4n/§4o. Not verified: real GLM-5.2 thinking-block shape, `cost-proxy` against real DeepInfra over real TLS, and the full loop end-to-end — all need a real ship and Eric's real `DEEPINFRA_API_KEY`. See §4y.
 - v27 (Claude Code, July 6, 2026): Eric asked to actually drill v26's work on a real ship. Christened a real throwaway Multipass VM (`cost-purser-drill`); since `keel.yaml` clones the published repo (not this session's uncommitted changes), `rsync`'d the local working tree onto it instead of pushing untested code to `main`. Asked before deploying `strongbox/ship.key` to the new VM rather than routing around the permission classifier that (reasonably) flagged it — Eric confirmed. Found and fixed a real, self-inflicted bug immediately: ran `fitout.sh` via `sudo bash` instead of the `su - eric` form `keel.yaml` actually uses, which put fnm/node under `/root` instead of `eric`, breaking non-login `node` resolution — the same PATH bug class as §4d/§4e/§4g, this time from an operator mistake rather than a real gap; fixed by cleaning up the stray root-owned fnm dir and re-running correctly. With that fixed, drilled for real: `cost-proxy` auto-started via `unlock` with zero manual steps; a real Captain message got a real GLM-5.2 reply and a real ledger line (`$0.00196407`, closely matching but more precise than pi's own displayed `$0.002` estimate); a real `muster`'d crew task (no stub) showed genuine live thinking, tool calls, and tool results streaming in the window the entire run, instead of the blank pane `pi -p` used to leave — confirmed `{type:"thinking", thinking:"..."}` really is GLM-5.2's actual content-block shape, matching what §4y inferred from docs alone; task completed correctly (file created, committed, report written, `roster.json` status `done`); Purser's running total correctly aggregated all six real calls across both roles. Found and fixed two cosmetic bugs only visible in a real 80-column tmux pane — the calls table wrapped (shortened columns, `HH:MM:SS` timestamps, dropped the model's `org/` prefix) and per-call cost showed inconsistent floating-point noise (`$0.0006732600044928` → `%.6f`) — both fixed and re-verified against the live pane before moving on. Test ship destroyed after (`erda sink -y`), confirmed nothing left running via `multipass list`. Every previously-"not verified" item from §4y is now real-ship-confirmed. See §4y.
+- v28 (Claude Code, July 6, 2026): Eric asked to "complete Phase 3" after being told the project was mid-Phase-3 — concurrency and the full review/merge cycle had only ever been drilled with stub agents, never real crew. Christened `phase3-drill`, ran `fitout.sh` correctly this time (learned from v27's own mistake), chartered `toolkit-drill --local`, wrote two orders with deliberately disjoint file scope, mustered both concurrently. Found and fixed two real bugs: (1) a crew agent committed a stray `__pycache__/*.pyc` file outside its declared scope while its own self-report claimed otherwise — crew.md's scope discipline is self-reported with no technical guard against `git add -A` sweeping up interpreter cache files; drilled the actual prescribed reject-and-redo mechanism for the first time (remove berth/branch, append reviewer feedback to the order, re-muster the same task ID against a fresh agent) rather than silently patching it; (2) that exact redo exposed a second, more serious bug — `muster`'s roster-append never removed a stale entry for a re-mustered task ID, so `roster.json` accumulated ghost rows and the completion-time status update (keyed by task ID alone) would silently mark all of them done/failed together regardless of which attempt actually ran. Fixed in `ship/bin/muster` (roster-append now drops any existing same-task entry before appending), verified against the actual buggy roster snapshot, then re-verified against a real third crew run. Wasted one redo cycle by deleting a branch before checking whether it had fixed the pycache issue — turned it into a second real verification pass instead of a pure loss. Ran `captain.md`'s REVIEW/INTEGRATE sequence by hand for the first time all the way through with real crew work: found and fixed a self-inflicted relative-path mistake (`git -C .hold.git worktree add` with a relative path resolves against `-C`'s target dir, not the caller's cwd), then merged both branches cleanly, ran the dry-dock suite for real, fast-forwarded `main`, synced `berths/home-port`, independently re-ran both test suites myself rather than trusting crew self-reports, and pruned both berths. Purser confirmed the whole drill's real cost as it happened: 29 calls, $0.0456, individually attributed across all three T-002 attempts — concrete evidence for why per-attempt cost attribution matters, since two of three were pure rework cost. Ship destroyed after, nothing left running. See §4z.
