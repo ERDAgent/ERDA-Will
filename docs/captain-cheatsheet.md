@@ -116,7 +116,7 @@ interrupting the Captain's context if you just want a quick look:
 | 2 | 🧭 first-mate | placeholder dashboard — **not yet an active agent** (Phase 5); currently just a note to manually review `mission.md` yourself before approving | you want a second pair of eyes and it isn't you |
 | 3 | 📣 bosun | `roster.json` + last 8 events, auto-refreshing every 5s | "is anything still running, right now" |
 | 4 | ⚖ quartermaster | git branches + last 10 commits across the whole hold | "what's actually landed on `main`/`integration`" |
-| 5 | 🪙 purser | `log/ledger.tsv` tail — **cost tracking isn't wired yet** (Phase 2+); the window exists as a dashboard placeholder, don't expect real numbers today | mostly nothing yet — order-level token/turn budgets (in each order file) are the only real cost control right now |
+| 5 | 🪙 purser | running total + last 10 calls from `log/ledger.tsv`, real DeepInfra cost (`usage.estimated_cost`) logged by `cost-proxy` — not pi's own local-price-table guess | you want to know what a mission is actually costing, right now |
 | 6 | ⚙ engine-room | `htop`/`top` on the ship itself | the ship feels slow and you want to know if it's actually loaded |
 
 ## Ending a mission / DEBRIEF

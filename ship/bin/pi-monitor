@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# pi-monitor — formats pi's `--mode json` event stream into a live,
+# human-readable feed for a crew tmux window: thinking blocks (truncated to
+# the last ~3000 chars — "a few pages", not the full raw transcript), tool
+# calls, tool results, and the final assistant text. Everything else (session
+# header, turn/message lifecycle bookkeeping, compaction/retry chatter) is
+# dropped — noise, not signal, for "what is this crew member doing right now".
+#
+# Why this exists: muster used to run crew agents with `pi -p`, which prints
+# only the final answer and shows nothing while the agent is actually
+# working — the tmux window sat blank for the entire task. Reasoning content
+# is already generated (and paid for) regardless of whether anything prints
+# it, so displaying it here costs nothing extra; this is a formatting layer
+# on pi's own `--mode json` stream, not a different API call.
+#
+# usage: pi ... --mode json "$(cat .order.md)" | pi-monitor
+#
+# Reads NDJSON from stdin, one jq invocation per line (not one long-lived jq
+# process over the whole stream) so a single malformed or partial line can
+# never wedge formatting for the rest of a long-running task.
+set -uo pipefail
+
+FILTER='
+def cap(n):
+  if (length) > n
+  then "[...\(length - n) chars omitted...]\n" + .[-n:]
+  else .
+  end;
+
+if .type == "message_end" and .message.role == "assistant" and (.message.errorMessage // "" | length) > 0 then
+  "\n⚠ error: " + .message.errorMessage
+elif .type == "message_end" and .message.role == "assistant" then
+  (.message.content // [])[] |
+  if .type == "thinking" and (.thinking // "" | length) > 0 then
+    "\n🧠 thinking:\n" + (.thinking | cap(3000))
+  elif .type == "text" and (.text // "" | length) > 0 then
+    "\n💬 " + .text
+  elif .type == "toolCall" then
+    "\n⚒ tool_call: " + .name + " " + ((.arguments | tojson) | cap(300))
+  else empty
+  end
+elif .type == "tool_execution_end" then
+  "  → " + (if .isError then "✗" else "✓" end) + " " + .toolName
+else empty
+end
+'
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  printf '%s\n' "$line" | jq -r "$FILTER" 2>/dev/null
+done

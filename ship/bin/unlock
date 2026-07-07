@@ -16,6 +16,32 @@ set -euo pipefail
 SCOPE="${1:-crew}"
 BOXDIR="${STRONGBOX_DIR:-$HOME/shipyard/strongbox}"
 KEY="${AGE_KEY:-$HOME/.config/age/ship.key}"
+
+# Best-effort: make sure cost-proxy is listening so pi's DeepInfra calls get
+# real per-call cost logged (from DeepInfra's own usage.estimated_cost), not
+# just pi's local price-table guess — models.json's baseUrl now points at it
+# unconditionally, so every crew/captain window depends on it being up. Silent
+# on stdout no matter what happens here: a stray byte would corrupt
+# `eval "$(unlock)"`. Non-fatal too — a dead proxy must never block getting
+# API keys into the shell; pi would just fail its own first call instead,
+# which is the same failure shape as any other DeepInfra outage.
+COST_PROXY_PORT="${COST_PROXY_PORT:-8790}"
+if command -v cost-proxy >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  if ! curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$COST_PROXY_PORT/healthz"; then
+    nohup cost-proxy --port "$COST_PROXY_PORT" >>"$HOME/.cost-proxy.log" 2>&1 &
+    disown
+    # give it a moment to actually bind before this window's pi starts
+    # sending it requests -- a fresh ship's very first sail/muster would
+    # otherwise race the proxy's own startup.
+    for _ in 1 2 3 4 5; do
+      if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$COST_PROXY_PORT/healthz"; then
+        break
+      fi
+      sleep 0.5
+    done
+  fi
+fi
+
 [[ -f "$KEY" ]] || { echo "echo 'age key not found: $KEY (drop your private key there)' >&2"; exit 1; }
 
 case "$SCOPE" in

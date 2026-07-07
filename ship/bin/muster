@@ -28,8 +28,25 @@ FLEET="${FLEET:-$HOME/fleet}"
 # escaping is deliberate: this text is embedded literally into the generated
 # .crew-run.sh heredoc below and must stay unexpanded until that script
 # actually runs. Skipped entirely if SHIP_AGENT is set -- an explicit
-# override means "run exactly this."
-AGENT_CMD="${SHIP_AGENT:-MODEL=\$(pick-model 2>&2 || echo zai-org/GLM-5.2); pi -p --provider deepinfra --model \"\$MODEL\" --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md}"
+# override means "run exactly this," including forgoing --mode json/pi-monitor
+# below (a stub agent's own plain-text output wouldn't be valid NDJSON, so
+# piping it through a JSON formatter would just silently swallow it).
+if [[ -n "${SHIP_AGENT:-}" ]]; then
+  AGENT_CMD="$SHIP_AGENT"
+  MONITOR_PIPE=""
+else
+  AGENT_CMD="MODEL=\$(pick-model 2>&2 || echo zai-org/GLM-5.2); pi --mode json --provider deepinfra --model \"\$MODEL\" --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md"
+  # --mode json (instead of -p) + pi-monitor is what actually makes a crew
+  # window show anything while the agent works -- -p prints nothing until
+  # the whole task is done, so the window used to sit blank for the entire
+  # run. Reasoning/tool-call content is already generated (and paid for)
+  # either way; this only changes what gets displayed, not what's requested
+  # from the model, so it's free. MONITOR_PIPE's value is spliced into the
+  # .crew-run.sh heredoc below the same way AGENT_CMD is -- literal text in
+  # the generated script, not a runtime variable, so the `|` really does
+  # become a pipe when that script runs.
+  MONITOR_PIPE=" | pi-monitor"
+fi
 
 NAME="${1:?usage: muster <charter> <task-id> <order-file>}"
 TASK="${2:?usage: muster <charter> <task-id> <order-file>}"
@@ -117,6 +134,9 @@ cat > "$RUNNER" <<EOF
 #!/usr/bin/env bash
 set -uo pipefail
 cd "$BERTH" || exit 1
+# Context for cost-proxy's ledger attribution (see ship/pi/models.json's
+# X-Ship-* headers) -- must be exported before unlock/pi run, not after.
+export SHIP_ROLE=crew SHIP_CHARTER="$NAME" SHIP_NAME="$CREWNAME" SHIP_TASK="$TASK"
 # load the strongbox if a key is present; unlock itself degrades gracefully
 # (prints a stderr note, sets nothing) when the strongbox or key is missing,
 # so this is a no-op for stub agents that don't need DEEPINFRA_API_KEY.
@@ -131,7 +151,7 @@ command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
 # reconstructs the exact original string at runtime for display only; the
 # real invocation below is unaffected.
 printf '[%s/%s] agent: %s · branch: %s\n' "$CREWNAME" "$TASK" $(printf '%q' "$AGENT_CMD") "$BRANCH"
-$AGENT_CMD "\$(cat .order.md)"
+$AGENT_CMD "\$(cat .order.md)"$MONITOR_PIPE
 RC=\$?
 # shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
 STATUS=done

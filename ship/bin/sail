@@ -63,7 +63,8 @@ fi
 # windows load crew scope via muster's plain `unlock`. Falls back to a
 # plain shell if pi or captain.md are missing.
 if command -v pi >/dev/null 2>&1 && [[ -f "$CAPTAIN_PROMPT" ]]; then
-  BRIDGE_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock captain)\"; \
+  BRIDGE_CMD="bash -lc 'export SHIP_ROLE=captain SHIP_CHARTER=$NAME SHIP_NAME=captain SHIP_TASK=-; \
+    command -v unlock >/dev/null 2>&1 && eval \"\$(unlock captain)\"; \
     echo \"[bridge] charter: $NAME — starting the Captain\"; ${CAPTAIN_SETUP}exec $CAPTAIN_CMD'"
 else
   BRIDGE_CMD="bash -lc 'echo \"[bridge] charter: $NAME — pi or captain.md not found, dropping to a shell\"; exec bash'"
@@ -111,7 +112,7 @@ WINDOW_CMDS=(
   "bash -lc 'echo \"[first-mate] plan critique station — review mission.md before approving muster\"; exec bash'"
   "watch -t -n 5 'echo == roster ==; jq -r \".[] | [.name,.task,.status,.branch] | @tsv\" roster.json 2>/dev/null || cat roster.json; echo; echo == last events ==; tail -n 8 log/events.log'"
   "watch -t -n 10 'echo == branches ==; git -C .hold.git branch -a; echo; echo == recent ==; git -C .hold.git log --oneline --all -n 10'"
-  "bash -lc 'echo \"[purser] ledger (tokens/cost land here in Phase 2+)\"; tail -F log/ledger.tsv'"
+  "bash -lc 'watch -t -n 5 purser-totals'"
   "$ENGINE_CMD"
   "$SHIPWRIGHT_CMD"
   "bash -lc 'exec preview $NAME'"

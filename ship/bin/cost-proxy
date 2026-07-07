@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+// cost-proxy — transparent HTTP proxy in front of DeepInfra's OpenAI-compatible
+// API, logging the REAL per-call cost DeepInfra reports (usage.estimated_cost)
+// instead of trusting pi's own local price-table guess (pi computes its own
+// "cost" from the numbers in ship/pi/models.json, which is exactly the
+// "estimate" the Purser used to have no alternative to).
+//
+// One instance, ship-wide, on a fixed port (127.0.0.1 only — never exposed
+// off-ship): every window's pi process points its "deepinfra" provider's
+// baseUrl at this proxy (see ship/pi/models.json) and gets forwarded
+// requests/responses byte-for-byte, so pi's own behavior is unaffected.
+// Attribution (which charter/role/crew-member/task made the call) rides in
+// per-window custom headers (X-Ship-*), set via models.json's own $ENV_VAR
+// interpolation of each window's SHIP_* exports — not the request body, so
+// this needs zero cooperation from pi beyond "send whatever headers the
+// provider config says to send", which it already does for every request.
+//
+// Ledger path is resolved per-request from the X-Ship-Charter header against
+// $FLEET (same convention charter/sail/muster already use) — one proxy
+// serves every charter's deck at once, matching this project's multi-charter
+// design (D8), not just the charter whose window happened to start it.
+//
+// Started on demand (see ship/bin/unlock) — not by fitout.sh — because it's
+// a runtime concern (only useful once a deck exists), not a provisioning one.
+'use strict';
+
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+
+// models.json's baseUrl points here unconditionally now (no direct-to-
+// DeepInfra fallback — a static config file can't branch on "is the proxy
+// up"), so every crew/captain call depends on this process staying alive.
+// One bad request must never take the whole daemon down.
+process.on('uncaughtException', (err) => console.error(`cost-proxy: uncaught exception (ignored): ${err.stack || err}`));
+process.on('unhandledRejection', (err) => console.error(`cost-proxy: unhandled rejection (ignored): ${err}`));
+
+function arg(flag, fallback) {
+  const i = process.argv.indexOf(flag);
+  return i !== -1 && process.argv[i + 1] !== undefined ? process.argv[i + 1] : fallback;
+}
+
+const PORT = Number(arg('--port', process.env.COST_PROXY_PORT || '8790'));
+const UPSTREAM_HOST = arg('--upstream', 'api.deepinfra.com');
+const FLEET = process.env.FLEET || path.join(process.env.HOME || '', 'fleet');
+
+function ledgerPathFor(charter) {
+  if (!charter || charter === '-') return null;
+  // Same charter-name shape muster/sail already validate
+  // (^[A-Za-z0-9][A-Za-z0-9_-]*$) — refuse anything else rather than build a
+  // path from an unvalidated header value.
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(charter)) return null;
+  return path.join(FLEET, charter, '.ship', 'log', 'ledger.tsv');
+}
+
+function appendLedger(ctx, model, usage) {
+  const ledger = ledgerPathFor(ctx.charter);
+  if (!ledger) return; // no charter context (e.g. ad-hoc manual pi use) — nothing to attribute to, skip silently
+  const line =
+    [
+      new Date().toISOString(),
+      ctx.role,
+      ctx.name,
+      ctx.task,
+      model || '-',
+      usage.prompt_tokens ?? '',
+      usage.completion_tokens ?? '',
+      usage.total_tokens ?? '',
+      usage.estimated_cost ?? '',
+    ].join('\t') + '\n';
+  fs.mkdir(path.dirname(ledger), { recursive: true }, (mkErr) => {
+    if (mkErr) return console.error(`cost-proxy: mkdir ${path.dirname(ledger)}: ${mkErr.message}`);
+    fs.appendFile(ledger, line, (err) => {
+      if (err) console.error(`cost-proxy: ledger append failed: ${err.message}`);
+    });
+  });
+}
+
+function extractUsage(obj) {
+  return obj && obj.usage && typeof obj.usage.estimated_cost === 'number' ? obj.usage : null;
+}
+
+function ctxFrom(headers) {
+  return {
+    role: headers['x-ship-role'] || 'manual',
+    charter: headers['x-ship-charter'] || '-',
+    name: headers['x-ship-name'] || '-',
+    task: headers['x-ship-task'] || '-',
+  };
+}
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/healthz') {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('ok');
+    return;
+  }
+
+  const ctx = ctxFrom(req.headers);
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    let body = Buffer.concat(chunks);
+    let requestedModel = null;
+    let isStream = false;
+
+    if ((req.headers['content-type'] || '').includes('application/json') && body.length) {
+      try {
+        const parsed = JSON.parse(body.toString('utf8'));
+        requestedModel = parsed.model || null;
+        isStream = parsed.stream === true;
+        if (isStream) {
+          // OpenAI-compatible streaming omits `usage` entirely unless the
+          // request asks for it — without this, the proxy would have no
+          // cost data at all for any streamed call, which is most of them.
+          parsed.stream_options = { ...(parsed.stream_options || {}), include_usage: true };
+          body = Buffer.from(JSON.stringify(parsed), 'utf8');
+        }
+      } catch {
+        // not JSON, or not parseable — forward as-is, nothing to inspect
+      }
+    }
+
+    const forwardHeaders = { ...req.headers };
+    delete forwardHeaders.host;
+    forwardHeaders['content-length'] = Buffer.byteLength(body);
+    // Force uncompressed responses from upstream: chunk parsing below reads
+    // raw text (SSE lines, or a full JSON body) directly off the wire. If a
+    // gzip/br response ever came through, the pass-through to pi would still
+    // work fine (pi decompresses independently), but usage extraction would
+    // silently see garbage and just never log anything — worse than an error,
+    // since nothing would look broken.
+    forwardHeaders['accept-encoding'] = 'identity';
+
+    const upstreamReq = https.request(
+      { host: UPSTREAM_HOST, port: 443, path: req.url, method: req.method, headers: forwardHeaders },
+      (upstreamRes) => {
+        res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+        let sseBuffer = '';
+        const fullBodyChunks = [];
+        upstreamRes.on('data', (chunk) => {
+          res.write(chunk); // pass through immediately, unmodified — streaming must not stall on our parsing
+          if (isStream) {
+            sseBuffer += chunk.toString('utf8');
+            let idx;
+            while ((idx = sseBuffer.indexOf('\n\n')) !== -1) {
+              const event = sseBuffer.slice(0, idx);
+              sseBuffer = sseBuffer.slice(idx + 2);
+              const dataLine = event.split('\n').find((l) => l.startsWith('data:'));
+              if (!dataLine) continue;
+              const payload = dataLine.slice(5).trim();
+              if (payload === '[DONE]' || payload === '') continue;
+              try {
+                const usage = extractUsage(JSON.parse(payload));
+                if (usage) appendLedger(ctx, requestedModel, usage);
+              } catch {
+                /* partial/malformed SSE chunk boundary — ignore, next chunk may complete it */
+              }
+            }
+          } else {
+            fullBodyChunks.push(chunk);
+          }
+        });
+        upstreamRes.on('end', () => {
+          res.end();
+          if (!isStream) {
+            try {
+              const usage = extractUsage(JSON.parse(Buffer.concat(fullBodyChunks).toString('utf8')));
+              if (usage) appendLedger(ctx, requestedModel, usage);
+            } catch {
+              /* non-JSON or unparseable response body — nothing to log */
+            }
+          }
+        });
+      },
+    );
+    upstreamReq.on('error', (err) => {
+      if (!res.headersSent) res.writeHead(502);
+      res.end(`cost-proxy: upstream error: ${err.message}`);
+    });
+    upstreamReq.end(body);
+  });
+});
+
+server.on('error', (err) => {
+  console.error(`cost-proxy: listen failed on 127.0.0.1:${PORT}: ${err.message}`);
+  process.exit(1);
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`cost-proxy: listening on http://127.0.0.1:${PORT} -> https://${UPSTREAM_HOST} (ledger root: ${FLEET})`);
+});

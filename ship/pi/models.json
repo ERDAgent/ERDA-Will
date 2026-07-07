@@ -1,9 +1,15 @@
 {
   "providers": {
     "deepinfra": {
-      "baseUrl": "https://api.deepinfra.com/v1/openai",
+      "baseUrl": "http://127.0.0.1:8790/v1/openai",
       "api": "openai-completions",
       "apiKey": "$DEEPINFRA_API_KEY",
+      "headers": {
+        "X-Ship-Role": "$SHIP_ROLE",
+        "X-Ship-Charter": "$SHIP_CHARTER",
+        "X-Ship-Name": "$SHIP_NAME",
+        "X-Ship-Task": "$SHIP_TASK"
+      },
       "compat": {
         "supportsDeveloperRole": false
       },

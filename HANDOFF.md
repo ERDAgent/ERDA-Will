@@ -1232,6 +1232,178 @@ updated to symlink `pick-model` alongside `charter`/`sail`/`muster`/`unlock`/`ca
 `preview`. Shellcheck clean on every touched/new file (only the same pre-existing SC2015
 info note in `sail` already accepted since §4i).
 
+## 4y. Purser gets real DeepInfra cost + crew windows show live thinking/tool-call activity (July 6, 2026)
+
+Eric asked two things: (1) Purser was explicitly a placeholder (§4/system-overview.md
+said so outright) — get it showing real cost, not an estimate; (2) crew windows,
+though mechanically real since Phase 0, showed nothing useful while an agent worked —
+he wanted visible thinking/tool-call activity, "as long as it doesn't cost more or
+slow things down."
+
+**Root cause of "estimate" (investigated before building anything):** pi computes its
+own "cost" from the local price table in `ship/pi/models.json` — a guess against
+numbers we maintain, not DeepInfra's actual bill. DeepInfra's real API response
+carries ground-truth per-call cost in `usage.estimated_cost` on every chat completion,
+but pi doesn't expose that raw provider field anywhere in its own RPC/JSON output —
+only its own computed total. Getting the real number means intercepting the raw HTTP
+response between pi and DeepInfra, not asking pi for it.
+
+**Design chosen, after ruling out one that doesn't work:** first attempt was a
+per-window ephemeral proxy with a dynamic `baseUrl` override via `$ENV_VAR`
+interpolation — abandoned once `docs/custom-provider.md` turned up conflicting
+signals on whether `baseUrl` (as opposed to `apiKey`) actually supports that syntax.
+Rather than gamble on ambiguous doc evidence for something safety-critical (every pi
+call depends on it), landed on a design that doesn't need it at all: one ship-wide
+`cost-proxy` daemon (`ship/bin/cost-proxy`, plain Node, zero deps) on a **fixed**
+`127.0.0.1:8790`, with `models.json`'s `baseUrl` pointing at it unconditionally.
+Attribution (which charter/role/crew-member/task made a given call) rides in
+provider-level custom `headers` in `models.json` — confirmed *those* do support
+`$ENV_VAR` interpolation — each window exporting its own `SHIP_ROLE`/`SHIP_CHARTER`/
+`SHIP_NAME`/`SHIP_TASK` before running pi. One proxy instance transparently serves
+every concurrent charter's deck at once (matches D8), with no per-window process
+lifecycle to manage.
+
+`cost-proxy` forwards every request/response byte-for-byte (pi's behavior is
+completely unaffected), but forces `stream_options.include_usage: true` onto streamed
+requests — OpenAI-compatible streaming omits `usage` entirely unless asked for, so
+without this the proxy would have no cost data for the majority of real calls — and
+forces `accept-encoding: identity` upstream so a compressed response can never
+silently blind the parser while pass-through keeps working (a real gap found and
+fixed during local testing, not by inspection). Extracts `usage.estimated_cost` from
+either the final SSE chunk or a non-streaming body and appends a TSV line to
+`$FLEET/<charter>/.ship/log/ledger.tsv`; skips logging (but still forwards normally)
+when no charter context is present, so ad-hoc manual `pi` use on a ship never breaks.
+Has a top-level `uncaughtException`/`unhandledRejection` handler — a static `baseUrl`
+now means this daemon dying takes every window's DeepInfra calls down with it, so one
+bad request must never crash the whole process.
+
+`ship/bin/unlock` gained a silent, best-effort "ensure cost-proxy is running" check
+(curl against `/healthz`, `nohup` + brief poll-retry if not) at the top, before the
+existing key-decrypt logic — every call site already runs through `unlock`, so this
+needed no new command surface. Care taken that nothing here can leak a byte onto
+stdout, since `unlock`'s entire contract is `eval "$(unlock)"`.
+
+**Crew visibility**: `muster`'s default `AGENT_CMD` changed from `pi -p ...` to
+`pi --mode json ...` piped through new `ship/bin/pi-monitor`, which prints each
+turn's thinking (truncated to the last ~3000 chars — recent reasoning, not the full
+transcript, per Eric's "a few pages" framing), tool calls, tool results, and final
+text live as they arrive; protocol/lifecycle events (session header, turn/message
+bookkeeping, compaction/retry chatter) are dropped as noise. This is a formatting
+layer only — reasoning is already generated and paid for by `--thinking high`
+regardless of whether anything prints it, so it's genuinely free, and confirmed
+`--mode json` behaves like `-p` (runs one prompt to completion, then exits) rather
+than like RPC mode (waits on stdin) before ever wiring it in — this was the one fact
+that, gotten wrong, would have hung every crew agent forever; verified directly
+against a real local pi install (see below), not trusted from docs alone. Skipped
+entirely when `SHIP_AGENT` is overridden, same "explicit override means run exactly
+this" rule pick-model already follows — a stub agent's plain-text output isn't valid
+NDJSON, so piping it through a JSON formatter would just silently swallow it.
+
+**Verified locally this session (no live ship — Multipass wasn't spun up)**:
+- Installed pi for real on this Mac (`npm i -g --ignore-scripts
+  @earendil-works/pi-coding-agent`) and ran `pi --mode json --provider openai
+  --api-key bogus "..."` in the background with a hard timeout watch: confirmed it
+  exits on its own (code 0) after the error, does not hang waiting on stdin — the
+  single highest-risk assumption in this whole design, now empirical, not inferred
+  from doc summaries (which themselves gave inconsistent answers on other points,
+  e.g. the `baseUrl` interpolation question above).
+- Built a local mock DeepInfra server (non-streaming + SSE streaming, both carrying
+  `usage.estimated_cost`) and ran the real proxy logic against it (upstream leg
+  swapped to plain HTTP to avoid needing TLS certs, core parsing logic identical to
+  the shipped file): confirmed byte-identical pass-through, confirmed
+  `stream_options.include_usage` actually gets forced onto the outbound request
+  (mock observed it), confirmed both streaming and non-streaming usage extraction
+  produce correct `ledger.tsv` lines with correct role/charter/name/task attribution,
+  confirmed a request with no `X-Ship-Charter` header skips the ledger write cleanly
+  without breaking the response.
+- Ran `pi-monitor` against both a real captured `pi --mode json` error transcript and
+  a synthetic sample matching the documented `AgentMessage`/content-block schema
+  (thinking, toolCall, tool_execution_end, text, including a 3500-char thinking block
+  to check truncation): found and fixed a real bug before it shipped — the error
+  branch was unreachable because the content-array-iteration branch matched first and
+  silently produced empty output for an empty `content: []`, so error messages never
+  showed. Fixed by reordering the jq filter's branches; truncation, tool-call
+  rendering, and text output all confirmed correct after the fix.
+- `shellcheck -x` clean on every touched/new bash script and `fitout.sh`; `node
+  --check` clean on `cost-proxy`; `bash -n` clean on all edited scripts;
+  `ship/pi/models.json` confirmed still valid JSON; manually reconstructed `muster`'s
+  heredoc-generation and `sail`'s `BRIDGE_CMD`-construction logic outside the real
+  scripts (same variable values, both the default and `SHIP_AGENT`-override branches)
+  to inspect the literal generated shell text before trusting it — confirmed the
+  `MONITOR_PIPE`-splicing approach actually produces a real pipe (heredoc-time textual
+  splicing, not a runtime variable expansion, which would NOT have worked — the
+  classic "you can't put a shell operator in a variable" gotcha, avoided by
+  construction, not luck). New files (`cost-proxy`, `pi-monitor`, `purser-totals`)
+  confirmed `100755` after `git add`, not `644` — the exact filemode gotcha from
+  §4n/§4o, checked directly rather than assumed fixed.
+
+**Live-verified immediately after, on a real throwaway Multipass ship
+(`cost-purser-drill`, destroyed after — see below)**, closing every gap the local-only
+pass above left open. Eric explicitly authorized deploying `strongbox/ship.key` to it
+first — a permission classifier flagged that step (reasonably: it's a live credential
+going to a new VM) since "spin up a test ship" hadn't said so explicitly; asked rather
+than routed around it, per this project's own standing practice.
+
+Since `keel.yaml` clones the *published* `ERDAgent/ERDA-Will` repo, a fresh christen
+would only get last session's code, not this session's uncommitted changes — rather
+than push straight to `main` to test, `rsync`'d the local working tree onto the ship's
+`~/shipyard` checkout (excluding `.git`) and re-ran `fitout.sh` there, same as testing
+a local patch before deciding it's push-worthy.
+
+**Found and fixed a real bug during that re-run, before it touched anything
+downstream**: ran `fitout.sh` the first time via `sudo bash ~/shipyard/fitout.sh` —
+wrong, `keel.yaml` actually invokes it as `su - eric -c fitout.sh`, never as root
+directly. Running the whole script as root put fnm's install (and therefore `node`) in
+`/root`'s home instead of `eric`'s, so `/usr/local/bin/node` got symlinked to a path
+`eric` can't read — the exact non-login-PATH bug class from §4d/§4e/§4g, self-inflicted
+this time by an operator error rather than a real fitout gap. Cleaned up the stray
+`/root/.local/share/fnm`, re-ran correctly as `eric`, confirmed `/usr/local/bin/node`
+resolved to `eric`'s own fnm install and a plain non-login `node --version` worked.
+
+With that fixed, drilled the real thing: `captain charter drill-charter --local` →
+`SHIP_NO_ATTACH=1 sail drill-charter` → confirmed `cost-proxy` auto-started by
+`unlock` (`curl /healthz` → `ok`, log confirmed `listening on http://127.0.0.1:8790 ->
+https://api.deepinfra.com`) with zero manual steps. Sent the live Captain a real
+message ("reply PONG") — real GLM-5.2 reply, real ledger line
+(`captain captain - zai-org/GLM-5.2 2099 4 2103 0.00196407`), matching pi's own
+displayed estimate (`$0.002`) closely, confirming the two numbers are in the same
+ballpark while the ledger one is the real, full-precision, provider-reported figure.
+Purser's window rendered it correctly, live.
+
+Then wrote a real work order (`T-001`: create `hello.txt` with exact content) and ran
+`muster` for real (no stub). The crew window (named "Foxglove") showed genuine live
+thinking ("Simple task. Create hello.txt with the content, run tests, commit,
+writereport." ... later reasoning through a berth-root-vs-repo-root question out
+loud), tool calls (`write`, `bash`), and tool results, streaming the entire time the
+agent worked — not the blank pane `pi -p` used to leave. Confirmed `{type:"thinking",
+thinking:"..."}` really is the real content-block shape pi emits for GLM-5.2, matching
+what was inferred from docs alone in the local-only pass. Task completed for real:
+`roster.json` status `done`, `hello.txt` committed (`feat: add hello.txt`), report
+written. Five separate real ledger lines landed for the one task (pi makes several
+calls per multi-step task, each logged individually) — Purser's running total then
+correctly aggregated all six calls across both roles (`$0.0055` total, `$0.0036` crew /
+`$0.0020` captain).
+
+**Two cosmetic bugs found only by looking at the real dashboard in a real 80-column
+tmux pane, fixed on the spot and redeployed to the live ship to re-verify**: the
+last-10-calls table wrapped ugly (fixed-width columns summed to ~97 chars against an
+80-col pane) — shortened columns, trimmed timestamps to `HH:MM:SS`, dropped the
+`org/` prefix from model names (`GLM-5.2`, not `zai-org/GLM-5.2`); and per-call cost
+displayed with inconsistent floating-point noise (`$0.0006732600044928`) — fixed to a
+plain `%.6f`. Both confirmed fixed against the live pane before moving on, not just
+re-read in the source.
+
+Test ship (`cost-purser-drill`) destroyed after (`erda sink ... -y`); confirmed via
+`multipass list` that nothing was left running — matches this project's established
+practice throughout its history. Every fact in §4y's local-only section above that was
+previously flagged "not verified" is now real-ship-confirmed; nothing about this
+feature remains untested.
+
+Files touched: new `ship/bin/cost-proxy`, `ship/bin/pi-monitor`, `ship/bin/purser-totals`;
+edited `ship/pi/models.json` (baseUrl + headers), `ship/bin/unlock`, `ship/bin/muster`,
+`ship/bin/sail`, `fitout.sh` (symlink loop); docs updated: `docs/system-overview.md`,
+`docs/captain-cheatsheet.md`.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1299,3 +1471,5 @@ Next up, in rough priority order:
 - v23 (Claude Code, July 5, 2026): investigated Eric's `captain charter` local-only fallback and built `erda doctor` (hard-blocking `christen`/`board`, his explicit choice) to catch dead credentials before they cause confusing downstream failures. Live-diagnosed against a real ship rather than guessing: not an expired/revoked PAT as suspected, but a genuine encoding bug — `erda.ps1`'s old `"KEY=value" | & age ...` pattern baked a stray CRLF into every Windows-encrypted secret, invisible because PowerShell's and even git-bash's own tools silently launder it back out, so it only ever broke on a real Ubuntu ship's bash. Fixed `unlock` defensively (works immediately on already-corrupted secrets, no re-mint needed), fixed the root cause in `Invoke-Strongbox init` (writes via a real LF-only temp file now), re-encrypted the existing compartments in place with Eric's existing, still-valid credentials, and gave `doctor` a byte-safe CRLF check that can't be fooled by either platform's own text-mode laundering. Verified end-to-end on a live ship: `gh auth status` clean, and the originally-failing `captain charter ERDA-utility-belt` succeeded for real (reused the existing GitHub repo, cloned, chartered). See §4v.
 - v24 (Claude Code, July 5, 2026): made `sail` self-healing at Eric's request — closing a deck window by accident used to lose it permanently, since `sail` only ever built all 9 windows in one shot, and only when the tmux session didn't exist yet at all. Refactored around one per-window-index table checked independently on every run: a missing window (whether one got closed, or the whole session died from closing the last one) is recreated; a live window is left completely alone. Verified on a real ship with pane-PID comparison before/after healing a killed window — every untouched window's PID was byte-identical, not just visually the same — and separately verified killing the entire session causes a full, correct rebuild. See §4w.
 - v25 (Claude Code, July 5, 2026): built model fallback at Eric's request, prompted directly by GLM-5.2's real outage earlier this session — `ship/bin/pick-model` health-checks an Eric-editable priority list (`ship/models-priority.txt`) against real DeepInfra calls and picks the first model that responds; wired into both `sail`'s Captain and `muster`'s crew (his explicit call to cover both), as a pre-flight check only, not mid-conversation hot-swapping (also his call, flagged as future work). Added Kimi-K2.7-Code and GLM-5.1 to `models.json` with real slugs/pricing verified against DeepInfra's live catalog. Verified against the actual ongoing outage, not a simulation: `pick-model` correctly detected GLM-5.2 still down, fell through to Kimi-K2.7-Code, and a real Captain session launched on it and replied normally with genuine token usage logged. See §4x.
+- v26 (Claude Code, July 6, 2026): Eric asked for Purser to show real cost (it was an explicit placeholder) and for crew windows to show live thinking/tool-call activity, "as long as it doesn't cost more or slow things down." Root-caused the "estimate" first: pi's own cost is computed from a local price table in `models.json`, not DeepInfra's real bill, which only appears in the raw `usage.estimated_cost` field pi never surfaces. Built `ship/bin/cost-proxy` (a ship-wide, zero-dependency Node daemon on a fixed `127.0.0.1:8790`) sitting in front of DeepInfra, logging real per-call cost to `log/ledger.tsv`, tagged via `X-Ship-*` headers each window sets from its own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports — chosen over an initial per-window-dynamic-`baseUrl` design after finding conflicting doc evidence on whether `baseUrl` actually supports env-var interpolation (headers definitely do, so the design was changed to not need the ambiguous part at all). `unlock` now ensures the proxy is running (silent, non-fatal, careful never to leak a byte onto the stdout `eval "$(unlock)"` depends on). Switched `muster`'s default crew invocation from `pi -p` (prints nothing until done) to `pi --mode json | pi-monitor` (new script) — confirmed empirically, via a real local pi install, that `--mode json` with a prompt argument exits on completion rather than hanging on stdin like RPC mode, before ever wiring it in, since getting that wrong would have hung every crew agent. Found and fixed two real bugs during local verification (no live ship this session): `cost-proxy` would have gone silently blind on any compressed upstream response (fixed by forcing `accept-encoding: identity`), and `pi-monitor`'s error-message branch was unreachable behind a branch that matched first and produced empty output. Verified via a local mock DeepInfra server (streaming + non-streaming, pass-through fidelity, forced `stream_options.include_usage`, correct ledger attribution, graceful no-context skip) and real/synthetic `pi --mode json` transcripts; shellcheck/`node --check`/`bash -n` clean throughout; confirmed new scripts land as `100755` after `git add`, the exact filemode gotcha from §4n/§4o. Not verified: real GLM-5.2 thinking-block shape, `cost-proxy` against real DeepInfra over real TLS, and the full loop end-to-end — all need a real ship and Eric's real `DEEPINFRA_API_KEY`. See §4y.
+- v27 (Claude Code, July 6, 2026): Eric asked to actually drill v26's work on a real ship. Christened a real throwaway Multipass VM (`cost-purser-drill`); since `keel.yaml` clones the published repo (not this session's uncommitted changes), `rsync`'d the local working tree onto it instead of pushing untested code to `main`. Asked before deploying `strongbox/ship.key` to the new VM rather than routing around the permission classifier that (reasonably) flagged it — Eric confirmed. Found and fixed a real, self-inflicted bug immediately: ran `fitout.sh` via `sudo bash` instead of the `su - eric` form `keel.yaml` actually uses, which put fnm/node under `/root` instead of `eric`, breaking non-login `node` resolution — the same PATH bug class as §4d/§4e/§4g, this time from an operator mistake rather than a real gap; fixed by cleaning up the stray root-owned fnm dir and re-running correctly. With that fixed, drilled for real: `cost-proxy` auto-started via `unlock` with zero manual steps; a real Captain message got a real GLM-5.2 reply and a real ledger line (`$0.00196407`, closely matching but more precise than pi's own displayed `$0.002` estimate); a real `muster`'d crew task (no stub) showed genuine live thinking, tool calls, and tool results streaming in the window the entire run, instead of the blank pane `pi -p` used to leave — confirmed `{type:"thinking", thinking:"..."}` really is GLM-5.2's actual content-block shape, matching what §4y inferred from docs alone; task completed correctly (file created, committed, report written, `roster.json` status `done`); Purser's running total correctly aggregated all six real calls across both roles. Found and fixed two cosmetic bugs only visible in a real 80-column tmux pane — the calls table wrapped (shortened columns, `HH:MM:SS` timestamps, dropped the model's `org/` prefix) and per-call cost showed inconsistent floating-point noise (`$0.0006732600044928` → `%.6f`) — both fixed and re-verified against the live pane before moving on. Test ship destroyed after (`erda sink -y`), confirmed nothing left running via `multipass list`. Every previously-"not verified" item from §4y is now real-ship-confirmed. See §4y.

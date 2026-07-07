@@ -97,12 +97,21 @@ possibly on a different (stronger) model than the crew's, per an open HANDOFF
 question, not yet decided.
 
 ### Purser — cost
-**Not yet an active agent, and cost tracking itself isn't wired yet.** Today it's
-window 5, tailing `log/ledger.tsv` — currently empty; nothing populates it before
-Phase 2+. The only real cost control that exists right now is the per-order turn/token
-budget the Captain writes into each work order (`ship/prompts/order-template.md`).
-Designed eventually to tally spend per order/mission and flag budget breaches — "mostly
-a script, not an LLM," per the design.
+**Not yet an active agent, but cost tracking is real now, not an estimate.** pi's own
+notion of "cost" is computed from a local price table (`ship/pi/models.json`'s `cost`
+fields) — a guess against numbers we maintain, not what DeepInfra actually billed.
+Instead, `ship/bin/cost-proxy` sits in front of DeepInfra (every window's pi points its
+`deepinfra` provider `baseUrl` at it) and logs the real `usage.estimated_cost` DeepInfra
+returns on every call — forcing `stream_options.include_usage` on streamed requests,
+since OpenAI-compatible streaming omits usage otherwise — to `log/ledger.tsv`, tagged by
+role/charter/crew-name/task via `X-Ship-*` headers (interpolated per-window from each
+window's own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports). `ship/bin/unlock`
+starts the proxy on demand (127.0.0.1:8790, ship-wide, one instance serves every
+charter's deck) if it isn't already running. Window 5 (`purser-totals`) shows a running
+total — overall and by role — plus the last 10 calls. The per-order turn/token budget in
+each work order (`ship/prompts/order-template.md`) remains the only thing that actually
+*caps* spend; the ledger only reports it. Still not an active agent: tallying per-mission
+totals and flagging budget breaches is Phase 5+.
 
 ### Crew — the ones who actually write code
 Real, working today (`ship/prompts/crew.md`, wired by `muster`). Spawned fresh per
@@ -125,6 +134,14 @@ invented, hobbit-flavored pool — deliberately not any actual Tolkien hobbit na
 avoids colliding with any other currently-active crew member in the same charter). The
 tmux window shows the name (e.g. "⚒Clover"); the roster (Bosun's window) shows name,
 task, status, and branch together, so "Clover" and "T-014" are always one glance apart.
+
+The window itself now shows real activity, not just a blank pane until the task ends:
+crew run with `pi --mode json` (not `-p`) piped through `ship/bin/pi-monitor`, which
+prints each turn's thinking (truncated to the last ~3000 chars — recent reasoning, not
+the full transcript), tool calls, and tool results live as they happen. This is a
+display change only — reasoning is already generated (and paid for) by `--thinking
+high` regardless of whether anything prints it, so there's no added cost or model-side
+work, just a formatter reading pi's own event stream.
 
 ### Shipwrights — Claude Code, Codex
 System-level repair and support for the ship/scripts themselves (this repo,
@@ -165,7 +182,7 @@ through plain files, per charter:
 ├── roster.json             # live crew: task id, branch, window, status (flock-guarded)
 └── log/
     ├── events.log           # append-only: muster/crew-done/crew-failed, tab-separated
-    └── ledger.tsv           # cost tally (Purser's data source — not populated yet)
+    └── ledger.tsv           # real per-call DeepInfra cost, written by cost-proxy
 ```
 
 This is deliberate, not incidental: because everything's a file, any of this is
@@ -187,7 +204,7 @@ just a live view of its own artifacts:
 | 2 | 🧭 first-mate | First Mate | No — dashboard/reminder only |
 | 3 | 📣 bosun | Bosun | No — dashboard only; Captain dispatches itself |
 | 4 | ⚖ quartermaster | Quartermaster | No — dashboard only; Captain reviews/merges itself |
-| 5 | 🪙 purser | Purser | No — dashboard only; cost tracking not wired |
+| 5 | 🪙 purser | Purser | No — dashboard, but the numbers are real (cost-proxy logs actual DeepInfra cost) |
 | 6 | ⚙ engine-room | (system monitor) | n/a — it's `htop` |
 | 7+ | ⚒ crew-T### | Crew | **Yes**, one window per active task, auto-created/closed by `muster` |
 

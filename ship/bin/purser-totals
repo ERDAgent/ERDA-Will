@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# purser-totals — running real-cost summary for the purser dashboard (sail's
+# window 5). Reads log/ledger.tsv (written by cost-proxy from DeepInfra's own
+# usage.estimated_cost, not pi's local price-table guess), relative to cwd —
+# sail always launches this with cwd = the charter's .ship/ dir, same
+# convention the bosun/quartermaster dashboard commands already rely on.
+set -uo pipefail
+
+LEDGER="log/ledger.tsv"
+
+if [[ ! -s "$LEDGER" ]]; then
+  echo "[purser] no calls logged yet -- log/ledger.tsv is empty"
+  echo "(cost-proxy appends real DeepInfra usage.estimated_cost here as crew/captain make calls)"
+  exit 0
+fi
+
+echo "== running total (real DeepInfra cost) =="
+awk -F'\t' '
+  { sum += $9; n++; byrole[$2] += $9 }
+  END {
+    printf "$%.4f across %d call%s\n", sum, n, (n == 1 ? "" : "s")
+    for (r in byrole) printf "  %-8s $%.4f\n", r, byrole[r]
+  }
+' "$LEDGER"
+
+echo
+echo "== last 10 calls =="
+# Kept to 80 cols on purpose -- sail's windows are plain 80-col tmux panes by
+# default, and a wrapped table is harder to read than a truncated one. Time
+# shown as HH:MM:SS (date is "today" for a live dashboard); model with its
+# org/ prefix dropped (GLM-5.2, not zai-org/GLM-5.2 -- still unambiguous given
+# the small model set this project actually uses).
+printf "%-8s %-7s %-8s %-6s %-10s %5s %5s  %s\n" TIME ROLE NAME TASK MODEL IN OUT COST
+tail -n 10 "$LEDGER" | awk -F'\t' '{
+  split($1, ts, "T"); time = substr(ts[2], 1, 8)
+  model = $5; sub(/^.*\//, "", model)
+  printf "%-8s %-7s %-8s %-6s %-10s %5s %5s  $%.6f\n", time, $2, $3, $4, model, $6, $7, $9
+}'
