@@ -128,10 +128,15 @@ interrupting the Captain's context if you just want a quick look:
 |---|--------|-------|---------------------------|
 | 1 | 🗺 chartroom | `mission.md`/orders/reports, live in Fresh (or a `watch` fallback) | you want to read the actual plan/order text, not a summary |
 | 2 | 🧭 first-mate | placeholder dashboard — **not yet an active agent** (Phase 5); currently just a note to manually review `mission.md` yourself before approving | you want a second pair of eyes and it isn't you |
-| 3 | 📣 bosun | `roster.json` + last 8 events, auto-refreshing every 5s | "is anything still running, right now" |
+| 3 | 📣 bosun | `roster.json` + real turn/token usage vs. each working order's declared budget + last 8 events, auto-refreshing every 5s — flags `OVER BUDGET` (and logs a `bosun-flag` event, once) the first time a task breaches; v1 is detect-only, it never kills or restarts anything itself | "is anything still running, right now" — or "is anything stuck/over budget" |
 | 4 | ⚖ quartermaster | git branches + last 10 commits across the whole hold (window itself is still just a dashboard; the Quartermaster *agent* runs headless via `/review`, not in this window) | "what's actually landed on `main`/`integration`" |
 | 5 | 🪙 purser | running total + last 10 calls from `log/ledger.tsv`, real DeepInfra cost (`usage.estimated_cost`) logged by `cost-proxy` — not pi's own local-price-table guess | you want to know what a mission is actually costing, right now |
 | 6 | ⚙ engine-room | `htop`/`top` on the ship itself | the ship feels slow and you want to know if it's actually loaded |
+
+If window 3 shows `OVER BUDGET` on a task, nothing happens automatically — decide for
+yourself (or ask the Captain):
+> "T-014 is way over budget, kill it and I'll redo the order." / "It's close to
+> finishing, let it run a bit longer."
 
 ## Ending a mission / DEBRIEF
 

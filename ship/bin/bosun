@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# bosun — dispatch watchdog dashboard: one pass, checking every currently
+# "working" crew member's real turn/output-token usage against its order's
+# declared budget, flagging (dashboard + one log event) the first time either
+# is exceeded. usage: bosun (no args, cwd = the charter's .ship/ dir — sail
+# always launches this there, same convention purser-totals already relies
+# on) — sail wraps it in `watch -t -n 5`, same one-shot-script + watch
+# pattern as ship/bin/purser-totals.
+#
+# v1 scope, Eric's explicit call: detect and flag only. Never kills a tmux
+# window, never touches git, never re-musters anything itself -- lower blast
+# radius for a first cut than the plan's eventual "restarts hung agents."
+# The Captain (or Eric) decides what to do about a flagged task, same as any
+# other conversational judgment call. Promote to auto-restart later once this
+# has been seen to flag correctly against real crew runs.
+#
+# Turn/token usage is read from the same real per-call ledger the Purser
+# already tallies (ship/bin/cost-proxy's log/ledger.tsv) rather than tracking
+# pi's own JSON event stream separately -- one real DeepInfra call is one
+# ledger row is one turn, and this reuses an already-proven, already-verified
+# mechanism instead of building a parallel one. Filtered by role=="crew" so a
+# task's own Quartermaster review call (tagged with the same SHIP_TASK, once
+# the crew is done) never inflates a still-working task's count -- moot in
+# practice since Quartermaster only ever runs after status leaves "working",
+# but free to make explicit rather than assumed.
+set -uo pipefail
+
+ROSTER="roster.json"
+LEDGER="log/ledger.tsv"
+FLAGGED=".bosun-flagged.json"
+
+[[ -f "$ROSTER" ]] || echo "[]" > "$ROSTER"
+[[ -f "$FLAGGED" ]] || echo "[]" > "$FLAGGED"
+
+log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> log/events.log; }
+
+# "## Budget\n- max turns: 25 · max output tokens: 60000 · thinking: High"
+# (order-template.md's own format, confirmed against real Captain-written
+# orders too) -- greppable, not strictly structured, same tradeoff
+# charter.md's "dry dock:" field already accepted. Missing/unparseable ->
+# 0, treated as "unknown, don't flag" (a false positive here is worse than
+# a missed one: Eric asked for flag-only precisely to keep this cautious).
+budget_for() {
+  local order="$1" turns tokens
+  turns="$(grep -oE 'max turns:[[:space:]]*[0-9]+' "$order" | head -1 | grep -oE '[0-9]+' || true)"
+  tokens="$(grep -oE 'max output tokens:[[:space:]]*[0-9]+' "$order" | head -1 | grep -oE '[0-9]+' || true)"
+  echo "${turns:-0} ${tokens:-0}"
+}
+
+usage_for() {
+  local task="$1"
+  [[ -f "$LEDGER" ]] || { echo "0 0"; return; }
+  awk -F'\t' -v t="$task" '$2=="crew" && $4==t { turns++; tokens+=$7 } END { print (turns+0), (tokens+0) }' "$LEDGER"
+}
+
+WORKING_TASKS="$(jq -r '.[] | select(.status=="working") | .task' "$ROSTER" 2>/dev/null || true)"
+
+# drop stale flags for tasks no longer working -- so a redo (fresh muster,
+# same task id) can be flagged fresh if it breaches budget again too.
+CURRENT_WORKING_JSON="$(jq -Rc '[splits("\n")] | map(select(length>0))' <<< "$WORKING_TASKS" 2>/dev/null || echo '[]')"
+if jq --argjson keep "$CURRENT_WORKING_JSON" '[.[] | select(. as $t | $keep | index($t))]' "$FLAGGED" > "$FLAGGED.tmp" 2>/dev/null; then
+  mv "$FLAGGED.tmp" "$FLAGGED"
+else
+  rm -f "$FLAGGED.tmp"
+fi
+
+echo "== roster =="
+jq -r '.[] | [.name,.task,.status,.branch] | @tsv' "$ROSTER" 2>/dev/null | column -t -s $'\t' || cat "$ROSTER"
+
+echo
+echo "== budgets (crew currently working) =="
+if [[ -z "$WORKING_TASKS" ]]; then
+  echo "(none)"
+else
+  while IFS= read -r task; do
+    [[ -z "$task" ]] && continue
+    ORDER="$(compgen -G "orders/$task-*.md" | head -1 || true)"
+    if [[ -z "$ORDER" ]]; then
+      printf '%-8s no order file found, cannot check budget\n' "$task"
+      continue
+    fi
+    read -r MAX_TURNS MAX_TOKENS <<< "$(budget_for "$ORDER")"
+    read -r USED_TURNS USED_TOKENS <<< "$(usage_for "$task")"
+    FLAG=""
+    if { [[ "$MAX_TURNS" -gt 0 ]] && [[ "$USED_TURNS" -gt "$MAX_TURNS" ]]; } || { [[ "$MAX_TOKENS" -gt 0 ]] && [[ "$USED_TOKENS" -gt "$MAX_TOKENS" ]]; }; then
+      FLAG="OVER BUDGET"
+      if ! jq -e --arg t "$task" 'index($t)' "$FLAGGED" >/dev/null 2>&1; then
+        log "bosun-flag" "$task turns=$USED_TURNS/$MAX_TURNS tokens=$USED_TOKENS/$MAX_TOKENS"
+        jq --arg t "$task" '. + [$t]' "$FLAGGED" > "$FLAGGED.tmp" && mv "$FLAGGED.tmp" "$FLAGGED"
+      fi
+    fi
+    printf '%-8s turns %3d/%-4s  tokens %7d/%-8s  %s\n' "$task" "$USED_TURNS" "$MAX_TURNS" "$USED_TOKENS" "$MAX_TOKENS" "$FLAG"
+  done <<< "$WORKING_TASKS"
+fi
+
+echo
+echo "== last 8 events =="
+tail -n 8 log/events.log 2>/dev/null || true

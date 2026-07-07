@@ -1890,6 +1890,90 @@ killed the ship-wide shared cost-proxy daemon (used by every charter's deck,
 not just this scratch one); the auto-mode permission classifier correctly
 flagged it before it ran, and the command was redone without that line.
 
+## 4be. Phase 5, part 2: Bosun — a real dispatch watchdog, detect-and-flag v1 (July 7, 2026)
+
+Eric said "let's go" after §4bd's live drill. Continuing the plan doc's own stated
+Phase 5 priority order (Quartermaster → Bosun → First Mate), next up was Bosun.
+
+**Grounded the design in real facts before writing anything**, same discipline as
+every prior phase: pi has no native `--max-turns`/`--max-tokens` enforcement (checked
+`docs/usage.md`'s full CLI flag table — not there), so any turn/token budget
+enforcement has to happen outside pi itself. Ran a real `pi --mode json` call by hand
+to see the *actual* event stream shape rather than guess: confirmed `turn_end`/
+`agent_end` events carry a `usage: {input, output, cacheRead, cacheWrite,
+totalTokens, cost}` object per turn. But rather than build a parallel accounting
+mechanism against that stream, realized the **existing, already-verified
+`cost-proxy` ledger already has everything needed**: one real DeepInfra call is one
+ledger row is one turn, tagged by `SHIP_TASK` already. So Bosun needed zero new
+plumbing on the crew-invocation side — it just reads `log/ledger.tsv`, the same file
+the Purser already tallies from.
+
+**Asked Eric one scoping question before implementing**: the plan's Bosun is
+eventually supposed to "restart hung agents" — a step up in autonomy from
+Quartermaster, which never touches a live process, only git. Gave him a clear
+choice (auto-kill-and-restart vs. detect-and-flag-only) with concrete pseudocode
+previews for both. He chose **detect-and-flag only** for v1: lower blast radius for
+a first cut, promote to auto-restart later once flagging has been seen to work
+correctly against real crew runs.
+
+**Built** `ship/bin/bosun`: a single-pass script (no args, cwd-relative — matches
+`purser-totals`' convention exactly, since Bosun is a pure read-only dashboard like
+Purser, not a git/worktree-mutating script like `muster`/`quartermaster`), wired into
+`sail`'s window 3 via `watch -t -n 5 bosun` (replacing the old passive `watch
+'jq ... roster.json'` one-liner). For each `working` crew member, sums real turns
+(ledger row count) and real output tokens (ledger column 7) filtered to `role=="crew"`
+for that task, and compares against the budget declared in `## Budget`'s `max turns:`
+/`max output tokens:` fields (order-template.md's own format — confirmed this exact
+format against a real Captain-written order in §4bd's drill, not just the template).
+An unparseable budget defaults to "unknown, don't flag" rather than a false positive
+— deliberately cautious, matching the flag-only spirit Eric asked for. First breach
+logs one `bosun-flag` event and marks the row `OVER BUDGET`; a small `.bosun-flagged.json`
+state file dedupes further logging for the same still-working task (no log spam every
+5s) but clears the moment that task leaves `working`, so a fresh muster of the same
+task ID after a redo gets flagged fresh if it breaches again too.
+
+**Verified thoroughly on a scratch charter** (`shipwright-bosun-test`, synthesized
+roster/ledger state for speed — same methodology §4bc used for Quartermaster, since
+the goal was Bosun's own logic, not re-proving muster/ledger mechanics): under-budget
+(no flag), over-budget (flag + one log line), re-run with no new usage (still flagged
+in the dashboard, confirmed *zero* new log lines — dedup works), task completes (flag
+state correctly cleared), same task ID re-mustered and re-breaches (fresh flag logged
+— redo cycle works), an order with an unparseable budget field under heavy real usage
+(correctly never flagged — false positives avoided by design), and empty-state edge
+cases (empty roster, missing ledger/events files — all handled without erroring,
+after fixing one small issue: the script's own exit code was 1 on a totally fresh
+charter with no `events.log` yet, from `tail`'s failure on a missing file leaking
+through as the script's own exit status — added `|| true`, a dashboard script should
+never itself report a nonzero exit). Then verified the real `sail` wiring separately
+on a fresh scratch charter (window 3 actually runs `bosun` under `watch` cleanly, no
+new-charter-edge-case errors) — didn't need a full mission-loop live drill the way
+Quartermaster did, since Bosun has no git/tmux side effects to prove composition for;
+its only integration surface is "does `sail` launch it correctly," which this
+confirmed directly. `shellcheck`/`bash -n` clean. Scratch charters and deck torn down
+after.
+
+**A self-caught near-miss during cleanup, worth recording**: a stray earlier grounding
+experiment (`SHIP_CHARTER=test` in an ad-hoc `pi --mode json` call, to inspect the
+real event-stream shape) had `cost-proxy` auto-create `~/fleet/test/.ship/log/ledger.tsv`
+from that header value alone — `cost-proxy` validates the *shape* of a charter name
+(same regex muster/sail already use) but not that the charter actually exists, so any
+one-off script pointed at a throwaway `SHIP_CHARTER` value silently litters a
+real-looking directory under `~/fleet/`. Traced it, confirmed it was mine (timestamp,
+content), asked Eric before deleting anyway per the hard rule about `~/fleet/<name>/`
+— he confirmed, deleted. Worth remembering for future ad-hoc pi testing: pick an
+obviously-scratch `SHIP_CHARTER` value (or unset it) rather than a plausible one like
+`test`.
+
+Updated `docs/system-overview.md` (Bosun section, no longer "not yet an active
+agent") and `docs/captain-cheatsheet.md` (window 3's table row, plus a short note on
+what to do when something's flagged). `captain.md` needed no changes — Bosun v1
+doesn't alter any Captain responsibility or decision point, it's purely an additional
+signal for Eric to act on conversationally.
+
+**Not done**: auto-restart-with-feedback (the plan's eventual full Bosun) — explicitly
+deferred to a later session per Eric's own scoping call. First Mate and the Chartroom
+plugin are still unbuilt.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1920,14 +2004,21 @@ through the real Quartermaster is now live-drilled end to end** per §4bd:
 GLM-5.2 APPROVE) → Captain-driven INTEGRATE (real fast-forward to `main`,
 independently re-verified) → `/debrief` (real per-role cost, including
 `quartermaster` for the first time). No new Quartermaster bugs found — this
-drill confirmed composition, not new logic.
+drill confirmed composition, not new logic. **Phase 5, part 2 (Bosun) is now done,
+v1 scope** per §4be: `ship/bin/bosun` (window 3, real turn/token-vs-budget detection
+from the same cost-proxy ledger the Purser uses) is real, verified against every
+outcome (under/over budget, dedup, redo-recovers-fresh-flag, unparseable-budget
+never false-flags, empty-state edge cases) plus the real `sail` wiring. Eric's own
+explicit scope call: **detect-and-flag only**, never kill/restart — a real
+autonomy step still ahead of it, deliberately deferred.
 
 Next up, in rough priority order:
 
-1. **Phase 5, parts 2–4**: Bosun (dispatch watchdog — turn/token limits,
-   restart-with-feedback) next per the plan doc's own priority order, then First
-   Mate (plan critique QA), then the Chartroom Fresh plugin. Ask Eric to scope each
-   the way he scoped Quartermaster (§4bc) rather than assuming full-Phase-5-at-once.
+1. **Phase 5, parts 3–4**: First Mate (plan critique QA) next per the plan doc's own
+   priority order, then the Chartroom Fresh plugin. Ask Eric to scope each the way
+   he scoped Quartermaster (§4bc) and Bosun (§4be) rather than assuming
+   full-Phase-5-at-once. Bosun's own eventual auto-restart-with-feedback step is
+   also still open, whenever Eric wants to revisit that autonomy call.
 2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on OVHcloud; nothing here should assume
@@ -1938,13 +2029,11 @@ Next up, in rough priority order:
    and re-christened anyway, not urgent enough to block on its own.
 4. Most sessions that exercise a genuinely new code path for the first time find at
    least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc). §4aa
-   (Phase 4) and §4bd (this mission drill) are useful counterpoints, not exceptions
-   to worry about: both found zero *new* logic bugs, but only because the code
-   being drilled had already been verified thoroughly beforehand (§4aa: real `.d.ts`
-   files, real RPC round trips, before touching a ship; §4bd: §4bc's exhaustive
-   synthesized-state testing, before the live composition drill). Treat thorough
-   prior verification as the reason these went clean, not evidence the bar can drop.
-   Bosun/First Mate/Chartroom will be fresh surfaces — don't assume any past
+   (Phase 4), §4bd (the mission drill), and §4be (Bosun) are useful counterpoints,
+   not exceptions to worry about: each found zero *new* logic bugs, but only because
+   the code being drilled had already been verified thoroughly beforehand. Treat
+   thorough prior verification as the reason these went clean, not evidence the bar
+   can drop. First Mate/Chartroom will be fresh surfaces — don't assume any past
    session's clean drill generalizes to logic that hasn't been built yet.
 5. OVHcloud harbor (D2) — deferred per D12, not before item 2.
 

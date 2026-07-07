@@ -98,12 +98,33 @@ reminding you to review `mission.md` yourself before approving a muster. Designe
 eventually to critique the Captain's decomposition before you see it — a second pair
 of eyes on scope/budget/file-ownership conflicts, not a second Captain.
 
-### Bosun — dispatch
-**Not yet an active agent.** Today it's window 3, a live `roster.json` + last-8-events
-view refreshing every 5 seconds — a dashboard, not a decision-maker. The Captain
-performs the actual dispatch function itself (step 3, MUSTER, above) by directly
-invoking `muster`. Designed eventually to own spawning/monitoring/restarting stuck
-crew agents as its own process, so the Captain doesn't have to babysit turn limits.
+### Bosun — dispatch watchdog
+**A real watchdog as of Phase 5, v1 scope** (`ship/bin/bosun`, window 3, still under
+`watch -t -n 5` — same one-shot-script + `watch` pattern as the Purser's window). The
+Captain still performs the actual dispatch function itself (step 3, MUSTER, above) by
+directly invoking `muster` — Bosun doesn't spawn anything.
+
+What it does: every refresh, for each crew member still `working`, sums that task's
+real turn count and real output-token usage from the same ledger the Purser already
+tallies (`log/ledger.tsv`, filtered to `role=="crew"` rows for that task — one real
+DeepInfra call is one ledger row is one turn, so this needed no new accounting
+mechanism) and compares it against the budget declared in that task's own order
+(`## Budget`'s `max turns:`/`max output tokens:` fields). The first time either is
+exceeded, it logs one `bosun-flag` event and marks the task `OVER BUDGET` in the
+dashboard — deduplicated per task so a long-still-breaching crew member doesn't spam
+the log every 5 seconds, and cleared automatically once that task leaves `working`
+(so a fresh muster of the same task ID after a redo gets flagged fresh if it breaches
+again too).
+
+**v1 is explicitly detect-and-flag only, Eric's own call**: it never kills a tmux
+window, never touches git, and never re-musters anything — a wrong guess parsing an
+unusual order's budget field costs nothing here (a false negative just means no
+flag), but the plan's eventual "kill and restart" is real, hard-to-reverse action
+against a live process, and that's a bigger step to earn than Quartermaster's
+git-only mechanics needed. The Captain (or Eric) decides what to do about a flagged
+task, same as any other conversational judgment call. Promoting this to
+auto-restart-with-feedback is future work, once flag-only has been seen to work
+correctly against real crew runs for a while.
 
 ### Quartermaster — review & merge gate
 **A real agent as of Phase 5** (`ship/bin/quartermaster`, wrapped by the bridge's

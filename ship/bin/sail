@@ -121,7 +121,7 @@ WINDOW_CMDS=(
   "$BRIDGE_CMD"
   "$CHARTROOM_CMD"
   "bash -lc 'echo \"[first-mate] plan critique station — review mission.md before approving muster\"; exec bash'"
-  "watch -t -n 5 'echo == roster ==; jq -r \".[] | [.name,.task,.status,.branch] | @tsv\" roster.json 2>/dev/null || cat roster.json; echo; echo == last events ==; tail -n 8 log/events.log'"
+  "bash -lc 'watch -t -n 5 bosun'"
   "watch -t -n 10 'echo == branches ==; git -C .hold.git branch -a; echo; echo == recent ==; git -C .hold.git log --oneline --all -n 10'"
   "bash -lc 'watch -t -n 5 purser-totals'"
   "$ENGINE_CMD"
