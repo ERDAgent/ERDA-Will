@@ -1836,6 +1836,60 @@ but a first real end-to-end mission using `/review` for its REVIEW step,
 the way §4aa live-drilled Phase 4, is still worth doing before fully trusting
 this in anger).
 
+## 4bd. Live-drilled the full mission loop through the real Quartermaster (July 7, 2026)
+
+Eric said "let's move onto the next task"; asked him which one he meant (§4bc's
+NEXT TASK list had a few candidates) and he picked item 1: a real end-to-end
+mission using `/review` for its REVIEW step, the same rigor §4aa gave Phase 4.
+§4bc had verified Quartermaster's own logic thoroughly but via synthesized
+roster/branch state, not a full live mission — this closed that gap.
+
+Scratch charter `shipwright-drill` (`--local`, never touching the real
+`ERDA-market-land`), a genuine Python `is_palindrome` task, driven entirely
+through the real bridge window via `tmux send-keys` (same technique §4aa
+used) — no shortcuts, no stubs, real GLM-5.2 throughout:
+
+- `/mission add an is_palindrome(s) function...` → Captain planned for real,
+  wrote `mission.md` + one order, stopped correctly for approval.
+- "Approved, muster it." → Captain ran `muster` itself directly (not via
+  `/muster`) and mustered crew "Nettle" — a real, useful accident: my
+  follow-up `/muster P1` then correctly errored "berth already occupied"
+  rather than double-mustering or corrupting anything, confirming that
+  path is safe even when the Captain and the deterministic wrapper both
+  reach for the same berth.
+- Crew "Nettle" wrote a real `lib.py`, ran its own acceptance test, reported
+  COMPLETE — finished fast (well under a minute).
+- `/review P1` → the real Quartermaster (not stubbed) merged into
+  `integration`, ran the real dry-dock test, APPROVE'd with correct
+  reasoning, all inside the live bridge session. `ctx.ui.notify`'s output
+  rendered exactly as designed in the real TUI.
+- Told the Captain to run INTEGRATE conversationally (not a slash command —
+  there isn't one for this step, by design; INTEGRATE is mission-level, not
+  per-order). It fast-forwarded `main`, cleaned up the crew berth, and (a
+  reasonable variant on captain.md's literal "sync the worktree" wording)
+  removed the now-pointless `home-port` worktree entirely rather than just
+  resetting it — not wrong, just a different valid reading of "sync."
+- Independently re-verified `main` myself, outside the Captain's own
+  say-so: `git archive main`, extracted to a clean temp dir, ran the
+  acceptance test directly against that content — passed. This is the same
+  "don't just trust the agent's own report" discipline the Quartermaster
+  itself is built on, applied one level up.
+- `/debrief` → correct real cost breakdown by role, cross-checked against
+  the ledger: $0.0362 across 25 DeepInfra calls (captain $0.0274, crew
+  $0.0070, quartermaster $0.0017) — the first time a real mission's cost
+  narration has included a `quartermaster` line at all.
+
+No new bugs found in Quartermaster or the plugin — §4bc's synthesized-state
+testing had already exercised the logic paths that matter; this drill mainly
+confirmed the *composition* (Captain conversational path + `/muster` +
+`/review` + INTEGRATE + `/debrief`) holds together in one continuous real
+session, not just each piece in isolation. Scratch charter and deck torn
+down after (`tmux kill-session` + `rm -rf`); one self-caught near-miss during
+cleanup — a stray `sudo pkill -f cost-proxy` in a cleanup command would have
+killed the ship-wide shared cost-proxy daemon (used by every charter's deck,
+not just this scratch one); the auto-mode permission classifier correctly
+flagged it before it ran, and the command was redone without that line.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1860,37 +1914,39 @@ drills and reports only. **Phase 5, part 1 (Quartermaster) is now done** per §4
 outcome (approve, reject-by-test, reject-by-conflict, reject-by-malformed-verdict,
 idempotency, precondition errors) plus one real DeepInfra pass with real cost logged.
 §4bc also found and fixed a live bug in `.claude/settings.json` itself — see that
-section, it's not just a Quartermaster changelog entry.
+section, it's not just a Quartermaster changelog entry. **The full mission loop
+through the real Quartermaster is now live-drilled end to end** per §4bd:
+`/mission` → real plan → Captain-driven `muster` → real crew → `/review` (real
+GLM-5.2 APPROVE) → Captain-driven INTEGRATE (real fast-forward to `main`,
+independently re-verified) → `/debrief` (real per-role cost, including
+`quartermaster` for the first time). No new Quartermaster bugs found — this
+drill confirmed composition, not new logic.
 
 Next up, in rough priority order:
 
-1. **A first real end-to-end mission using `/review` for its REVIEW step** (real
-   `/mission` → real `/muster` → real crew in a real tmux window → `/review` →
-   real `/debrief`), the same live-drill rigor §4aa gave Phase 4. §4bc verified
-   Quartermaster's own logic thoroughly but deliberately via synthesized
-   roster/branch state, not a full mission loop — that's the one thing worth doing
-   before trusting `/review` in anger.
-2. **Phase 5, parts 2–4**: Bosun (dispatch watchdog — turn/token limits,
+1. **Phase 5, parts 2–4**: Bosun (dispatch watchdog — turn/token limits,
    restart-with-feedback) next per the plan doc's own priority order, then First
    Mate (plan critique QA), then the Chartroom Fresh plugin. Ask Eric to scope each
    the way he scoped Quartermaster (§4bc) rather than assuming full-Phase-5-at-once.
-3. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on OVHcloud; nothing here should assume
    it's done until Eric says so.
-4. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
+3. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
    (christen new, confirm the shipwright window shows real Shipwright identity, not
    the old "who's the purser" confusion) — worth doing next time a ship gets sunk
    and re-christened anyway, not urgent enough to block on its own.
-5. Most sessions that exercise a genuinely new code path for the first time find at
+4. Most sessions that exercise a genuinely new code path for the first time find at
    least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc). §4aa
-   (Phase 4) is a useful counterpoint, not an exception to worry about: it found zero
-   new bugs in the shipyard's own code, but only because it verified against the real
-   pi runtime (real `.d.ts` files, real RPC round trips) *before* ever touching a ship.
-   Treat thorough pre-ship verification as the reason it went clean, not evidence the
-   bar can drop. Bosun/First Mate/Chartroom will be fresh surfaces — don't assume any
-   past session's clean drill generalizes to logic that hasn't been built yet.
-6. OVHcloud harbor (D2) — deferred per D12, not before item 3.
+   (Phase 4) and §4bd (this mission drill) are useful counterpoints, not exceptions
+   to worry about: both found zero *new* logic bugs, but only because the code
+   being drilled had already been verified thoroughly beforehand (§4aa: real `.d.ts`
+   files, real RPC round trips, before touching a ship; §4bd: §4bc's exhaustive
+   synthesized-state testing, before the live composition drill). Treat thorough
+   prior verification as the reason these went clean, not evidence the bar can drop.
+   Bosun/First Mate/Chartroom will be fresh surfaces — don't assume any past
+   session's clean drill generalizes to logic that hasn't been built yet.
+5. OVHcloud harbor (D2) — deferred per D12, not before item 2.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
