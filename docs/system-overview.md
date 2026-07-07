@@ -93,10 +93,31 @@ production code itself**. If it starts editing app files directly instead of wri
 an order, that's a real deviation from the contract, not a variant of "efficient."
 
 ### First Mate — planning QA
-**Not yet an active agent** (Phase 5). Today it's window 2 on the deck, a note
-reminding you to review `mission.md` yourself before approving a muster. Designed
-eventually to critique the Captain's decomposition before you see it — a second pair
-of eyes on scope/budget/file-ownership conflicts, not a second Captain.
+**A real agent as of Phase 5** (`ship/bin/first-mate`, wrapped by the bridge's
+`/critique`, window 2 shows the latest `.ship/mission-critique.md` live). A second
+pair of eyes on the Captain's decomposition, run **before you see the plan** —
+`captain.md`'s PLAN step now runs `/critique` itself, right after writing
+`mission.md` and orders, and presents both together for your approval.
+
+What it actually checks, same deterministic-gathering-then-LLM-judgment split as
+Quartermaster: the script itself mechanically computes scope conflicts (a file
+claimed by more than one order's declared "Scope — files you may touch"), no-touch
+path violations (against `charter.md`'s own list), and missing budget/acceptance-
+criteria fields — these are ground truth, not up for LLM interpretation. A headless,
+`--no-tools` review pass (`ship/prompts/first-mate.md`) then adds qualitative
+judgment on top: is the decomposition the right granularity, are budgets
+proportionate, are objectives and acceptance criteria clear enough that a crew agent
+won't have to guess — while being explicitly told never to contradict the mechanical
+findings. In practice this qualitative pass has already caught real cross-document
+inconsistencies the deterministic checks don't attempt (e.g. a work order's title
+disagreeing with `mission.md`'s own decomposition line for the same task).
+
+**Advisory only, not a gate** — this is the one deliberate difference from
+Quartermaster. Nothing First Mate says blocks `/muster`; Eric (or the Captain) decides
+what to do about a `STATUS: CONCERNS` critique. `captain.md` is instructed to treat a
+mechanically-confirmed finding (scope conflict, no-touch violation) as a real defect
+in its own decomposition to fix before presenting, not just a note to relay — those
+specific findings aren't a matter of opinion.
 
 ### Bosun — dispatch watchdog
 **A real watchdog as of Phase 5, v1 scope** (`ship/bin/bosun`, window 3, still under

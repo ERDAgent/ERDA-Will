@@ -1974,6 +1974,76 @@ signal for Eric to act on conversationally.
 deferred to a later session per Eric's own scoping call. First Mate and the Chartroom
 plugin are still unbuilt.
 
+## 4bf. Phase 5, part 3: First Mate — a real plan-critique agent (July 7, 2026)
+
+Eric said "let's keep going" after §4be's Bosun landed. Continuing the plan doc's
+priority order, First Mate was next.
+
+**Design, following the same split Quartermaster and Bosun already established**:
+deterministic checks the script can do with certainty (never left to LLM judgment)
+plus a headless, `--no-tools` LLM pass for qualitative judgment on top. For a plan
+critique, the deterministic layer is genuinely valuable on its own: parse every
+current order's "Scope — files you may touch" bullets and flag any file claimed by
+more than one order (a real violation of captain.md's own "decompose by file
+ownership" rule); parse `charter.md`'s no-touch paths and flag any order whose scope
+includes one; flag any order missing a parseable budget or acceptance-criteria
+checkboxes. The LLM layer (`ship/prompts/first-mate.md`) adds decomposition-sensibility
+and budget-proportionality judgment, explicitly forbidden from contradicting the
+mechanical findings.
+
+**Key design difference from Quartermaster, matching how First Mate is actually
+described in the plan**: advisory only, not a gate. Nothing `/critique` says blocks
+`/muster` — Eric (or the Captain) decides what to do about a `STATUS: CONCERNS`
+critique, the same way `docs/system-overview.md`'s Bosun section (§4be) is
+detect-and-flag rather than kill-and-restart. Didn't ask Eric to scope this one the
+way Quartermaster/Bosun were scoped, since the plan's own text ("a second pair of
+eyes... not a second Captain") already settles the autonomy question — First Mate
+was never going to gate anything, unlike Bosun's live-process-killing question.
+
+**Wired into `captain.md`'s PLAN step directly**: after writing `mission.md` +
+orders, the Captain now runs `/critique` itself and presents both to Eric together,
+before Eric ever sees the plan — this is what "before you see it" in the original
+design blurb actually means in practice, achieved the same way Quartermaster got
+wired into REVIEW: by instructing the Captain to call it, not by the extension
+auto-chaining anything. `sail`'s window 2 changed from a static placeholder to a live
+view of `.ship/mission-critique.md` (same `watch`-with-fallback pattern chartroom
+already uses for `mission.md`).
+
+**Verified thoroughly on a scratch charter, and found a real bug via the LLM catching
+what the deterministic check missed** — genuinely useful, not just a testing
+formality: gave First Mate a plan with an order scoping `deploy/config.yaml` against
+a `charter.md` no-touch entry of `deploy/` (trailing slash). The mechanical check
+missed it — `"$f" == "$ntp"/*` with `ntp="deploy/"` builds the literal glob
+`deploy//*`, which never matches a real single-slash path — but the LLM's own read
+flagged the violation independently ("beyond the findings"), which is exactly how
+this was caught. Fixed by stripping a trailing slash before building the glob.
+Beyond that: verified scope-conflict detection (two orders both claiming
+`shared.py`), missing-budget/missing-acceptance-criteria detection, a genuinely
+`STATUS: CLEAR` verdict on a well-specified order (confirming it discriminates, not
+just always finding something), a malformed-LLM-output fallback (never a false
+"clean bill of health"), and precondition errors (no orders yet, unknown charter).
+Also incidentally verified First Mate catches things no deterministic check even
+attempts — twice, from my own sloppy test fixtures: a work order's acceptance
+criteria naming a different function than its own objective, and a stale
+`mission.md` decomposition line disagreeing with the actual order file next to it.
+Confirmed the real `/critique` plugin command via a `pi --mode rpc` round trip and
+the real `sail` window-2 wiring on a fresh charter. `shellcheck`/`bash -n` clean,
+`ship/plugin/index.ts` typechecked clean against pi's real `.d.ts`. Scratch charters
+torn down after.
+
+**A minor self-caught near-miss, worth recording as a pattern, not just an
+incident**: attempted to delete a stray `~/fleet/test/` directory (a leftover from
+§4be's own grounding experiment) without asking first — the auto-mode permission
+classifier correctly blocked it, and Eric confirmed before it was removed. Two
+near-misses now in two sessions (this one, and §4be's own `sudo pkill` scare) —
+worth the general reminder for future sessions: verify-then-ask beats
+verify-then-act for anything touching `~/fleet/<name>/`, even when the evidence
+trail is convincing.
+
+**Not done**: the Chartroom Fresh plugin is the last piece of Phase 5. Bosun's
+eventual auto-restart-with-feedback (§4be) is also still open, whenever Eric wants
+to revisit that autonomy call.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -2010,15 +2080,21 @@ from the same cost-proxy ledger the Purser uses) is real, verified against every
 outcome (under/over budget, dedup, redo-recovers-fresh-flag, unparseable-budget
 never false-flags, empty-state edge cases) plus the real `sail` wiring. Eric's own
 explicit scope call: **detect-and-flag only**, never kill/restart — a real
-autonomy step still ahead of it, deliberately deferred.
+autonomy step still ahead of it, deliberately deferred. **Phase 5, part 3 (First
+Mate) is now done** per §4bf: `ship/bin/first-mate` + `/critique` are real,
+advisory-only (never gates `/muster`), wired directly into `captain.md`'s PLAN
+step so Eric sees First Mate's critique alongside every plan. Found and fixed a
+real bug during testing (a trailing-slash glob bug in the no-touch-path check,
+caught by the LLM pass independently flagging what the mechanical check missed).
 
 Next up, in rough priority order:
 
-1. **Phase 5, parts 3–4**: First Mate (plan critique QA) next per the plan doc's own
-   priority order, then the Chartroom Fresh plugin. Ask Eric to scope each the way
-   he scoped Quartermaster (§4bc) and Bosun (§4be) rather than assuming
-   full-Phase-5-at-once. Bosun's own eventual auto-restart-with-feedback step is
-   also still open, whenever Eric wants to revisit that autonomy call.
+1. **Phase 5, part 4 (last piece)**: the Chartroom Fresh plugin — commands to open
+   the current mission's orders/reports, highlight SOS reports, jump to a crew
+   member's tmux window from their report. Ask Eric to scope it the way
+   Quartermaster/Bosun/First Mate were each scoped rather than assuming a fixed
+   shape. Bosun's own eventual auto-restart-with-feedback step (§4be) is also still
+   open, whenever Eric wants to revisit that autonomy call.
 2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on OVHcloud; nothing here should assume
@@ -2028,14 +2104,20 @@ Next up, in rough priority order:
    the old "who's the purser" confusion) — worth doing next time a ship gets sunk
    and re-christened anyway, not urgent enough to block on its own.
 4. Most sessions that exercise a genuinely new code path for the first time find at
-   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc). §4aa
-   (Phase 4), §4bd (the mission drill), and §4be (Bosun) are useful counterpoints,
-   not exceptions to worry about: each found zero *new* logic bugs, but only because
+   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc/bf).
+   §4aa (Phase 4) and §4bd (the mission drill) are useful counterpoints, not
+   exceptions to worry about: both found zero *new* logic bugs, but only because
    the code being drilled had already been verified thoroughly beforehand. Treat
    thorough prior verification as the reason these went clean, not evidence the bar
-   can drop. First Mate/Chartroom will be fresh surfaces — don't assume any past
+   can drop. The Chartroom plugin will be a fresh surface — don't assume any past
    session's clean drill generalizes to logic that hasn't been built yet.
-5. OVHcloud harbor (D2) — deferred per D12, not before item 2.
+5. A pattern worth carrying forward, not just noting: two near-misses in two
+   sessions now (§4be's `sudo pkill` scare, §4bf's stray `~/fleet/test/` deletion
+   attempt) where a cleanup command reached for something broader/other-owned than
+   intended. Both were self-caught or classifier-caught before damage, but
+   verify-then-ask should be the default reflex for `~/fleet/<name>/` cleanup, not
+   verify-then-act, even when confident.
+6. OVHcloud harbor (D2) — deferred per D12, not before item 2.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 

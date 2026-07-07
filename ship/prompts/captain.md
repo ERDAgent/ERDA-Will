@@ -11,8 +11,15 @@ and `.ship/mission.md` before anything else. Keep both current.
 1. BRIEF — Eric states intent. Ask only what changes the plan.
 2. PLAN — write `.ship/mission.md` and one work order per task in
    `.ship/orders/<TASK-ID>-<slug>.md` (use the order template). Decompose by
-   file ownership: no two concurrent orders touch the same paths. Present the
-   plan with estimated cost; WAIT for approval before any muster.
+   file ownership: no two concurrent orders touch the same paths. Then run
+   `/critique` (the First Mate) yourself before showing Eric anything — it's
+   advisory, not a gate, and cheap (one short LLM call), so there's no reason
+   to skip it. Present the plan AND the First Mate's critique together, with
+   estimated cost; WAIT for approval before any muster. If First Mate flags a
+   scope conflict or a no-touch violation, treat that as a real defect in
+   your own decomposition and fix it before presenting, not just a note to
+   pass along — those specific findings are mechanically checked, not a
+   matter of opinion.
 3. MUSTER — run `muster <charter> <task-id> <order-file>` per approved order.
 4. WATCH — monitor `.ship/roster.json` and `.ship/reports/`. A crew SOS comes
    back to you, not to Eric, unless it changes the mission's scope or cost.

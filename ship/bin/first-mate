@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# first-mate — plan critique: a second pair of eyes on the Captain's
+# mission.md + current work orders, before Eric approves muster.
+# usage: first-mate <charter>
+#
+# Advisory only -- never blocks anything, never touches git. Deterministic
+# checks (scope conflicts between orders' declared file ownership, no-touch
+# path violations, missing budget/acceptance-criteria fields) are computed
+# by this script and are ground truth; a headless, --no-tools LLM pass
+# (ship/prompts/first-mate.md) adds qualitative judgment on top (is the
+# decomposition sensible, are budgets proportionate) without ever being
+# allowed to contradict the mechanical findings. Same split as
+# ship/bin/quartermaster: deterministic gathering, LLM judgment, nothing for
+# a stray tool call to break because there are no tools.
+#
+# Writes .ship/mission-critique.md (sail's window 2 shows this live) and
+# prints a summary to stdout.
+set -euo pipefail
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+FLEET="${FLEET:-$HOME/fleet}"
+NAME="${1:?usage: first-mate <charter>}"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+
+DIR="$FLEET/$NAME"
+BUS="$DIR/.ship"
+CHARTER_MD="$DIR/charter.md"
+MISSION="$BUS/mission.md"
+CRITIQUE="$BUS/mission-critique.md"
+
+[[ -d "$BUS" ]] || { echo "first-mate: no such charter: $NAME" >&2; exit 1; }
+
+mapfile -t ORDERS < <(compgen -G "$BUS/orders/*.md" || true)
+[[ "${#ORDERS[@]}" -gt 0 ]] || {
+  echo "first-mate: no orders in $BUS/orders/ yet -- nothing to critique" >&2
+  exit 1
+}
+
+# "# Work order: <TASK-ID> — <title>" (order-template.md's own header,
+# confirmed against real Captain-written orders in earlier drills) -- split
+# on the em dash specifically, not any hyphen, since task ids themselves
+# often contain hyphens (e.g. "T-014").
+order_task_id() {
+  grep -m1 '^# Work order:' "$1" | sed -E 's/^# Work order:[[:space:]]*//' | sed -E 's/[[:space:]]*—.*$//'
+}
+
+# "## Scope — files you may touch\n- path\n- path\n(Everything else...)"
+order_scope_files() {
+  sed -n '/^## Scope/,/^## /{/^- /s/^- *//p}' "$1"
+}
+
+# same greppable-field convention bosun's budget_for already uses
+budget_for() {
+  local order="$1" turns tokens
+  turns="$(grep -oE 'max turns:[[:space:]]*[0-9]+' "$order" | head -1 | grep -oE '[0-9]+' || true)"
+  tokens="$(grep -oE 'max output tokens:[[:space:]]*[0-9]+' "$order" | head -1 | grep -oE '[0-9]+' || true)"
+  echo "${turns:-0} ${tokens:-0}"
+}
+
+notouch_paths() {
+  [[ -f "$CHARTER_MD" ]] || return 0
+  sed -n '/^## No-touch paths/,/^## /{/^- /s/^- *//p}' "$CHARTER_MD" | grep -v '^(' || true
+}
+
+PAIRS="$(mktemp)"
+
+for order in "${ORDERS[@]}"; do
+  task="$(order_task_id "$order")"
+  [[ -z "$task" ]] && task="(unknown task id in $(basename "$order"))"
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    printf '%s\t%s\n' "$f" "$task" >> "$PAIRS"
+  done < <(order_scope_files "$order")
+done
+
+FINDINGS=()
+
+# --- scope conflicts: a file claimed by more than one order ---
+sort -u -o "$PAIRS" "$PAIRS"
+OVERLAP_FILES="$(cut -f1 "$PAIRS" | sort | uniq -d || true)"
+if [[ -n "$OVERLAP_FILES" ]]; then
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    TASKS="$(awk -F'\t' -v file="$f" '$1==file {print $2}' "$PAIRS" | paste -sd, -)"
+    FINDINGS+=("SCOPE CONFLICT: '$f' is claimed by more than one order: $TASKS")
+  done <<< "$OVERLAP_FILES"
+fi
+
+# --- no-touch path violations ---
+NOTOUCH="$(notouch_paths)"
+if [[ -n "$NOTOUCH" ]]; then
+  while IFS= read -r ntp; do
+    [[ -z "$ntp" ]] && continue
+    # directory-style no-touch entries are often written with a trailing
+    # slash (e.g. "deploy/") -- strip it before building the glob, or
+    # "deploy/"/* becomes the literal pattern "deploy//*", which never
+    # matches a real path like "deploy/config.yaml" (single slash). Found
+    # by First Mate's own LLM pass catching a violation this check missed.
+    ntp_stripped="${ntp%/}"
+    while IFS=$'\t' read -r f task; do
+      [[ -z "$f" ]] && continue
+      if [[ "$f" == "$ntp" || "$f" == "$ntp_stripped"/* ]]; then
+        FINDINGS+=("NO-TOUCH VIOLATION: order $task's scope includes '$f', matching charter.md's no-touch path '$ntp'")
+      fi
+    done < "$PAIRS"
+  done <<< "$NOTOUCH"
+fi
+
+# --- missing budget / acceptance criteria, per order ---
+for order in "${ORDERS[@]}"; do
+  task="$(order_task_id "$order")"
+  read -r MAX_TURNS MAX_TOKENS <<< "$(budget_for "$order")"
+  if [[ "$MAX_TURNS" -eq 0 && "$MAX_TOKENS" -eq 0 ]]; then
+    FINDINGS+=("$task: no parseable Budget (max turns / max output tokens) declared")
+  fi
+  if ! grep -qE '^\s*- \[ \]' "$order"; then
+    FINDINGS+=("$task: no acceptance-criteria checkboxes found")
+  fi
+done
+
+FINDINGS_TEXT="(none — no scope conflicts, no no-touch violations, every order has a parseable budget and at least one acceptance criterion)"
+if [[ "${#FINDINGS[@]}" -gt 0 ]]; then
+  FINDINGS_TEXT="$(printf -- '- %s\n' "${FINDINGS[@]}")"
+fi
+
+# --- LLM judgment: headless, --no-tools, same pattern as quartermaster ---
+if [[ -n "${SHIP_FIRSTMATE_AGENT:-}" ]]; then
+  CRITIQUE_AGENT="$SHIP_FIRSTMATE_AGENT"
+else
+  MODEL="$(pick-model 2>/dev/null || echo zai-org/GLM-5.2)"
+  CRITIQUE_AGENT="pi --no-tools --provider deepinfra --model $MODEL --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/first-mate.md -p"
+fi
+
+CTXFILE="$(mktemp)"
+trap 'rm -f "$PAIRS" "$CTXFILE"' EXIT
+{
+  echo "# Mission"
+  if [[ -f "$MISSION" ]]; then cat "$MISSION"; else echo "(no mission.md found)"; fi
+  echo
+  echo "# Work orders"
+  for order in "${ORDERS[@]}"; do
+    echo "## File: $(basename "$order")"
+    cat "$order"
+    echo
+  done
+  echo "# charter.md no-touch paths"
+  if [[ -n "$NOTOUCH" ]]; then printf '%s\n' "$NOTOUCH"; else echo "(none declared)"; fi
+  echo
+  echo "# Deterministic findings (already confirmed mechanically -- ground truth)"
+  echo "$FINDINGS_TEXT"
+} > "$CTXFILE"
+
+export SHIP_ROLE=first-mate SHIP_CHARTER="$NAME" SHIP_NAME=first-mate SHIP_TASK=-
+command -v unlock >/dev/null 2>&1 && eval "$(unlock)"
+
+CRITIQUE_OUT="$($CRITIQUE_AGENT "Give your critique of this mission's decomposition, per your role contract." < "$CTXFILE" 2>/tmp/first-mate-"$NAME".log || true)"
+
+FIRST_LINE="$(printf '%s\n' "$CRITIQUE_OUT" | grep -m1 -E '^STATUS:' || true)"
+case "$FIRST_LINE" in
+  "STATUS: CLEAR"*|"STATUS: CONCERNS"*) LLM_SECTION="$CRITIQUE_OUT" ;;
+  *) LLM_SECTION="STATUS: CONCERNS
+First Mate's qualitative pass returned no parseable STATUS line -- treat this as
+\"couldn't get a second opinion this time,\" not as a clean bill of health. Raw output:
+
+$(printf '%s' "$CRITIQUE_OUT" | head -c 4000)" ;;
+esac
+
+cat > "$CRITIQUE" <<EOF
+# First Mate — plan critique
+
+**Reviewed:** $(date -Is)
+
+## Deterministic findings
+$FINDINGS_TEXT
+
+## First Mate's read
+$LLM_SECTION
+EOF
+
+echo "First Mate critique written to $CRITIQUE"
+echo
+cat "$CRITIQUE"

@@ -69,7 +69,10 @@ before any muster"). After you state intent, the Captain:
   `ship/prompts/order-template.md` for the exact shape)
 - decomposes so no two concurrent orders touch the same files (parallel-safe by
   construction)
-- presents the plan with an estimated cost and **stops**
+- runs `/critique` itself (the First Mate, a real agent as of Phase 5) and presents
+  its read alongside the plan — a mechanically-confirmed finding (scope conflict,
+  no-touch violation) gets fixed before you see it, not just relayed as a note
+- presents the plan (and First Mate's critique) with an estimated cost and **stops**
 
 It will not muster anything until you explicitly say so. Useful phrasings:
 > "Show me the plan first." / "What's this going to cost?"
@@ -127,7 +130,7 @@ interrupting the Captain's context if you just want a quick look:
 | # | Window | Shows | Check it directly when... |
 |---|--------|-------|---------------------------|
 | 1 | 🗺 chartroom | `mission.md`/orders/reports, live in Fresh (or a `watch` fallback) | you want to read the actual plan/order text, not a summary |
-| 2 | 🧭 first-mate | placeholder dashboard — **not yet an active agent** (Phase 5); currently just a note to manually review `mission.md` yourself before approving | you want a second pair of eyes and it isn't you |
+| 2 | 🧭 first-mate | latest `.ship/mission-critique.md`, live — the Captain writes this via `/critique` (a real agent as of Phase 5) as part of every PLAN step, advisory only, never a gate | you want to read First Mate's actual critique text, not the Captain's summary of it |
 | 3 | 📣 bosun | `roster.json` + real turn/token usage vs. each working order's declared budget + last 8 events, auto-refreshing every 5s — flags `OVER BUDGET` (and logs a `bosun-flag` event, once) the first time a task breaches; v1 is detect-only, it never kills or restarts anything itself | "is anything still running, right now" — or "is anything stuck/over budget" |
 | 4 | ⚖ quartermaster | git branches + last 10 commits across the whole hold (window itself is still just a dashboard; the Quartermaster *agent* runs headless via `/review`, not in this window) | "what's actually landed on `main`/`integration`" |
 | 5 | 🪙 purser | running total + last 10 calls from `log/ledger.tsv`, real DeepInfra cost (`usage.estimated_cost`) logged by `cost-proxy` — not pi's own local-price-table guess | you want to know what a mission is actually costing, right now |
@@ -172,9 +175,10 @@ Per `captain.md`, the Captain should never:
 - *"Debrief."* / *"Wrap up and report."* — DEBRIEF
 - *"Cap this mission at `<budget>`."* / *"Use xhigh thinking for T-004, it's tricky."* — per-mission/per-order overrides
 
-Or skip the conversation for the mechanical steps: `/mission <goal>`, `/muster
-<task-id>`, `/review <task-id>`, `/harbor [task-id]`, `/debrief` — see
+Or skip the conversation for the mechanical steps: `/mission <goal>`, `/critique`,
+`/muster <task-id>`, `/review <task-id>`, `/harbor [task-id]`, `/debrief` — see
 `ship/plugin/index.ts`. `/muster` and `/harbor` never spend a model turn on the
-Captain's own conversation (though `/review` spends its own, separate DeepInfra call
-on the Quartermaster's review pass); `/mission` and `/debrief` still go through the
+Captain's own conversation (though `/review` and `/critique` each spend their own,
+separate DeepInfra call — the Quartermaster's review pass and the First Mate's
+critique pass, respectively); `/mission` and `/debrief` still go through the
 Captain's own judgment, just grounded in real files/ledger data gathered first.

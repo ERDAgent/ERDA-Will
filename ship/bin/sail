@@ -120,7 +120,7 @@ WINDOW_NAMES=(
 WINDOW_CMDS=(
   "$BRIDGE_CMD"
   "$CHARTROOM_CMD"
-  "bash -lc 'echo \"[first-mate] plan critique station — review mission.md before approving muster\"; exec bash'"
+  "watch -t -n 5 'if [ -f mission-critique.md ]; then cat mission-critique.md; else echo \"[first-mate] no critique yet -- the Captain runs /critique itself as part of PLAN, or run it by hand once a mission has orders\"; fi'"
   "bash -lc 'watch -t -n 5 bosun'"
   "watch -t -n 10 'echo == branches ==; git -C .hold.git branch -a; echo; echo == recent ==; git -C .hold.git log --oneline --all -n 10'"
   "bash -lc 'watch -t -n 5 purser-totals'"

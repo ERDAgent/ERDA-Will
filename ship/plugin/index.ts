@@ -162,6 +162,26 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("critique", {
+		description: "First Mate's plan critique: scope/budget/decomposition second opinion (wraps ship/bin/first-mate)",
+		handler: async (_args, ctx) => {
+			const charter = charterInfo(ctx);
+			if (!charter) return;
+
+			ctx.ui.notify("First Mate reviewing the plan...", "info");
+			try {
+				// Advisory only -- never blocks anything, so a generous timeout is
+				// fine; the LLM pass here is a single --no-tools call, much cheaper
+				// than /review's merge+dry-dock-test+judge sequence.
+				const result = await pi.exec("first-mate", [charter.name], { cwd: charter.dir, timeout: 120000 });
+				const output = (result.stdout || result.stderr).trim();
+				ctx.ui.notify(output || `first-mate exited ${result.code}`, result.code === 0 ? "info" : "error");
+			} catch (err) {
+				ctx.ui.notify(`first-mate failed to run: ${err instanceof Error ? err.message : String(err)}`, "error");
+			}
+		},
+	});
+
 	pi.registerCommand("review", {
 		description: "Review & merge-gate a crew work order (wraps ship/bin/quartermaster)",
 		getArgumentCompletions: (prefix) => {
