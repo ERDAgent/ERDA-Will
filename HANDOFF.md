@@ -1594,6 +1594,97 @@ pattern noted in §4z, treat the plugin's interaction with `muster`/`sail`/the `
 bus as a fresh surface worth its own scrutiny going forward, not a closed question
 just because this session's specific drill went cleanly.
 
+## 4ab. Restructuring: Shipwright takes over engineering, host Claude Code becomes "Neptune" (July 6, 2026)
+
+Eric asked for a real division-of-labor change, not just a naming exercise. Up to
+this point, "host Claude Code" (this session, running on Eric's own Mac) did all
+shipyard engineering directly: designed features, wrote `ship/bin/*`/`ship/plugin/`,
+spun up throwaway Multipass ships, `rsync`'d local uncommitted changes onto them to
+test, committed, and pushed. Eric wants that to stop: the **Shipwright** (Claude Code
+running ON a real ship, previously just "system-level repair" per `CLAUDE.md`, with
+no role prompt of its own at all — unlike Captain/Crew) should own the full
+engineering loop now. Host Claude Code becomes **Neptune** (Eric's chosen name — a
+maritime surveyor concept: independent verification, never building), narrowly
+scoped to: pull the latest pushed `ERDA-Will`, read the Shipwright's drill requests,
+run fresh-Multipass-ship drills against that pulled code, write reports back. Never
+edit shipyard code again.
+
+**Why Shipwright never had a role prompt until now**: `sail`'s shipwright window
+just ran bare `claude`, relying entirely on auto-loaded `CLAUDE.md` for identity —
+no `--append-system-prompt` the way `captain.md`/`crew.md` get one. This is exactly
+why Eric hit "the shipwright does not know who he is" earlier this session: asked
+about "the purser," it correctly and honestly said it had no standing orders about
+any such role, because it genuinely didn't — captain.md's loop is Captain-specific,
+and nothing described officer roles to any agent, only to human-facing docs.
+
+**Built**:
+- `ship/prompts/shipwright.md` — new role prompt, mirroring `captain.md`'s
+  BRIEF→...→DEBRIEF loop shape but for shipyard engineering: BRIEF → ground the
+  design in real facts (not doc summaries — see §4y's `baseUrl`-interpolation
+  lesson) → BUILD → self-test on its own ship as thoroughly as possible → request a
+  Neptune drill only when the change is provisioning-sensitive (fresh-boot/`fitout.sh`
+  ordering — the one thing self-testing on an already-provisioned ship structurally
+  cannot catch, per the real `sudo bash` vs `su - eric` bug in §4y/§4z) → document in
+  `HANDOFF.md` → commit & push.
+- `ship/bin/sail`: wires `shipwright.md` into the shipwright window via
+  `--append-system-prompt`. Checked `claude --help` directly on a live ship rather
+  than assuming it works like pi's flag of the same name — pi's version takes a file
+  *path*, `claude`'s takes inline *text* — so the fix splices in `\"\$(cat
+  $SHIPWRIGHT_PROMPT)\"` with the same deferred-evaluation escaping already used for
+  `\$(unlock shipwright)`, verified by reconstructing the literal generated command
+  string locally before trusting it (same technique as earlier sessions' `muster`/
+  `sail` verifications).
+- `neptune/` — the async, git-mediated channel between the two, since they run on
+  different machines with no live connection: `neptune/requests/<ID>-slug.md`
+  (Shipwright writes, asking for a fresh-ship drill), `neptune/reports/<ID>.report.md`
+  (Neptune writes, results back), templates for both, and a `README.md` explaining
+  the flow. Mirrors `.ship/orders`+`.ship/reports`'s existing design language
+  deliberately, rather than inventing a new convention.
+- `CLAUDE.md`: added a "Which Claude are you?" section up top (since this one file
+  is auto-loaded by both Shipwright and Neptune, and they need to behave completely
+  differently), a dedicated "Neptune's scope" section listing what Neptune does
+  *not* do anymore, updated the vocabulary table (Shipwright's expanded scope,
+  Neptune as a new term), and the repo-layout tree.
+- `.claude/settings.json` (project-level, committed — applies to anyone working in
+  this checkout) — the actual enforcement mechanism, not just prose. Used the
+  `update-config` skill rather than guessing at permission-rule syntax.
+
+**A real limitation found and worked around, not glossed over**: tried to
+empirically verify the permission rules before trusting them (per this project's
+own standing discipline) by drafting a test config — bare `"Edit"`/`"Write"` in
+`deny`, a scoped `"Edit(neptune/reports/**)"` in `allow` — and attempting a live
+test edit to `HANDOFF.md` (which should have been blocked). It was **not** blocked.
+Root cause: `.claude/` didn't exist when this session started, and the settings
+watcher only watches directories that already had a settings file at session
+start — the exact same caveat this project's own `update-config` skill documents
+for hooks, which apparently applies to permissions too. Reverted the test edit
+immediately, confirmed via `git diff` it left no trace.
+
+This meant the intended "does a scoped `allow` carve an exception out of a
+blanket `deny`" precedence question couldn't be answered empirically in this
+session. Rather than ship something that "looks scoped but isn't actually enforced
+that way" (Eric's own explicit instruction to the config skill), the final
+`.claude/settings.json` sidesteps the question by construction: every existing
+top-level path gets its own explicit `Edit(...)`/`Write(...)` deny entry, and
+`neptune/reports/**` gets the only allow — no path is ever covered by both a deny
+and an allow rule, so there's no precedence to get wrong. The tradeoff: a
+genuinely *new* top-level file added later (not yet enumerated) would fall through
+to Claude Code's default permission prompt rather than being explicitly blocked —
+an acceptable degradation (still asks a human) rather than a silent gap. Bash rules
+took the same non-overlap approach where practical (`rsync` denied outright, since
+Neptune no longer deploys local trees to test ships at all); `git commit`/`git
+push` couldn't be meaningfully path-scoped this way (the command text doesn't
+reference which files are staged), so those are allowed broadly with only
+force-push variants explicitly denied — matching Eric's own explicit acceptance of
+this one policy-level (not hard-technical) gap, enforced by `CLAUDE.md`'s
+instructions rather than the permission system for that specific piece.
+
+**Not verified — needs a fresh Claude Code session in this repo to confirm**:
+whether `.claude/settings.json`'s rules actually enforce as designed once a session
+picks them up fresh (this session never got to see them live, for the reason
+above). The concrete test: try `Edit` on any file outside `neptune/reports/`
+(should be blocked) and inside it (should succeed).
+
 ## 4bb. Renamed "preview" -> "telescope" (dev-server window/concept) (July 6, 2026)
 
 Eric hit the `preview` window's "no dev server command configured" message (expected
@@ -1634,27 +1725,36 @@ rejection/redo cycle, and a real hand-run REVIEW/INTEGRATE merge to `main` — n
 single-crew smoke tests. Two more real bugs found and fixed there too. **Phase 4 (the
 pi extension) is now done** per §4aa: `/mission`/`/muster`/`/harbor`/`/debrief` built,
 verified against the real pi API and runtime, and live-drilled end-to-end (a real
-mission, real crew, real merge, real cost narration) on a real ship.
+mission, real crew, real merge, real cost narration) on a real ship. **Per §4ab, the
+whole operating model just changed**: the Shipwright (on-ship Claude Code) now owns
+all shipyard engineering; host Claude Code is "Neptune," narrowly scoped to
+fresh-ship drills and reports only, enforced via `.claude/settings.json` (not yet
+verified live — see §4ab's own "not verified" note).
 
 Next up, in rough priority order:
 
-1. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+1. **Verify the §4ab restructuring actually works**: a fresh Claude Code session in
+   this repo should be genuinely blocked from `Edit`ing anything outside
+   `neptune/reports/`, and able to write there. Eric's own next step (sink the
+   current ship, christen a new one) is exactly this test from the ship side too —
+   confirm the new ship's shipwright window shows real Shipwright identity
+   (`[shipwright]` banner + it correctly describes its own role if asked), not the
+   old "who's the purser" confusion.
+2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on everything below; nothing here should
    assume it's done until Eric says so.
-2. Re-examine "move aboard" (install Claude Code on a real persistent ship, work as
-   shipwright from there) in light of D12/D13 — Eric's current intent runs the other
-   direction (minimize Claude Code's footprint on any given machine, treat ships as
-   disposable/reproducible). Not abandoned, just resequenced behind item 1, and
-   possibly reshaped: "aboard" may end up meaning "reprovision on demand," not "one
-   long-lived ship Claude Code lives on."
-3. **Phase 5 — officer agents** (Quartermaster review pass, Bosun watchdog, First Mate
+3. "Move aboard" (D12/D13's old open question about Claude Code living on a
+   persistent ship) is effectively resolved by §4ab, just not in the shape originally
+   guessed: the Shipwright *is* the on-ship, primary-engineering Claude Code now —
+   not "reprovision on demand," an actual standing role with its own prompt.
+4. **Phase 5 — officer agents** (Quartermaster review pass, Bosun watchdog, First Mate
    plan critique — see docs/system-overview.md's "Not yet an active agent" notes on
    each) is now the real next threshold, plus the Chartroom Fresh plugin. Phase 4's
    extension (§4aa) only ever wrapped existing, already-proven mechanics
    (`muster`/roster/reports/ledger) in slash commands — it deliberately did not give
    any officer role real judgment. That's what Phase 5 actually is.
-4. Most sessions that exercise a genuinely new code path for the first time find at
+5. Most sessions that exercise a genuinely new code path for the first time find at
    least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z). §4aa
    (Phase 4) is a useful counterpoint, not an exception to worry about: it found zero
    new bugs in the shipyard's own code, but only because it verified against the real
@@ -1664,7 +1764,7 @@ Next up, in rough priority order:
    Treat thorough pre-ship verification as the reason it went clean, not evidence the
    bar can drop. Officer agents will be a fresh surface — don't assume any of
    this session's clean drill generalizes to logic that hasn't been built yet.
-5. OVHcloud harbor (D2) — deferred per D12, not before item 1.
+6. OVHcloud harbor (D2) — deferred per D12, not before item 2.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
@@ -1706,3 +1806,4 @@ Next up, in rough priority order:
 - v28 (Claude Code, July 6, 2026): Eric asked to "complete Phase 3" after being told the project was mid-Phase-3 — concurrency and the full review/merge cycle had only ever been drilled with stub agents, never real crew. Christened `phase3-drill`, ran `fitout.sh` correctly this time (learned from v27's own mistake), chartered `toolkit-drill --local`, wrote two orders with deliberately disjoint file scope, mustered both concurrently. Found and fixed two real bugs: (1) a crew agent committed a stray `__pycache__/*.pyc` file outside its declared scope while its own self-report claimed otherwise — crew.md's scope discipline is self-reported with no technical guard against `git add -A` sweeping up interpreter cache files; drilled the actual prescribed reject-and-redo mechanism for the first time (remove berth/branch, append reviewer feedback to the order, re-muster the same task ID against a fresh agent) rather than silently patching it; (2) that exact redo exposed a second, more serious bug — `muster`'s roster-append never removed a stale entry for a re-mustered task ID, so `roster.json` accumulated ghost rows and the completion-time status update (keyed by task ID alone) would silently mark all of them done/failed together regardless of which attempt actually ran. Fixed in `ship/bin/muster` (roster-append now drops any existing same-task entry before appending), verified against the actual buggy roster snapshot, then re-verified against a real third crew run. Wasted one redo cycle by deleting a branch before checking whether it had fixed the pycache issue — turned it into a second real verification pass instead of a pure loss. Ran `captain.md`'s REVIEW/INTEGRATE sequence by hand for the first time all the way through with real crew work: found and fixed a self-inflicted relative-path mistake (`git -C .hold.git worktree add` with a relative path resolves against `-C`'s target dir, not the caller's cwd), then merged both branches cleanly, ran the dry-dock suite for real, fast-forwarded `main`, synced `berths/home-port`, independently re-ran both test suites myself rather than trusting crew self-reports, and pruned both berths. Purser confirmed the whole drill's real cost as it happened: 29 calls, $0.0456, individually attributed across all three T-002 attempts — concrete evidence for why per-attempt cost attribution matters, since two of three were pure rework cost. Ship destroyed after, nothing left running. See §4z.
 - v29 (Claude Code, July 6, 2026): Eric asked to move onto Phase 4 — the pi extension adding `/mission`/`/muster`/`/harbor`/`/debrief`. Grounded the design in the real shipped TypeScript declarations and example extensions from the locally-installed `@earendil-works/pi-coding-agent` package (ground truth, not doc summaries, after §4y's `baseUrl`-interpolation doc inconsistency made clear that mattered) rather than trusting fetched-doc paraphrases. Built `ship/plugin/index.ts`: `/muster`/`/harbor` as pure deterministic wrappers (files + one subprocess call, zero LLM turns); `/mission`/`/debrief` gather real ground truth (goal text; roster/git/ledger data) and hand it to the Captain's own conversation via `sendUserMessage`, rather than reimplementing planning or narration. Verified every path against the real `pi` runtime before touching a ship, using RPC mode's documented `{"type":"prompt","message":"/command"}` command-dispatch behavior as a scriptable test harness (no live ship, no real credentials needed) — including the one genuinely interactive path (`/harbor`'s `ctx.ui.select()` picker) via a real two-way RPC round trip. Diagnosed one false alarm correctly during this (a `pi.exec()` call inside `/debrief` appeared to die silently; root-caused to the test harness closing stdin before the async handler resolved, not a real bug in the extension). Wired `ship/plugin/` into `fitout.sh` as a global extension symlink (`~/.pi/agent/extensions/shipyard`), confirmed the documented directory-discovery convention works locally without `-e` before deploying anywhere. Live-drilled end-to-end on a real throwaway ship: confirmed `[Extensions] shipyard` in the real bridge window's own startup banner, then drove an actual mission through all four commands with real GLM-5.2 in the real interactive TUI (`/mission` planned and stopped for approval correctly; `/muster` spawned crew instantly with zero added token cost, confirmed via the footer; crew showed full live thinking per §4y; `/harbor`'s real interactive picker worked live; hand-ran the real merge to `main`; `/debrief` narrated real shipped/blocked/cost facts that cross-checked correctly against `purser-totals`, plus volunteered a genuinely useful unprompted observation about the charter's blank conventions). Ship destroyed after, nothing left running. See §4aa.
 - v30 (Claude Code, July 6, 2026): Eric hit the `preview` window's expected "no dev server command configured" message (that charter's `charter.md` just hadn't been filled in, per §4t) and asked to rename the whole concept from "preview" to "telescope" rather than fix the config. Pure identifier rename, no logic change: `ship/bin/preview` -> `ship/bin/telescope`, `sail`'s window 8 (`🌐 preview` -> `🔭 telescope`), `fitout.sh`'s symlink loop, both `erda.sh`/`erda.ps1`'s `preview` subcommand -> `telescope`, `charter.md`'s template blurb, `captain.md`'s INTEGRATE-step comment, and every doc reference (`CLAUDE.md`, `docs/cheatsheet.md`, `docs/system-overview.md`, `docs/vm-cheatsheet.md`). Left this HANDOFF's own historical entries (D18, §4t, v21) saying "preview" since they're an accurate record of what it was called when built. Verified with `bash -n` on every touched script; not re-drilled live since nothing but names changed. See §4bb.
+- v31 (Claude Code, July 6, 2026): Eric asked for a real operating-model change — Shipwright (on-ship Claude Code) now owns all shipyard engineering; host Claude Code becomes "Neptune" (Eric's chosen name), narrowly scoped to fresh-Multipass-ship drills and reports, never editing shipyard code again. Root-caused why Shipwright "didn't know who he was" earlier this session: unlike Captain/Crew, it never had its own role prompt — `sail` just ran bare `claude`. Built `ship/prompts/shipwright.md` (mirrors `captain.md`'s loop shape); wired it into `sail`'s shipwright window via `--append-system-prompt`, first checking `claude --help` directly rather than assuming it takes a file path the way pi's identically-named flag does (it doesn't — inline text only, so the fix splices `$(cat ...)` in with the same deferred-evaluation escaping as `$(unlock shipwright)`). Built `neptune/` (requests/reports + templates) as the git-mediated channel between the two, mirroring `.ship/orders`+`.ship/reports`'s existing design language. Updated `CLAUDE.md` with a "which Claude are you" section and Neptune's explicit scope. Used the `update-config` skill to write `.claude/settings.json` as the actual enforcement mechanism (not just prose) — tried to empirically verify the deny/allow precedence first (per this project's own standing discipline) via a live test edit, found it wasn't blocked, root-caused to the settings watcher not picking up a `.claude/` directory that didn't exist at session start (the same caveat the config skill documents for hooks), reverted the test edit cleanly, and designed around the gap rather than guess: the final settings.json uses fully non-overlapping per-path deny rules instead of a blanket-deny-plus-scoped-allow, so there's no untested precedence to get wrong. Explicitly flagged what's still unverified (the rules haven't been seen live by any session yet) rather than claim more confidence than earned. See §4ab.

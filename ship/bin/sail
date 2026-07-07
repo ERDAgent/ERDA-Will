@@ -84,9 +84,20 @@ fi
 # (crew + captain + its own ANTHROPIC_API_KEY) so it can both work and push
 # changes back to ERDA-Will. Falls back to a plain shell if claude isn't
 # installed, same pattern as the bridge window's pi fallback.
+#
+# --append-system-prompt takes inline text, not a path (checked `claude
+# --help` directly rather than assuming it works like pi's flag of the same
+# name, which does take a path) -- so `\$(cat ...)` is spliced in escaped,
+# same deferred-evaluation trick as `\$(unlock shipwright)` below: it must
+# read the file at the window's actual runtime, not sail's own generation
+# time, both so $SHIPWRIGHT_PROMPT (resolved now, a real path) is correct
+# and so a later edit to shipwright.md is picked up without regenerating
+# this script.
+SHIPWRIGHT_PROMPT="$SHIPYARD_DIR/ship/prompts/shipwright.md"
 if command -v claude >/dev/null 2>&1; then
   SHIPWRIGHT_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock shipwright)\"; \
-    echo \"[shipwright] system-level session on ERDA-Will -- not this charter\"; exec claude'"
+    echo \"[shipwright] system-level session on ERDA-Will -- not this charter\"; \
+    exec claude --append-system-prompt \"\$(cat $SHIPWRIGHT_PROMPT)\"'"
 else
   SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright] claude not found, dropping to a shell\"; exec bash'"
 fi
