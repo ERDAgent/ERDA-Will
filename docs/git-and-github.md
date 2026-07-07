@@ -13,10 +13,15 @@ still doesn't.
 1. **The shipyard itself** (`ERDA-Will`, this repo) — infrastructure, not a charter.
    Lives on GitHub under the `ERDAgent` account/org. `keel.yaml` clones it onto a ship
    at provisioning time (plain HTTPS, public repo, no credentials needed for that
-   clone). Claude Code's work on this repo (including this document) happens directly
-   against this clone from whatever host is running Claude Code — today that's your
-   Windows machine, using **its own, separately-configured** git identity (see
-   "Identity" below) — not through the charter/crew system at all.
+   clone). As of the Shipwright/Neptune restructuring (`HANDOFF.md` §4ab), all
+   engineering on this repo — design, build, test, commit, push — is done by the
+   **Shipwright**, Claude Code running *on a ship* (`~/shipyard`, its own tmux window),
+   not through the charter/crew system at all but still on-ship, so it inherits that
+   ship's ordinary global git identity (see "Identity" below) — the same one every
+   charter/crew commit on that ship uses. Host-side Claude Code ("**Neptune**") never
+   edits or commits shipyard source anymore; it's scoped to fresh-ship drills and
+   writes only under `neptune/reports/` (see `neptune/README.md`), using whatever git
+   identity is configured on Eric's own host machine.
 2. **Charters** — one per project, under `~/fleet/<name>/` on a ship. This is where
    your question actually lives; see next section.
 3. **Berths** — git worktrees inside a charter's hold, one per crew task. Not
@@ -86,30 +91,29 @@ lives only in `strongbox/captain.env.age`, encrypted, loaded per-session.
 
 ## Identity: where "ERDAgent" actually comes from
 
-There are **two separate places** this gets configured, not one — they currently
-happen to agree because you set them to agree, not because one derives from the
-other:
+Since the Shipwright/Neptune restructuring, this is **one mechanism**, not two that
+happen to agree: `fitout.sh` sets `git config --global user.name/email` to `ERDAgent`
+/ `agentic@ericrose.dev` unconditionally on every ship (see `HANDOFF.md` D13). That
+one setting covers *every* commit made anywhere on that ship — any charter, any crew
+agent, any manual commit you make while SSH'd in as `eric`, **and** the Shipwright's
+own commits to `ERDA-Will` itself, since the Shipwright is just Claude Code running on
+that same ship. There's no per-charter or per-role override; it's one identity for
+the whole ship, shipyard-engineering work included.
 
-1. **On every ship**, `fitout.sh` sets `git config --global user.name/email` to
-   `ERDAgent` / `agentic@ericrose.dev` unconditionally (see `HANDOFF.md` D13). This
-   applies to *every* commit made anywhere on that ship — any charter, any crew agent,
-   any manual commit you make while SSH'd in as `eric`. There's no per-charter
-   override built in; it's one identity for the whole ship.
-2. **On your Windows host** (or any machine where Claude Code works on `ERDA-Will`
-   directly, outside the charter system), git identity is whatever's configured
-   locally on that machine — you set it globally yourself, to the same `ERDAgent` /
-   `agentic@ericrose.dev`. `ERDA-Will` itself has no repo-local override; it inherits
-   that host's global config.
+The one place this *doesn't* apply: **Neptune**, host-side Claude Code, which commits
+only to `neptune/reports/**` (never shipyard source) using whatever git identity is
+configured locally on Eric's own machine — separate from the ship entirely, and
+irrelevant to `ERDA-Will`'s actual source history.
 
-Practical consequence: **every commit and every push this system produces, anywhere,
-is authored/attributed as ERDAgent** — crew work, Captain-integrated missions and
-pushes, auto-created repos, and Claude Code's own shipwright commits to the shipyard
-repo alike. That's the deliberate point (keeping automated/agent work visually
-separate from your own `EricRoseDev`-authored commits in git log/blame). For a charter
-pointing at a repo `ERDAgent` doesn't own or have collaborator access to, `git clone`
-and local commits still work fine, but both `charter`'s auto-create and the Captain's
-auto-push will fail with a clear permissions error rather than silently doing nothing
-or guessing at different credentials.
+Practical consequence: **every commit and every push that touches real shipyard
+source or charter/crew work, anywhere, is authored/attributed as ERDAgent** — crew
+work, Captain-integrated missions and pushes, auto-created repos, and the Shipwright's
+own commits to the shipyard repo alike. That's the deliberate point (keeping
+automated/agent work visually separate from your own `EricRoseDev`-authored commits in
+git log/blame). For a charter pointing at a repo `ERDAgent` doesn't own or have
+collaborator access to, `git clone` and local commits still work fine, but both
+`charter`'s auto-create and the Captain's auto-push will fail with a clear permissions
+error rather than silently doing nothing or guessing at different credentials.
 
 ## How this scales across multiple charters
 
@@ -128,5 +132,5 @@ GitHub org requirement, no monorepo assumption.
 | Does `captain charter` create new GitHub repos? | **Yes**, by default, when no `git-url` and no `--local` — private, under ERDAgent, reusing one if it already exists. Needs a broader PAT scope than the original push-only one; falls back to local-only with a clear message if that's not configured. |
 | Does the system push anything to GitHub automatically? | **Yes**, now — the Captain pushes `integration` and `main` on every mission's INTEGRATE step, when the charter has a real `origin`. |
 | Does crew ever push? | No — structurally can't; crew-scope shells never hold `GH_TOKEN` at all. |
-| Who authors commits and pushes? | `ERDAgent` / `agentic@ericrose.dev`, set globally per-ship by `fitout.sh` (D13) — same identity used on your Windows host by your own separate, manual configuration |
+| Who authors commits and pushes? | `ERDAgent` / `agentic@ericrose.dev`, set globally per-ship by `fitout.sh` (D13) — covers crew, Captain, and the on-ship Shipwright's own commits alike. Neptune (host-side, drill reports only) uses Eric's own separately-configured host identity, irrelevant to shipyard source history |
 | Is one GitHub account required for everything? | No — each charter's remote (if any) is independent; `ERDAgent` just needs the right permissions (creation and/or write) for whichever specific repos are in play |

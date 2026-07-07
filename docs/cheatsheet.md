@@ -35,3 +35,14 @@ From a ship
   - `captain list charters`: lists existing charters and their status.
   - `captain work`'s deck has a "shipwright" window (Claude Code, cwd `~/shipyard`) for system-level changes to ERDA-Will itself — not the charter.
   - `captain work`'s deck also has a "telescope" window running the charter's dev server against the integration branch (fill in charter.md's "## Dev server" section: `command` + `port`) -- view it from the host with `erda telescope <charter>`.
+
+From the Captain's `pi` session (bridge window, window 0), once you're chartered and working:
+
+  - `/mission <goal>`: plans a mission -- writes `mission.md` + work orders, runs `/critique` (First Mate) automatically, and stops for your go-ahead before mustering anything.
+  - `/muster`: spawns crew for the approved orders -- berth + branch + tmux window + headless agent, zero added LLM cost.
+  - `/harbor`: status from the roster + reports -- what's running, done, or SOS.
+  - `/review <task-id>`: Quartermaster -- merges a done task into `integration`, runs the dry-dock tests, judges the diff, approves or rejects.
+  - `/critique`: First Mate's plan critique on demand (also runs automatically as part of `/mission`) -- advisory only, never blocks `/muster`.
+  - `/debrief`: narrates what shipped, what's blocked, and real per-role cost.
+  - window 1 "chartroom" (Fresh) -- open mission/orders/reports (flags SOS), jump to a crew member's tmux window, live roster dashboard.
+  - window 3 "bosun" -- auto-refreshing dashboard, flags any crew task over its declared turn/token budget (detect-only, v1).

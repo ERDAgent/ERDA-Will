@@ -2146,6 +2146,48 @@ exercises Chartroom mid-mission (this session verified it thoroughly in isolatio
 synthesized state, same methodology as First Mate/Bosun — not yet watched update
 live while a real mission runs through it, the way §4bd drilled the Quartermaster).
 
+## 4bh. Documentation follow-up sweep (July 7, 2026) — two real stale-doc bugs found, no code changes
+
+Eric asked to clear any outstanding documentation followups. Swept every file under
+`docs/` plus `CLAUDE.md` for staleness (TODO/placeholder/not-yet markers, terminology
+drift, references to renamed/removed things) rather than guessing what "outstanding"
+meant. Most of what turned up was already current — `system-overview.md` and
+`captain-cheatsheet.md` had already been refreshed for Phase 5 in this same session's
+earlier work (§4bg), no "preview" references survived the telescope rename, and the
+`erda christen` default-size churn (1cpu/10G briefly, per commit `e6d389a`) had already
+been manually reverted back to 2cpu/4G/20G in `2bcaf94`, matching `docs/vm-cheatsheet.md`
+throughout — a false lead, not a real gap.
+
+Two real, concrete gaps found and fixed:
+
+1. **`docs/git-and-github.md` still described the pre-restructuring model.** Its
+   "three layers of git" section and "Identity" section both said shipyard-repo work
+   happens from "whatever host is running Claude Code — today that's your Windows
+   machine," with a "two separate places, happen to agree" framing for where the
+   `ERDAgent` identity comes from. Both predate §4ab's Shipwright/Neptune split and
+   were never updated when it landed. Fixed: now correctly describes the Shipwright
+   (on-ship Claude Code) doing all shipyard engineering — including its own commits to
+   `ERDA-Will` — under the same ship-wide `ERDAgent` identity `fitout.sh` sets for
+   every charter/crew commit, collapsing "two places that happen to agree" into one
+   real mechanism; Neptune (host-side) is now correctly scoped to `neptune/reports/**`
+   only, under Eric's own separate host identity, irrelevant to shipyard source
+   history. Also fixed the summary table's "who authors commits" row to match.
+2. **`docs/cheatsheet.md` (Eric's own quick-reference doc) never got the Phase 4/5
+   command surface at all.** It tracked cosmetic renames (preview→telescope) across
+   several sessions but never added `/mission`, `/muster`, `/harbor`, `/review`,
+   `/critique`, `/debrief`, or the Chartroom/Bosun windows — meaning the actual daily
+   workflow (plan → muster → review) was undocumented in the one file meant to be a
+   quick reference. Added a new "From the Captain's `pi` session" block covering all
+   six commands plus a one-line pointer to windows 1 (chartroom) and 3 (bosun), in the
+   same terse, informal style as the rest of the file.
+
+Doc-only change, nothing to self-test beyond re-reading both files for accuracy against
+the actual current code/HANDOFF state (no script/logic touched). Didn't find anything
+else worth changing — `agentic-engineering-plan.md`'s phase-status language was left
+alone deliberately, since `system-overview.md`'s "what's real vs. what's designed"
+section already exists specifically to reconcile drift between the original design doc
+and the current implementation, rather than editing the design doc in place.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
