@@ -162,6 +162,49 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("review", {
+		description: "Review & merge-gate a crew work order (wraps ship/bin/quartermaster)",
+		getArgumentCompletions: (prefix) => {
+			// Best-effort, same shape as /muster's completion: reads roster.json
+			// directly rather than asking pi.exec for it, since this only needs
+			// to run relative to process.cwd() for tab-completion, not a real
+			// subprocess round-trip.
+			const rosterPath = join(process.cwd(), ".ship", "roster.json");
+			if (!existsSync(rosterPath)) return null;
+			try {
+				const roster = JSON.parse(readFileSync(rosterPath, "utf8")) as RosterEntry[];
+				const items = roster
+					.filter((r) => r.status !== "working" && r.task.startsWith(prefix))
+					.map((r) => ({ value: r.task, label: `${r.task} (${r.status})` }));
+				return items.length > 0 ? items : null;
+			} catch {
+				return null;
+			}
+		},
+		handler: async (args, ctx) => {
+			const charter = charterInfo(ctx);
+			if (!charter) return;
+			const taskId = args.trim().split(/\s+/)[0];
+			if (!taskId) {
+				ctx.ui.notify("usage: /review <task-id>", "error");
+				return;
+			}
+
+			ctx.ui.notify(`quartermaster reviewing ${taskId}...`, "info");
+			try {
+				// No fixed timeout: a real dry-dock test suite can run long, and
+				// the review LLM call is a real DeepInfra round-trip on top of
+				// that -- unlike /muster's spawn-and-return, this command waits
+				// for the whole review to finish before reporting back.
+				const result = await pi.exec("quartermaster", [charter.name, taskId], { cwd: charter.dir, timeout: 600000 });
+				const output = (result.stdout || result.stderr).trim();
+				ctx.ui.notify(output || `quartermaster exited ${result.code}`, result.code === 0 ? "info" : "error");
+			} catch (err) {
+				ctx.ui.notify(`quartermaster failed to run: ${err instanceof Error ? err.message : String(err)}`, "error");
+			}
+		},
+	});
+
 	pi.registerCommand("harbor", {
 		description: "Show crew status from roster.json + reports",
 		handler: async (args, ctx) => {

@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# quartermaster — review & merge gate for one crew work order (Phase 5)
+# usage: quartermaster <charter> <task-id>
+#   quartermaster royal-guest T-014
+#
+# Merges the crew's branch into `integration` (dry dock), runs the charter's
+# dry-dock test command for real, then hands a headless, tool-less review
+# agent the order + report + diff + real test result to judge APPROVE/REJECT
+# against the order's acceptance criteria. The script does every mechanical
+# thing itself (merge, test execution, rollback on rejection) — the LLM only
+# ever emits a verdict + feedback, the same split /mission and /debrief
+# already use (deterministic gathering, LLM judgment). See
+# ship/prompts/quartermaster.md for the reviewer's contract.
+#
+# Deterministic outcomes never need the LLM at all: a merge conflict or a
+# failing dry-dock test is an automatic REJECT (this mirrors captain.md's own
+# hard rule -- "never merge to main without dry-dock tests passing" -- now
+# enforced here instead of trusted to the Captain's own judgment call).
+set -euo pipefail
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+FLEET="${FLEET:-$HOME/fleet}"
+
+NAME="${1:?usage: quartermaster <charter> <task-id>}"
+TASK="${2:?usage: quartermaster <charter> <task-id>}"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ "$TASK" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid task id: '$TASK' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+
+DIR="$FLEET/$NAME"
+HOLD="$DIR/.hold.git"
+BUS="$DIR/.ship"
+INTWT="$DIR/berths/integration"
+CHARTER_MD="$DIR/charter.md"
+
+[[ -d "$HOLD" ]] || { echo "no hold for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
+
+ROSTER="$BUS/roster.json"
+ENTRY="$(jq -c --arg t "$TASK" '[.[] | select(.task==$t)][0] // empty' "$ROSTER" 2>/dev/null || true)"
+[[ -n "$ENTRY" ]] || { echo "no roster entry for task '$TASK' — has it been mustered?" >&2; exit 1; }
+
+STATUS="$(jq -r '.status' <<< "$ENTRY")"
+BRANCH="$(jq -r '.branch' <<< "$ENTRY")"
+
+case "$STATUS" in
+  working)
+    echo "quartermaster: '$TASK' is still working — nothing to review yet" >&2
+    exit 1
+    ;;
+  merged)
+    echo "quartermaster: '$TASK' was already merged into integration — nothing to do" >&2
+    exit 0
+    ;;
+esac
+
+REPORT="$BUS/reports/$TASK.report.md"
+[[ -f "$REPORT" ]] || { echo "no report yet at $REPORT — crew hasn't finished" >&2; exit 1; }
+
+mapfile -t ORDER_MATCHES < <(compgen -G "$BUS/orders/$TASK-*.md" || true)
+[[ "${#ORDER_MATCHES[@]}" -eq 1 ]] || {
+  echo "expected exactly one order file matching $BUS/orders/$TASK-*.md, found ${#ORDER_MATCHES[@]}" >&2
+  exit 1
+}
+ORDER="${ORDER_MATCHES[0]}"
+
+git -C "$HOLD" show-ref --verify --quiet "refs/heads/$BRANCH" || {
+  echo "no such branch in the hold: $BRANCH" >&2
+  exit 1
+}
+
+mkdir -p "$BUS/reviews"
+REVIEW="$BUS/reviews/$TASK.review.md"
+log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
+
+set_status() {
+  local s="$1"
+  (
+    flock 9
+    TMPJ="$(mktemp)"
+    jq --arg t "$TASK" --arg s "$s" \
+       '(.[] | select(.task==$t) | .status) = $s' \
+       "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
+  ) 9>"$BUS/.roster.lock"
+}
+
+# The diff that actually matters is what the crew introduced since they
+# forked from main -- not integration's post-merge diff, which would also
+# include whatever earlier orders this mission already merged. Computed
+# up front, directly on the bare hold, independent of the merge attempt
+# below (three-dot: changes on $BRANCH since it diverged from main).
+DIFF="$(git -C "$HOLD" diff "main...$BRANCH" 2>/dev/null | head -c 300000)"
+
+write_review() {
+  local verdict="$1" reason="$2"
+  cat > "$REVIEW" <<EOF
+# Review: $TASK ($BRANCH)
+
+**Verdict:** $verdict
+**Reviewed:** $(date -Is)
+
+$reason
+EOF
+}
+
+reject() {
+  local reason="$1"
+  write_review "REJECT" "$reason"
+  set_status "rejected"
+  log "quartermaster-reject" "$TASK $BRANCH"
+  echo "REJECT: $TASK ($BRANCH) — see $REVIEW"
+  echo "$reason"
+  exit 0
+}
+
+approve() {
+  local reason="$1"
+  write_review "APPROVE" "$reason"
+  set_status "merged"
+  log "quartermaster-approve" "$TASK $BRANCH"
+  echo "APPROVE: $TASK ($BRANCH) merged into integration — see $REVIEW"
+  echo "$reason"
+  exit 0
+}
+
+# Serialize reviews: only one quartermaster pass may touch the integration
+# worktree/branch at a time, since it's a single shared worktree (the same
+# one ship/bin/telescope's dev server runs against) -- a concurrent second
+# review would race the merge/reset below.
+exec 8>"$BUS/.integration.lock"
+flock 8
+
+# --- integration branch + worktree: lazy-create, same convention as telescope ---
+if git -C "$HOLD" show-ref --verify --quiet refs/heads/integration; then
+  [[ -d "$INTWT" ]] || git -C "$HOLD" worktree add "$INTWT" integration >/dev/null
+else
+  git -C "$HOLD" branch integration main >/dev/null
+  git -C "$HOLD" worktree add "$INTWT" integration >/dev/null
+fi
+
+[[ -z "$(git -C "$INTWT" status --porcelain)" ]] || {
+  echo "quartermaster: $INTWT has uncommitted changes — clean it up before reviewing (never touched by this script otherwise)" >&2
+  exit 1
+}
+
+PRE_MERGE_SHA="$(git -C "$INTWT" rev-parse HEAD)"
+
+MERGE_LOG="$(mktemp)"
+if ! git -C "$INTWT" merge --no-ff -m "merge: $TASK ($BRANCH)" "$BRANCH" >"$MERGE_LOG" 2>&1; then
+  PRE_MERGE_SHORT="$(git -C "$INTWT" rev-parse --short "$PRE_MERGE_SHA")"
+  git -C "$INTWT" merge --abort 2>/dev/null || true
+  git -C "$INTWT" reset --hard "$PRE_MERGE_SHA" >/dev/null
+  # shellcheck disable=SC2016  # single-quoted on purpose: this is a printf format string (%s placeholders), not meant to expand here
+  printf -v CONFLICT_REASON 'Merge conflict bringing %s into integration (against %s). Needs a rebase onto current integration, or the conflicting order re-ordered/re-scoped. Merge log:\n\n```\n%s\n```' \
+    "$BRANCH" "$PRE_MERGE_SHORT" "$(tail -c 4000 "$MERGE_LOG")"
+  rm -f "$MERGE_LOG"
+  reject "$CONFLICT_REASON"
+fi
+rm -f "$MERGE_LOG"
+
+# --- dry-dock test: charter.md's "dry dock:" field under "## Test commands",
+# same extraction idiom telescope already uses for its "command:"/"port:"
+# fields. A failing (or unconfigured) dry-dock test is judged deterministically,
+# never left to the LLM's discretion. ---
+DRYDOCK_CMD=""
+if [[ -f "$CHARTER_MD" ]]; then
+  DRYDOCK_CMD="$(sed -n '/^## Test commands/,/^## /{/^- dry dock:/s/^- dry dock: *//p}' "$CHARTER_MD" | head -1)"
+fi
+[[ "$DRYDOCK_CMD" == \(* ]] && DRYDOCK_CMD=""
+
+TEST_SUMMARY=""
+if [[ -n "$DRYDOCK_CMD" ]]; then
+  TEST_LOG="$(mktemp)"
+  if (cd "$INTWT" && bash -c "$DRYDOCK_CMD") >"$TEST_LOG" 2>&1; then
+    TEST_SUMMARY="dry-dock command \`$DRYDOCK_CMD\` exited 0 (pass). Tail of output:
+
+\`\`\`
+$(tail -c 8000 "$TEST_LOG")
+\`\`\`"
+  else
+    RC=$?
+    TEST_SUMMARY="dry-dock command \`$DRYDOCK_CMD\` exited $RC (FAIL). Tail of output:
+
+\`\`\`
+$(tail -c 8000 "$TEST_LOG")
+\`\`\`"
+    rm -f "$TEST_LOG"
+    git -C "$INTWT" reset --hard "$PRE_MERGE_SHA" >/dev/null
+    reject "Dry-dock test failed after merging $BRANCH into integration. $TEST_SUMMARY"
+  fi
+  rm -f "$TEST_LOG"
+else
+  TEST_SUMMARY="no dry-dock test command configured in charter.md's '## Test commands' section ('- dry dock: ...') — judge from the diff, report, and acceptance criteria alone."
+fi
+
+# --- LLM judgment: headless, --no-tools (pure text in/out — every fact it
+# needs is already gathered above), same pick-model/SHIP_*_AGENT override
+# pattern as muster and sail's bridge. ---
+if [[ -n "${SHIP_QUARTERMASTER_AGENT:-}" ]]; then
+  REVIEW_AGENT="$SHIP_QUARTERMASTER_AGENT"
+else
+  MODEL="$(pick-model 2>/dev/null || echo zai-org/GLM-5.2)"
+  REVIEW_AGENT="pi --no-tools --provider deepinfra --model $MODEL --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/quartermaster.md -p"
+fi
+
+CTXFILE="$(mktemp)"
+REVIEW_LOG="$(mktemp)"
+trap 'rm -f "$CTXFILE" "$REVIEW_LOG"' EXIT
+{
+  echo "# Work order"
+  cat "$ORDER"
+  echo
+  echo "# Crew report"
+  cat "$REPORT"
+  echo
+  echo "# Diff (branch $BRANCH vs. its fork point from main)"
+  echo '```diff'
+  printf '%s\n' "$DIFF"
+  echo '```'
+  echo
+  echo "# Dry-dock test result"
+  echo "$TEST_SUMMARY"
+} > "$CTXFILE"
+
+export SHIP_ROLE=quartermaster SHIP_CHARTER="$NAME" SHIP_NAME=quartermaster SHIP_TASK="$TASK"
+command -v unlock >/dev/null 2>&1 && eval "$(unlock)"
+
+VERDICT_OUT="$($REVIEW_AGENT "Decide APPROVE or REJECT for this crew work order, per your role contract." < "$CTXFILE" 2>"$REVIEW_LOG" || true)"
+
+FIRST_LINE="$(printf '%s\n' "$VERDICT_OUT" | grep -m1 -E '^VERDICT:' || true)"
+FEEDBACK="$(printf '%s\n' "$VERDICT_OUT" | sed -n '/^VERDICT:/,$p' | tail -n +2)"
+
+case "$FIRST_LINE" in
+  "VERDICT: APPROVE"*)
+    approve "$FEEDBACK"
+    ;;
+  "VERDICT: REJECT"*)
+    git -C "$INTWT" reset --hard "$PRE_MERGE_SHA" >/dev/null
+    reject "$FEEDBACK"
+    ;;
+  *)
+    git -C "$INTWT" reset --hard "$PRE_MERGE_SHA" >/dev/null
+    reject "Quartermaster review agent gave no parseable verdict — treating as REJECT (a wrong APPROVE costs more than a cautious REJECT). Raw output:
+
+\`\`\`
+$(printf '%s' "$VERDICT_OUT" | head -c 4000)
+\`\`\`"
+    ;;
+esac

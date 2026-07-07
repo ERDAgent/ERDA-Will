@@ -81,7 +81,7 @@ if [[ -z "$URL" && "$LOCAL_ONLY" -eq 0 ]]; then
   fi
 fi
 
-mkdir -p "$DIR"/{berths,.ship/orders,.ship/reports,.ship/log}
+mkdir -p "$DIR"/{berths,.ship/orders,.ship/reports,.ship/reviews,.ship/log}
 cd "$DIR"
 
 # --- the hold: bare repo all berths hang off ---
@@ -131,7 +131,11 @@ if [[ ! -f charter.md ]]; then
 - (fill in: languages, frameworks, formatter, lint)
 
 ## Test commands
-- (fill in: how crew prove their work, e.g. \`npm test\`)
+- crew (per-order): (fill in: how crew prove their work, e.g. \`npm test\`)
+
+Read by \`ship/bin/quartermaster\` before approving a merge into \`integration\` --
+keep this field to the exact test invocation, nothing else on the line.
+- dry dock: (fill in, e.g. \`npm test\`)
 
 ## Dev server
 Read by \`ship/bin/telescope\` (the deck's "telescope" window) and \`erda telescope\` (the

@@ -106,12 +106,36 @@ invoking `muster`. Designed eventually to own spawning/monitoring/restarting stu
 crew agents as its own process, so the Captain doesn't have to babysit turn limits.
 
 ### Quartermaster — review & merge gate
-**Not yet an active agent.** Today it's window 4, a live view of hold branches and
-recent commits — read-only. The Captain performs the actual review/merge-gating
-function itself (step 5–6, REVIEW/INTEGRATE, above). Designed eventually to be the
-one place diffs get reviewed and dry-dock tests run before anything reaches `main` —
-possibly on a different (stronger) model than the crew's, per an open HANDOFF
-question, not yet decided.
+**A real agent as of Phase 5** (`ship/bin/quartermaster`, wrapped by the bridge's
+`/review <task-id>`). Window 4 is unchanged (still the read-only hold/branches view) —
+the Quartermaster itself runs headless, on demand, once per `done` report, not as a
+standing window process.
+
+What it actually does, in order, for one task: merges the crew's branch into
+`integration` (creating that branch/worktree on first use, same lazy-create
+convention `ship/bin/telescope` already uses); runs the charter's real dry-dock test
+command (`charter.md`'s `## Test commands` → `- dry dock: ...` field) against the
+merged result; and — only once that mechanical gate passes — hands a headless,
+**tool-less** review agent (`ship/prompts/quartermaster.md`, GLM-5.2 High by default,
+same model routing as crew, overridable via `SHIP_QUARTERMASTER_AGENT` for the "maybe
+a stronger model" question the plan left open) the order, the crew's report, the real
+diff, and the real test result — pure text in, `VERDICT: APPROVE`/`VERDICT: REJECT`
+text out, nothing else. The reviewer has no filesystem or shell access at all: every
+fact it needs to judge is already gathered deterministically by the script, so there's
+nothing for a stray tool call to break.
+
+A merge conflict, a failing dry-dock test, or a malformed/missing verdict are all
+automatic REJECTs — never left to the LLM's discretion, mirroring the Captain's own
+"never merge without dry-dock tests passing" hard rule. Any REJECT rolls `integration`
+back to its pre-merge commit (via `git reset --hard` to a SHA captured before the
+merge attempt) and writes `.ship/reviews/<task-id>.review.md`; the Captain re-musters
+the same task with that feedback. Reviews for one charter are serialized through a
+`flock` on `.ship/.integration.lock`, since every review shares the one
+`berths/integration` worktree (the same one the telescope dev server runs against).
+
+Still not automatic: the Captain decides *when* to call `/review` and whether to
+re-muster after a REJECT — this is a gate the Captain drives, not a background
+watchdog. That's Bosun's eventual job (dispatch/monitoring), not this one.
 
 ### Purser — cost
 **Not yet an active agent, but cost tracking is real now, not an estimate.** pi's own

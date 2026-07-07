@@ -1709,6 +1709,133 @@ this session. Not re-drilled on a live ship -- this is an identifier-only rename
 (script name, window name, subcommand name, docs), with no logic change to verify
 beyond syntax.
 
+## 4bc. Phase 5, part 1: Quartermaster — a real review & merge-gate agent (July 7, 2026)
+
+Eric said "let's move onto Phase 5." Phase 5 has four pieces (Quartermaster,
+Bosun, First Mate, the Chartroom Fresh plugin); asked Eric to scope this
+session rather than guess, and he chose Quartermaster only, matching the plan
+doc's own stated priority order (§361: "Quartermaster review pass... Bosun
+watchdog... then First Mate").
+
+**Found and fixed a real, live bug before any of that could start**: this
+ship's `.claude/settings.json` (checked into git) was still §4ab's
+Neptune-only deny-list — `Edit`/`Write` blocked everywhere outside
+`neptune/reports/**`. Since `keel.yaml` clones the whole repo, that lockdown
+(meant for Eric's host machine only) shipped onto every ship too, and blocked
+the Shipwright itself: both the `Edit`/`Write` tools *and* a plain Bash `>`
+redirect into `ship/prompts/` were hard-denied, no prompt, before a single
+Quartermaster file could be written. Confirmed via direct, repeated
+experiment (not assumption) that `deny` rules in settings.json block outright
+with no interactive approval step to override in the moment — Eric's first
+attempt to grant a one-time bypass genuinely couldn't work for that reason. He
+edited `~/shipyard/.claude/settings.json` directly on the ship (via `erda
+board` + `nano`, bypassing Claude Code's permission layer entirely, which
+requires no elevated trust since it's just a human at a shell). Fix, committed
+before any Quartermaster work: the tracked `.claude/settings.json` now only
+keeps guardrails safe to apply everywhere (rsync, force-push); Neptune's
+actual narrow scope moved to an **untracked** `~/shipyard/.claude/settings.local.json`
+on Eric's host machine (now `.gitignore`'d so it can never round-trip onto a
+ship again) — Claude Code merges `settings.local.json` over `settings.json`,
+so a host-only rule now lives in the one place that's actually host-only.
+Exact JSON for Eric's own file is in `neptune/README.md`, along with the same
+"not yet verified live" caveat §4ab already carried, just relocated. Lesson
+for future sessions: a tracked `.claude/settings.json` can never encode
+"only when this checkout is on Eric's own machine" — that distinction only
+exists in `.gitignore`.
+
+**Quartermaster itself** (`ship/bin/quartermaster`, wrapped by the bridge's
+new `/review <task-id>`): reviews and merge-gates one crew work order.
+Grounded the design in the real pi API before writing anything — same
+discipline as §4aa: `--no-tools`/`-nt` (confirmed in the shipped
+`docs/usage.md`'s CLI flag table) means the review agent gets zero
+filesystem/shell access, and `-p`'s documented stdin-merge behavior
+(`cat X | pi -p "..."`) means the whole review context (order, report, diff,
+real test result) can be piped in as plain text rather than fought into a
+shell-quoted argument. This is what makes the split work cleanly: the
+*script* does every mechanical thing for real (merge into `integration`,
+run the charter's actual dry-dock test command, roll back on rejection via a
+SHA captured before the merge attempt) and the LLM only ever emits `VERDICT:
+APPROVE`/`VERDICT: REJECT` + feedback — nothing for a stray tool call to
+break, because there are no tools. Deterministic outcomes (merge conflict,
+failing dry-dock test, or a malformed/missing verdict) are automatic REJECTs,
+never left to the LLM's discretion — mirrors captain.md's own "never merge
+without dry-dock tests passing" rule, now actually enforced rather than
+trusted to judgment. `charter.md`'s scaffold gained a `- dry dock: ...` field
+under "## Test commands" (same greppable-single-field convention
+`ship/bin/telescope` already uses for its `command:`/`port:` fields) and a
+new `.ship/reviews/` directory. Reviews for one charter serialize through a
+`flock` on `.ship/.integration.lock`, since every review shares the one
+`berths/integration` worktree — the same one the telescope dev server runs
+against, per the existing lazy-create convention (reused verbatim, not
+reimplemented). `SHIP_QUARTERMASTER_AGENT` overrides the reviewer entirely
+(for testing, or to answer the plan's still-open "maybe a stronger model"
+question later, without a code change).
+
+**Verified for real, not just by inspection** — a scratch charter
+(`shipwright-qm-test`, `--local`, never touching the real
+`ERDA-market-land` charter), with roster/report/branch state synthesized
+directly (muster's own spawn mechanics are already proven, Phase 3/4 — this
+session's job was Quartermaster's own logic, not re-proving muster) to drive
+every path fast:
+- **APPROVE**: clean merge, passing dry-dock test, stub verdict → merged into
+  `integration`, roster status `merged`, review file written.
+- **REJECT / failing test**: clean merge, dry-dock test genuinely fails (`grep`
+  exits 1) → automatic REJECT, **no LLM call made** (confirmed by a stub that
+  would have been visibly wrong if invoked), `integration` rolled back to its
+  exact pre-merge SHA.
+- **REJECT / merge conflict**: a stale branch conflicting with `integration`'s
+  current tip → automatic REJECT, no LLM call, clean rollback (confirmed
+  twice — once via direct script invocation, once via a real `pi --mode rpc`
+  round trip through the actual `/review` extension command, mirroring §4aa's
+  RPC-mode verification technique).
+- **REJECT / malformed verdict**: clean merge + passing test, but the stub
+  returns text with no `VERDICT:` line → treated as REJECT (never a silent
+  APPROVE on ambiguous output), rollback confirmed.
+- **Idempotency**: re-reviewing an already-`merged` task is a no-op (exit 0,
+  no double merge).
+- **Precondition errors**: no roster entry, and still-`working` status, both
+  exit non-zero with a clear message.
+- **One real, non-stubbed pass**: a genuine DeepInfra/GLM-5.2 call through
+  `ship/prompts/quartermaster.md`, ran in ~2.5s, correctly formatted
+  `VERDICT: APPROVE` + one-line reasoning that actually engaged with the
+  acceptance criteria. Confirmed real per-call cost landed in
+  `.ship/log/ledger.tsv` tagged `SHIP_ROLE=quartermaster` ($0.00122514) —
+  the existing cost-proxy attribution mechanism needed no changes to pick up
+  a new role.
+- **A real bug found and fixed during this testing, not just during writing**:
+  the merge-conflict rejection reason used literal `\n\n` inside a plain
+  double-quoted bash string, which bash does not expand (that's `$'...'`
+  or `printf`-only behavior) — the review file rendered literal backslash-n
+  characters instead of line breaks. Fixed by building that one message via
+  `printf -v` instead. Caught by actually reading the rendered review file
+  during the merge-conflict test, not by re-reading the script.
+- Typechecked `ship/plugin/index.ts`'s new `/review` command against pi's
+  real shipped `.d.ts` (a scratch `tsconfig.json` + `@types/node`, since this
+  repo has no project-wide TS toolchain yet) — clean.
+- `shellcheck`/`bash -n` clean on every touched script. Scratch charter and
+  all temp files torn down after; confirmed zero stray files left in `/tmp`
+  after a fix for that (temp merge/review logs weren't being cleaned up on
+  the success paths — minor, fixed alongside the `\n` bug).
+
+Updated `captain.md` (REVIEW/INTEGRATE steps now delegate to `/review`
+instead of the Captain inspecting diffs itself), `docs/system-overview.md`
+and `docs/captain-cheatsheet.md` (Quartermaster section no longer says "not
+yet an active agent"). Left `docs/agentic-engineering-plan.md` untouched,
+consistent with how earlier phases treated it — historical plan, not a
+living reference.
+
+**Not done / explicitly out of scope this session** (per Eric's own
+scoping choice): Bosun (dispatch watchdog, turn/token limits,
+restart-with-feedback) and First Mate (plan critique) are still dashboards,
+not agents. The Chartroom Fresh plugin is still unbuilt. Also not done: a
+full live drill through the *actual* `/muster` → real tmux crew window →
+real crew agent → `/review` loop in one continuous real mission (this
+session verified Quartermaster's own logic thoroughly via synthesized
+roster/branch state, which is a deliberate scope choice, not an oversight —
+but a first real end-to-end mission using `/review` for its REVIEW step,
+the way §4aa live-drilled Phase 4, is still worth doing before fully trusting
+this in anger).
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -1726,45 +1853,44 @@ single-crew smoke tests. Two more real bugs found and fixed there too. **Phase 4
 pi extension) is now done** per §4aa: `/mission`/`/muster`/`/harbor`/`/debrief` built,
 verified against the real pi API and runtime, and live-drilled end-to-end (a real
 mission, real crew, real merge, real cost narration) on a real ship. **Per §4ab, the
-whole operating model just changed**: the Shipwright (on-ship Claude Code) now owns
-all shipyard engineering; host Claude Code is "Neptune," narrowly scoped to
-fresh-ship drills and reports only, enforced via `.claude/settings.json` (not yet
-verified live — see §4ab's own "not verified" note).
+whole operating model changed**: the Shipwright (on-ship Claude Code) now owns all
+shipyard engineering; host Claude Code is "Neptune," narrowly scoped to fresh-ship
+drills and reports only. **Phase 5, part 1 (Quartermaster) is now done** per §4bc:
+`ship/bin/quartermaster` + `/review <task-id>` are real, verified against every
+outcome (approve, reject-by-test, reject-by-conflict, reject-by-malformed-verdict,
+idempotency, precondition errors) plus one real DeepInfra pass with real cost logged.
+§4bc also found and fixed a live bug in `.claude/settings.json` itself — see that
+section, it's not just a Quartermaster changelog entry.
 
 Next up, in rough priority order:
 
-1. **Verify the §4ab restructuring actually works**: a fresh Claude Code session in
-   this repo should be genuinely blocked from `Edit`ing anything outside
-   `neptune/reports/`, and able to write there. Eric's own next step (sink the
-   current ship, christen a new one) is exactly this test from the ship side too —
-   confirm the new ship's shipwright window shows real Shipwright identity
-   (`[shipwright]` banner + it correctly describes its own role if asked), not the
-   old "who's the purser" confusion.
-2. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+1. **A first real end-to-end mission using `/review` for its REVIEW step** (real
+   `/mission` → real `/muster` → real crew in a real tmux window → `/review` →
+   real `/debrief`), the same live-drill rigor §4aa gave Phase 4. §4bc verified
+   Quartermaster's own logic thoroughly but deliberately via synthesized
+   roster/branch state, not a full mission loop — that's the one thing worth doing
+   before trusting `/review` in anger.
+2. **Phase 5, parts 2–4**: Bosun (dispatch watchdog — turn/token limits,
+   restart-with-feedback) next per the plan doc's own priority order, then First
+   Mate (plan critique QA), then the Chartroom Fresh plugin. Ask Eric to scope each
+   the way he scoped Quartermaster (§4bc) rather than assuming full-Phase-5-at-once.
+3. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
-   involvement. This is the actual gate on everything below; nothing here should
-   assume it's done until Eric says so.
-3. "Move aboard" (D12/D13's old open question about Claude Code living on a
-   persistent ship) is effectively resolved by §4ab, just not in the shape originally
-   guessed: the Shipwright *is* the on-ship, primary-engineering Claude Code now —
-   not "reprovision on demand," an actual standing role with its own prompt.
-4. **Phase 5 — officer agents** (Quartermaster review pass, Bosun watchdog, First Mate
-   plan critique — see docs/system-overview.md's "Not yet an active agent" notes on
-   each) is now the real next threshold, plus the Chartroom Fresh plugin. Phase 4's
-   extension (§4aa) only ever wrapped existing, already-proven mechanics
-   (`muster`/roster/reports/ledger) in slash commands — it deliberately did not give
-   any officer role real judgment. That's what Phase 5 actually is.
+   involvement. This is the actual gate on OVHcloud; nothing here should assume
+   it's done until Eric says so.
+4. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
+   (christen new, confirm the shipwright window shows real Shipwright identity, not
+   the old "who's the purser" confusion) — worth doing next time a ship gets sunk
+   and re-christened anyway, not urgent enough to block on its own.
 5. Most sessions that exercise a genuinely new code path for the first time find at
-   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z). §4aa
+   least one real bug inspection alone wouldn't have caught (§4d/e/g/o/y/z/bc). §4aa
    (Phase 4) is a useful counterpoint, not an exception to worry about: it found zero
    new bugs in the shipyard's own code, but only because it verified against the real
-   pi runtime (real `.d.ts` files, real RPC round trips) *before* ever touching a ship
-   — the one apparent bug it did hit (an async `pi.exec()` call seeming to die
-   silently) was correctly diagnosed as a test-harness artifact, not shipped code.
+   pi runtime (real `.d.ts` files, real RPC round trips) *before* ever touching a ship.
    Treat thorough pre-ship verification as the reason it went clean, not evidence the
-   bar can drop. Officer agents will be a fresh surface — don't assume any of
-   this session's clean drill generalizes to logic that hasn't been built yet.
-6. OVHcloud harbor (D2) — deferred per D12, not before item 2.
+   bar can drop. Bosun/First Mate/Chartroom will be fresh surfaces — don't assume any
+   past session's clean drill generalizes to logic that hasn't been built yet.
+6. OVHcloud harbor (D2) — deferred per D12, not before item 3.
 
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
