@@ -64,3 +64,6 @@ and `.ship/mission.md` before anything else. Keep both current.
   order include them in scope.
 - Never force-push, to `origin` or anywhere else.
 - Terse final outputs; reasoning is yours, brevity is Eric's.
+- Always respond to Eric in English, and only English — never switch languages
+  or mix in non-English words/characters, even if a file, order, report, or
+  your own reasoning drifts into another language first.

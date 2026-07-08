@@ -2283,6 +2283,23 @@ step already has Eric approve the whole mission through INTEGRATE up front, so h
 the Captain notice its own crew finishing is closing an accidental gap, not granting a
 new capability, the same reasoning First Mate used to skip a scoping question in §4bf.
 
+## 4bj. English-only rule for the Captain (July 7, 2026)
+
+Eric had noticed non-English characters occasionally slipping into the Captain's
+responses. Added a hard rule to `ship/prompts/captain.md`: always respond to Eric in
+English only, never switching languages even if a file/order/report or the model's own
+reasoning drifts into another language first.
+
+Verified this is a real fix, not just hopeful wording, with a live A/B test against the
+real model rather than assuming a prompt addition works: ran `pi -p` with
+`--append-system-prompt` set to the captain prompt, real DeepInfra/GLM-5.2, given a
+message containing Chinese text asking for a Chinese reply. With the **old** (pre-edit)
+prompt, GLM-5.2 genuinely replied in Chinese — confirming this is a real model behavior,
+not something Eric imagined. With the **new** prompt (identical message), it replied in
+English. Scoped to Captain only, per Eric's exact request — First Mate/Quartermaster/
+crew prompts (which also run on GLM-5.2) weren't touched; worth the same fix if the leak
+ever shows up from those roles too, but not assumed without being asked.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
