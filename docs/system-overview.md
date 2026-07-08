@@ -12,10 +12,10 @@ One **Ship** (a Linux VM) hosts many **Charters** (projects). Each charter has o
 breaks it into **work orders**, and delegates each order to a disposable **crew** agent
 working alone in its own git worktree and branch. A layer of **Officers** (First Mate,
 Bosun, Quartermaster, Purser) sits between Captain and crew to handle QA, dispatch,
-review, and cost — today they're mostly dashboards you read yourself; the design lets
-them become real agents later without changing anything else. Everything coordinates
-through plain files (`.ship/`), not a chat log or a database, so any of this is
-inspectable and resumable by hand.
+review, and cost — as of Phase 5, First Mate/Bosun/Quartermaster are real (Purser
+remains a dashboard with real numbers behind it, see the status table below).
+Everything coordinates through plain files (`.ship/`), not a chat log or a database,
+so any of this is inspectable and resumable by hand.
 
 ## Chain of command
 
@@ -36,9 +36,9 @@ CREW  (1..N, running in parallel)
 Two roles run outside this chain entirely: **Shipwrights** (Claude Code, Codex) —
 system-level repair and support for the ship/scripts themselves, not daily project
 work — and **you**, who never touches crew or officers directly. The hierarchy is
-*elastic*: for a small mission the Captain just performs officer duties itself rather
-than ceremonially routing through four dashboards. Don't build the third tier before
-the second one hurts.
+*elastic*: officers are real now, but nothing forces a Captain to route every small
+mission through all four of them ceremonially if a lighter touch fits. Don't build the
+third tier before the second one hurts.
 
 ## The roles
 
@@ -58,13 +58,16 @@ projects, deliberately, for context purity and cost attribution. Its loop:
 2. **PLAN** — writes `.ship/mission.md` and one work order per task, decomposed so no
    two concurrent orders touch the same files. Shows you the plan and cost. **Stops
    and waits for your approval** — no exceptions.
-3. **MUSTER** — runs `muster <charter> <task-id> <order-file>` per approved order
-   (performing the Bosun's dispatch function itself, today).
-4. **WATCH** — polls `.ship/roster.json` and `.ship/reports/`. A crew SOS comes back
+3. **MUSTER** — runs `muster <charter> <task-id> <order-file>` per approved order.
+4. **WATCH** — no manual polling needed: the bridge extension tracks the mustered
+   wave via `log/events.log` and wakes the Captain automatically, with every
+   finished task's report already in hand, the moment the whole wave reaches a
+   terminal state (see "Wave-completion watcher" below). A crew SOS comes back
    to the Captain, not to you, unless it changes scope or cost.
-5. **REVIEW** — inspects each finished branch's diff against its order's acceptance
-   criteria itself (performing the Quartermaster's review function, today). Accepts,
-   or rejects with feedback to a **fresh** crew agent (never resumes a rejected one).
+5. **REVIEW** — runs `/review <task-id>` (the Quartermaster) for each finished
+   task; it merges into `integration`, runs the real dry-dock tests, and judges
+   the diff against the order's acceptance criteria. Accepts, or rejects with
+   feedback to a **fresh** crew agent (never resumes a rejected one).
 6. **INTEGRATE** — merges accepted branches into `integration` (dry dock), runs the
    full test suite, fast-forwards `main` (home port), removes berths, logs everything.
 7. **DEBRIEF** — summarizes to you: shipped, blocked, cost.
@@ -84,7 +87,24 @@ then hands those facts to the Captain to narrate; the summary's numbers are alwa
 real, never re-derived or guessed by the model). The split is deliberate: anything
 that's just files and one subprocess call (`/muster`, `/harbor`) never touches the LLM;
 anything that's inherently a language task (planning, narrating) still goes through the
-Captain's own judgment, just grounded in facts the extension gathered first.
+Captain's own judgment, just grounded in facts the extension gathered first. Phase 5
+added two more commands the same way: `/critique` (First Mate, wraps
+`ship/bin/first-mate`) and `/review <task-id>` (Quartermaster, wraps
+`ship/bin/quartermaster`).
+
+**Wave-completion watcher (real, working today)**: the same extension also closes the
+WATCH step's actual gap — captain.md always said "monitor roster.json" without ever
+saying how a `pi` session, which only does anything when it gets a turn, would do that
+on its own. On `session_start` (bridge only, gated on `SHIP_ROLE=captain` so it stays
+inert in crew/quartermaster/first-mate's own invocations of this same globally-loaded
+extension), it starts a timer that tracks mustered tasks against `log/events.log`'s
+durable `muster`/`crew-done`/`crew-failed` lines — not by polling `roster.json`'s live
+status field, which a real drill showed can miss fast-finishing crew entirely between
+polls. The moment every task in the current wave has a terminal event, it wakes the
+Captain with `pi.sendMessage(..., {triggerTurn: true})`, handing it each task's real
+report content and pointing it at REVIEW — live-verified end to end: mustered crew
+finish, and the Captain autonomously reads the reports, runs `/review` on each, and
+proceeds, with nothing typed into that pane.
 
 Hard rules it operates under: never merge to `main` without dry-dock tests passing,
 never exceed a mission budget without asking, never touch (or let an order touch) a

@@ -21,8 +21,14 @@ and `.ship/mission.md` before anything else. Keep both current.
    pass along — those specific findings are mechanically checked, not a
    matter of opinion.
 3. MUSTER — run `muster <charter> <task-id> <order-file>` per approved order.
-4. WATCH — monitor `.ship/roster.json` and `.ship/reports/`. A crew SOS comes
-   back to you, not to Eric, unless it changes the mission's scope or cost.
+4. WATCH — you don't need to poll for this yourself: the bridge extension
+   watches the mustered wave and wakes you automatically, with each finished
+   task's report already in hand, the moment every crew member from this
+   wave reaches a terminal state. When that happens, proceed straight to
+   REVIEW below. A crew SOS comes back to you, not to Eric, unless it changes
+   the mission's scope or cost — roster.json can't distinguish a clean SOS
+   exit from a normal success, so read each report yourself rather than
+   trusting its status field alone.
 5. REVIEW — for each `done` report, run `/review <task-id>` (the
    Quartermaster). It merges the branch into `integration`, runs the
    charter's real dry-dock test, and judges the diff against the order's

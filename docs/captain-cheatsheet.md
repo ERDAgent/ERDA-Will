@@ -89,10 +89,13 @@ and waits.
 ## While crew is working
 
 The Captain runs `muster <charter> <task-id> <order-file>` itself (you don't need to
-type this by hand once you've approved) and then **watches** — polling
-`.ship/roster.json` and `.ship/reports/`. A crew SOS (stuck, scope conflict, can't
-meet acceptance criteria) comes back to the Captain, not to you, *unless* it changes
-the mission's scope or cost — then it surfaces to you.
+type this by hand once you've approved) and then **watches** — you don't need to
+prompt it once the wave finishes, either: the bridge extension tracks the mustered
+wave in the background and wakes the Captain automatically, with every finished
+task's report already in hand, the moment the whole batch reaches a terminal state.
+It picks straight back up into REVIEW on its own. A crew SOS (stuck, scope conflict,
+can't meet acceptance criteria) comes back to the Captain, not to you, *unless* it
+changes the mission's scope or cost — then it surfaces to you.
 
 You can just ask:
 > "Status?" / "How's T-002 doing?" / "Anything stuck?"

@@ -2188,6 +2188,101 @@ alone deliberately, since `system-overview.md`'s "what's real vs. what's designe
 section already exists specifically to reconcile drift between the original design doc
 and the current implementation, rather than editing the design doc in place.
 
+## 4bi. Wave-completion watcher — the Captain wakes itself up (July 7, 2026)
+
+Eric's ask: the Captain has no way to know when mustered crew finish short of him
+noticing an idle tmux window and prompting it — captain.md's WATCH step has always
+said "monitor `.ship/roster.json`" without ever saying *how*, since a `pi` session only
+does anything when it gets a turn. Confirmed via research (grepping `HANDOFF.md`, both
+docs, the design doc) this exact gap had never been previously raised or deliberately
+deferred — a real, unaddressed hole, not a known tradeoff.
+
+**Grounded in pi's real shipped package before writing anything** (locally installed
+`@earendil-works/pi-coding-agent`): `examples/extensions/file-trigger.ts` is a working,
+shipped prototype of exactly this shape — register a watcher inside
+`pi.on("session_start", ...)`, call `pi.sendMessage({customType, content, display:true},
+{triggerTurn:true})` from the callback to wake an idle session and inject a message
+that immediately triggers a turn. Confirmed via `dist/core/extensions/types.d.ts` that
+`sendMessage`/`sendUserMessage` live on the `ExtensionAPI` closure (callable from any
+background callback, not just inside a command handler), that event handlers receive
+`ctx: ExtensionContext` (has `.cwd`, `.ui`, `.isIdle()` — same shape already relied on
+elsewhere in `ship/plugin/index.ts`), and that there's no cross-process "attach to an
+already-running interactive pi" mechanism (RPC/`--mode json` only work for a process
+you spawn and own stdin for) — so this had to be an in-process mechanism inside the
+Captain's own bridge `pi`, not `tmux send-keys` or an external script.
+
+**Built**: a `session_start`/`session_shutdown` pair in `ship/plugin/index.ts`, gated on
+`process.env.SHIP_ROLE === "captain"` (set only for the bridge window by `sail`, so it
+stays inert in crew's headless `pi -p` and quartermaster's/first-mate's own `--no-tools`
+invocations of this same globally-loaded extension). `roster.json` has no wave/batch
+concept at all — just individual task entries — so "a wave" is treated as the set of
+tasks mustered together since the tracker last fired, with no schema changes needed
+anywhere.
+
+**A real, live-drill-only bug found and fixed, exactly the kind inspection alone
+wouldn't have caught**: the first version tracked wave membership by polling
+`roster.json`'s live `status` field on a `setInterval` (matching Bosun's `watch -t -n 5`
+cadence) — accumulating whichever tasks were currently `"working"` each tick, firing
+once that set drained to empty. Verified thoroughly via the RPC-mode scriptable-harness
+methodology (§4aa/§4bd prior art: start a real `pi --mode rpc` session, feed it
+hand-written `roster.json` states between polls, watch the event stream for the
+resulting `wave-complete` custom message) — worked perfectly there, including a second
+bug this same testing caught and fixed first: accumulating by *replacing* `lastWorking`
+with the current working set each tick silently dropped a task that had already
+finished while a sibling was still working (found by staging a two-task wave's
+completion one task at a time — the fix was to union into the tracked set, not
+replace it).
+
+But a **real live-ship drill** (scratch charter `shipwright-wave-test`, real `sail`,
+real `muster` with a fast stub crew agent) surfaced a second, more serious bug the RPC
+harness's hand-timed test never would have: two stub crew mustered and finished in
+~2 seconds, well within the default 5-second poll interval — no tick ever sampled
+`roster.json` while either task was still `"working"`, so the wave silently never
+armed and the notification never fired at all, no matter how long the ship then sat
+idle. This is a real race inherent to polling an *instantaneous* snapshot of fast-moving
+state, not a timing fluke of the test. Root-caused and fixed by switching the whole
+mechanism to read `log/events.log` instead — an append-only, durable log muster already
+writes (`muster\t<task> <branch>` at spawn, `crew-done`/`crew-failed\t<task> rc=<n>` at
+finish) — so a poll tick just reads whatever's newly appended since last time; it can
+never miss a transition regardless of how fast crew finish or how long the interval is,
+since nothing is sampled at an instant. `roster.json` is still consulted, but only once,
+for the final notification's status/report content — never for detecting the
+transition itself.
+
+**Verified end to end after the fix**, live, no stub shortcuts on the mechanism itself:
+`tsc` typechecks clean against pi's real `.d.ts`; the RPC harness re-confirmed the fix
+(staged two-task drain, multiple sequential waves firing correctly, no re-fire while
+idle, `SHIP_ROLE=crew` correctly inert); then a fresh live-ship drill with the *same*
+fast (1s) stub crew that broke the old design — this time the real bridge Captain
+(real GLM-5.2, real DeepInfra cost, ~$0.03 total for the whole drill) woke up
+completely unprompted, read both crew reports, correctly judged them clean (no SOS),
+ran the real Quartermaster's `/review` against both tasks on its own, got genuine
+REJECT verdicts (the stub deliberately writes an out-of-scope file, so this was a
+correct rejection, not a test artifact), and began its own redo protocol — all with
+zero input typed into that pane. Stopped it there (Escape) before letting a doomed
+redo loop burn further real cost, since the stub can never pass review by design.
+Scratch charter and deck torn down after; Eric's real live charter (`ERDA-market-land`,
+with real crew working throughout this session) was never touched, confirming the "own
+disposable scratch charter, never an in-progress real one" rule holds even when tested
+concurrently with real live work on the same ship.
+
+Updated `ship/prompts/captain.md`'s WATCH step (no longer vague "monitor..." — describes
+the actual mechanism and that roster status can't distinguish SOS from success),
+`docs/system-overview.md` (new "Wave-completion watcher" section; also fixed adjacent
+stale text in the same file's intro/loop description that still said officers were
+"mostly dashboards" and Captain "performs officer duties itself" — pre-Phase-5 language
+that survived untouched even after §4bg updated the file's *later* sections, a real
+same-file inconsistency worth closing while already there), and
+`docs/captain-cheatsheet.md`'s "While crew is working" section.
+
+**Not done**: no toggle was exposed beyond the `SHIP_WAVE_NOTIFY=0`/`SHIP_WAVE_POLL_MS`
+env vars already wired in following this project's existing `SHIP_*` override
+convention — no scoping question was asked of Eric first, since (unlike Bosun's
+auto-restart question) this doesn't cross a new autonomy threshold: `captain.md`'s PLAN
+step already has Eric approve the whole mission through INTEGRATE up front, so having
+the Captain notice its own crew finishing is closing an accidental gap, not granting a
+new capability, the same reasoning First Mate used to skip a scoping question in §4bf.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
@@ -2235,7 +2330,13 @@ caught by the LLM pass independently flagging what the mechanical check missed).
 session driven via `tmux send-keys` (open mission/order/report, SOS flagging, a
 real `tmux select-window` jump both contextually and via prompt, and a live
 dashboard panel). **Phase 5 is now fully built** — Quartermaster, Bosun (v1),
-First Mate, and Chartroom are all real, not dashboards/placeholders.
+First Mate, and Chartroom are all real, not dashboards/placeholders. **Per §4bi, the
+Captain's WATCH step is no longer a documentation gap** — a `session_start`/
+`session_shutdown` watcher in `ship/plugin/index.ts` wakes the bridge automatically
+the moment a mustered wave finishes (tracked via `log/events.log`, not by polling
+`roster.json`'s live status, after a real live drill caught the polling version
+missing fast-finishing crew entirely), live-verified with the real Captain
+autonomously reading reports and running `/review` on its own, no prompting.
 
 Next up, in rough priority order:
 
@@ -2250,8 +2351,11 @@ Next up, in rough priority order:
    call in §4be); a live mission drill that exercises Chartroom mid-mission
    (verified thoroughly in isolation per §4bg, not yet watched update live during
    a real running mission the way §4bd drilled Quartermaster); whether Quartermaster
-   reviews ever route to a stronger model (open question #4 below). None of these
-   block anything — raise them only if Eric asks what's left on Phase 5.
+   reviews ever route to a stronger model (open question #4 below); the wave-completion
+   watcher's `session_shutdown` cleanup path (§4bi) was verified by code parity with
+   pi's own shipped `titlebar-spinner.ts` idiom, not by a dedicated live test — low
+   risk, but flagged rather than silently assumed. None of these block anything —
+   raise them only if Eric asks what's left on Phase 5.
 3. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
    (christen new, confirm the shipwright window shows real Shipwright identity, not
    the old "who's the purser" confusion) — worth doing next time a ship gets sunk
