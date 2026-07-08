@@ -123,8 +123,8 @@ WINDOW_DIRS=(
 # buffer -- can't fix a font's own ZWJ support from here, only make the gap
 # more robust against it.
 WINDOW_NAMES=(
-  "$(g 🧑‍✈) Bridge"         "$(g 🗺)Chartroom"      "$(g 🧑‍🔬) First Mate"    "$(g 🧑‍🔧) Bosun"
-  "$(g 📋)Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️)Engine Room"      "$(g 🧑‍🏭) Shipwright" "$(g 🔭)Telescope"
+  "$(g 🧑‍✈) Bridge"         "$(g 🗺) Chartroom"      "$(g 🧑‍🔬) First Mate"    "$(g 🧑‍🔧) Bosun"
+  "$(g 📋) Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️) Engine Room"      "$(g 🧑‍🏭) Shipwright" "$(g 🔭) Telescope"
 )
 WINDOW_CMDS=(
   "$BRIDGE_CMD"
