@@ -2,7 +2,7 @@
 
 Async, git-mediated communication between the **Shipwright** (runs on a real
 ship, `~/shipyard`, owns all shipyard engineering — see
-`ship/prompts/shipwright.md`) and **Neptune** (runs on Eric's own machine,
+`ship/prompts/shipwright.md`) and **Neptune** (runs on the Admiral's own machine,
 narrowly scoped to provisioning-fresh-ship-from-scratch verification — see
 `CLAUDE.md`'s Neptune section).
 
@@ -20,7 +20,7 @@ itself.
 
 1. Shipwright writes `neptune/requests/<ID>-<slug>.md` (template below),
    commits, pushes.
-2. Eric tells Neptune to check for pending requests (no automatic trigger —
+2. The Admiral tells Neptune to check for pending requests (no automatic trigger —
    Shipwright and Neptune are on different machines with no live channel
    between them other than this repo).
 3. Neptune identifies pending requests: a request file with no matching
@@ -31,7 +31,7 @@ itself.
    `neptune/reports/<ID>.report.md` (template below), commits, pushes.
 4. Shipwright reads the report on its next `git pull`.
 
-## Neptune's permission lockdown lives on Eric's machine only
+## Neptune's permission lockdown lives on the Admiral's machine only
 
 `.claude/settings.json` is tracked, so `keel.yaml`'s clone ships whatever's in
 it onto every ship — a checked-in deny-list meant for Neptune alone ends up
@@ -41,7 +41,7 @@ outright, no prompt, on paths well outside `neptune/`). Fix: the tracked
 `.claude/settings.json` only keeps guardrails that are safe to apply
 everywhere (force-push, rsync); Neptune's actual narrow scope
 (`Edit`/`Write` limited to `neptune/reports/**`) lives in an **untracked**
-`~/shipyard/.claude/settings.local.json` on Eric's host machine, which
+`~/shipyard/.claude/settings.local.json` on the Admiral's host machine, which
 `.gitignore` now excludes so it can never round-trip onto a ship. Claude Code
 merges `settings.local.json` over `settings.json`, so this is where any
 future Neptune-only restriction belongs — never in the tracked file.

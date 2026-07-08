@@ -1,6 +1,6 @@
 # Talking to the Captain — cheatsheet
 
-You (Eric, the Admiralty) only ever talk to the Captain — never to crew directly. The
+You (the Admiral) only ever talk to the Captain — never to crew directly. The
 Captain plans, delegates, gates, and reports; it never writes production code itself.
 This is a conversational guide to that relationship: what to say, when, and what to
 expect back. For getting the ship itself running, see `docs/vm-cheatsheet.md`.

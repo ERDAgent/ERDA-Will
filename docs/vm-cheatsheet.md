@@ -12,7 +12,7 @@ regardless of shell — Windows OpenSSH does its own `~` expansion, so those wor
 verbatim in PowerShell too. Only the *scripting glue* around them (setting a variable,
 substituting text in a file, redirecting output) differs by shell, so those few steps
 below are given twice: **Bash** (macOS/Linux/git-bash) and **PowerShell** (Windows
-native — this is Eric's primary shell on the Windows Harbor, confirmed 2026-07-02).
+native — this is the Admiral's primary shell on the Windows Harbor, confirmed 2026-07-02).
 Pick the block matching whatever's actually running — mixing bash syntax into a
 PowerShell prompt (or vice versa) is what caused the very first attempt at this
 section to fail.

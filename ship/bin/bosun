@@ -7,10 +7,10 @@
 # on) — sail wraps it in `watch -t -n 5`, same one-shot-script + watch
 # pattern as ship/bin/purser-totals.
 #
-# v1 scope, Eric's explicit call: detect and flag only. Never kills a tmux
+# v1 scope, the Admiral's explicit call: detect and flag only. Never kills a tmux
 # window, never touches git, never re-musters anything itself -- lower blast
 # radius for a first cut than the plan's eventual "restarts hung agents."
-# The Captain (or Eric) decides what to do about a flagged task, same as any
+# The Captain (or the Admiral) decides what to do about a flagged task, same as any
 # other conversational judgment call. Promote to auto-restart later once this
 # has been seen to flag correctly against real crew runs.
 #
@@ -39,7 +39,7 @@ log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> log/events.log; }
 # orders too) -- greppable, not strictly structured, same tradeoff
 # charter.md's "dry dock:" field already accepted. Missing/unparseable ->
 # 0, treated as "unknown, don't flag" (a false positive here is worse than
-# a missed one: Eric asked for flag-only precisely to keep this cautious).
+# a missed one: the Admiral asked for flag-only precisely to keep this cautious).
 budget_for() {
   local order="$1" turns tokens
   turns="$(grep -oE 'max turns:[[:space:]]*[0-9]+' "$order" | head -1 | grep -oE '[0-9]+' || true)"

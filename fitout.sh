@@ -167,7 +167,7 @@ git config --global "credential.https://gist.github.com.helper" '!gh auth git-cr
 # --- headless browser for UI verification (Playwright + Chromium) ---
 # Real Captain feedback after the first live mission (a Vue app): install/
 # test/lint/build all green doesn't confirm a UI actually renders correctly
-# -- that voyage relied on Eric manually port-forwarding and eyeballing it.
+# -- that voyage relied on the Admiral manually port-forwarding and eyeballing it.
 # --with-deps installs the system libraries Chromium needs (sudo, apt) plus
 # the browser itself, so any charter's crew can `npx playwright screenshot`
 # a dev server and have the report include a PNG instead of just green CI.

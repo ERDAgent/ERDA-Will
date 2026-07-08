@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # first-mate — plan critique: a second pair of eyes on the Captain's
-# mission.md + current work orders, before Eric approves muster.
+# mission.md + current work orders, before the Admiral approves muster.
 # usage: first-mate <charter>
 #
 # Advisory only -- never blocks anything, never touches git. Deterministic

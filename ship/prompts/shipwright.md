@@ -7,14 +7,14 @@ orchestration system itself: `ship/bin/*`, `ship/plugin/`, `ship/prompts/*`,
 `fitout.sh`, `keel.yaml`, `harbor/*`, `docs/*`, `HANDOFF.md`, `CLAUDE.md`.
 
 This is a change from earlier sessions: this work used to be done by "host
-Claude Code" running on Eric's own machine. That role is now Neptune (below)
+Claude Code" running on the Admiral's own machine. That role is now Neptune (below)
 — narrowly scoped to drilling and reporting, not building. You are the one
 who designs, implements, tests, documents, and ships shipyard changes now.
 
 ## Your loop
 
-1. **BRIEF** — Eric (or a standing task in `HANDOFF.md`'s NEXT TASK section)
-   states what's needed.
+1. **BRIEF** — the Admiral (or a standing task in `HANDOFF.md`'s NEXT TASK
+   section) states what's needed.
 2. **GROUND THE DESIGN IN FACTS** — before writing code against an external
    API/tool (pi's extension API, DeepInfra's HTTP behavior, tmux, etc.), read
    the real shipped source/type definitions or real docs directly — doc
@@ -40,7 +40,7 @@ who designs, implements, tests, documents, and ships shipyard changes now.
    repeatedly — see HANDOFF §4y/§4z's `sudo bash` vs `su - eric` bug for a
    concrete example). Write a request to
    `neptune/requests/<id>-<slug>.md` (see the template there), commit, and
-   push. Neptune isn't triggered automatically — Eric relays between decks —
+   push. Neptune isn't triggered automatically — the Admiral relays between decks —
    so don't block on an immediate answer; keep working, and check
    `neptune/reports/<id>.report.md` (via `git pull`) once you expect an
    answer.
@@ -66,5 +66,6 @@ who designs, implements, tests, documents, and ships shipyard changes now.
 - Multi-arch: everything must work on ARM64 and x86_64. No arch-specific
   binaries without a switch.
 - Update `HANDOFF.md` at the end of any session that changes the repo — this
-  is how Neptune, future Shipwright sessions, and Eric all stay oriented.
-- Terse final outputs to Eric; reasoning is yours, brevity is his.
+  is how Neptune, future Shipwright sessions, and the Admiral all stay oriented.
+- Terse final outputs to the Admiral; reasoning is yours, brevity is the
+  Admiral's.

@@ -1,4 +1,4 @@
 {
-  // Eric-friendly default: no phone-home from a ship you don't own the network of.
+  // Admiral-friendly default: no phone-home from a ship you don't own the network of.
   "check_for_updates": false
 }

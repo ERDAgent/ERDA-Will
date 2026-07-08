@@ -21,7 +21,7 @@ still doesn't.
    charter/crew commit on that ship uses. Host-side Claude Code ("**Neptune**") never
    edits or commits shipyard source anymore; it's scoped to fresh-ship drills and
    writes only under `neptune/reports/` (see `neptune/README.md`), using whatever git
-   identity is configured on Eric's own host machine.
+   identity is configured on the Admiral's own host machine.
 2. **Charters** — one per project, under `~/fleet/<name>/` on a ship. This is where
    your question actually lives; see next section.
 3. **Berths** — git worktrees inside a charter's hold, one per crew task. Not
@@ -67,7 +67,7 @@ itself, when one exists.
 ## Does anything push to GitHub automatically? Yes, now — the Captain does
 
 This flipped since the doc was first written. As of the `gh-captain-access` patch
-(D14/D15) and Eric's push-on-integrate policy decision, `captain.md`'s INTEGRATE step
+(D14/D15) and the Admiral's push-on-integrate policy decision, `captain.md`'s INTEGRATE step
 now explicitly pushes both `integration` and `main` to `origin` after a mission's
 dry-dock tests pass and `main` fast-forwards — when the hold has a real `origin`
 (local-only charters skip this, not an error). Verified end-to-end: a real push from
@@ -102,7 +102,7 @@ the whole ship, shipyard-engineering work included.
 
 The one place this *doesn't* apply: **Neptune**, host-side Claude Code, which commits
 only to `neptune/reports/**` (never shipyard source) using whatever git identity is
-configured locally on Eric's own machine — separate from the ship entirely, and
+configured locally on the Admiral's own machine — separate from the ship entirely, and
 irrelevant to `ERDA-Will`'s actual source history.
 
 Practical consequence: **every commit and every push that touches real shipyard
@@ -132,5 +132,5 @@ GitHub org requirement, no monorepo assumption.
 | Does `captain charter` create new GitHub repos? | **Yes**, by default, when no `git-url` and no `--local` — private, under ERDAgent, reusing one if it already exists. Needs a broader PAT scope than the original push-only one; falls back to local-only with a clear message if that's not configured. |
 | Does the system push anything to GitHub automatically? | **Yes**, now — the Captain pushes `integration` and `main` on every mission's INTEGRATE step, when the charter has a real `origin`. |
 | Does crew ever push? | No — structurally can't; crew-scope shells never hold `GH_TOKEN` at all. |
-| Who authors commits and pushes? | `ERDAgent` / `agentic@ericrose.dev`, set globally per-ship by `fitout.sh` (D13) — covers crew, Captain, and the on-ship Shipwright's own commits alike. Neptune (host-side, drill reports only) uses Eric's own separately-configured host identity, irrelevant to shipyard source history |
+| Who authors commits and pushes? | `ERDAgent` / `agentic@ericrose.dev`, set globally per-ship by `fitout.sh` (D13) — covers crew, Captain, and the on-ship Shipwright's own commits alike. Neptune (host-side, drill reports only) uses the Admiral's own separately-configured host identity, irrelevant to shipyard source history |
 | Is one GitHub account required for everything? | No — each charter's remote (if any) is independent; `ERDAgent` just needs the right permissions (creation and/or write) for whichever specific repos are in play |

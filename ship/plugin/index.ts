@@ -302,7 +302,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			pi.sendUserMessage(
-				"Debrief this mission for Eric. Here is the real, deterministic data -- use it, don't " +
+				"Debrief this mission for the Admiral. Here is the real, deterministic data -- use it, don't " +
 					"re-derive or guess at it:\n\n" +
 					`Crew roster:\n${rosterSummary}\n\n` +
 					`Recent commits on main:\n${recentCommits}\n\n` +
@@ -316,7 +316,7 @@ export default function (pi: ExtensionAPI) {
 	// bridge window; this same extension also loads into crew's headless
 	// `pi -p`, and quartermaster's/first-mate's own --no-tools invocations,
 	// where this must stay inert). Without this, the Captain has no way to
-	// notice mustered crew finished short of Eric spotting an idle tmux window
+	// notice mustered crew finished short of the Admiral spotting an idle tmux window
 	// and prompting it -- captain.md's WATCH step has always said "monitor
 	// roster.json" without ever saying how.
 	//

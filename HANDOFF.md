@@ -18,36 +18,36 @@ Claude.ai chats cannot be resumed as Claude Code sessions — this file and `doc
 
 ## 1. What this project is
 
-A portable Linux dev environment (VM bootable identically on macOS, Windows, and OVHcloud via one cloud-init) hosting a multi-agent orchestration system modeled on a ship's crew: Eric talks to a Captain agent; the Captain decomposes missions into work orders; crew agents execute in parallel, each in its own git worktree and tmux window; officer roles (review, dispatch, cost) gate the results. Primary model: GLM-5.2 via DeepInfra, orchestrated by pi.
+A portable Linux dev environment (VM bootable identically on macOS, Windows, and OVHcloud via one cloud-init) hosting a multi-agent orchestration system modeled on a ship's crew: the Admiral talks to a Captain agent; the Captain decomposes missions into work orders; crew agents execute in parallel, each in its own git worktree and tmux window; officer roles (review, dispatch, cost) gate the results. Primary model: GLM-5.2 via DeepInfra, orchestrated by pi.
 
 ## 2. Decisions already made — do not reopen unprompted
 
 | # | Decision | Rationale (short) |
 |---|---|---|
 | D1 | Environment-as-code via Multipass + cloud-init, not VM images | ARM64/x86_64 split makes images non-portable; one keel.yaml covers Mac, Windows (Hyper-V backend), OVHcloud |
-| D2 | VPS provider: OVHcloud | Eric's choice; Public Cloud instances take cloud-init natively (OpenStack). Legacy VPS line = fallback to manual `fitout.sh` |
+| D2 | VPS provider: OVHcloud | the Admiral's choice; Public Cloud instances take cloud-init natively (OpenStack). Legacy VPS line = fallback to manual `fitout.sh` |
 | D3 | Editor: Fresh (getfresh.dev), named "the Scuttlebutt" | Zero-config, daemon mode, SSH remote editing, --wait for $EDITOR, TS plugins (chartroom plugin), built-in git review. Replaces earlier Neovim/NvChad idea |
 | D4 | Orchestration host: pi primary, OpenCode as relief vessel | pi's tmux-spawn philosophy + RPC mode + minimal system prompt (cache-friendly). Anti-lock-in: all state in `.ship/` files + git, host adapter is thin |
 | D5 | Model: GLM-5.2 via DeepInfra (`zai-org/GLM-5.2`), thinking=High default, Max on escalation only | Top open-weights model (AA index 51), 1M ctx, cheapest via DeepInfra; verbose reasoning (~43K out tokens/task) → hard per-order budgets |
 | D6 | Claude Code + Codex = shipwrights only | System-level repair/support; not the daily crew (cost + separation of concerns) |
-| D7 | tmux: one session ("deck") per charter, one window per role | Eric is a visual person; window layout = org chart; officer windows exist from day one as dashboards, become agents in Phase 5 |
+| D7 | tmux: one session ("deck") per charter, one window per role | the Admiral is a visual person; window layout = org chart; officer windows exist from day one as dashboards, become agents in Phase 5 |
 | D8 | Projects = charters under `~/fleet/<name>/`; one Captain per charter, never across; parallel projects = parallel decks | Context purity, prompt-cache economics, per-client cost attribution, blast radius |
-| D9 | No Commodore (captain-of-captains) | Premature; Eric is the Admiralty; revisit only if cross-deck context copying becomes frequent |
+| D9 | No Commodore (captain-of-captains) | Premature; the Admiral is the Admiralty; revisit only if cross-deck context copying becomes frequent |
 | D10 | Git: bare hold + berths (worktrees), branches `crew/<task-id>-<slug>`, crew never merge, Quartermaster gates dry dock (`integration`) → home port (`main`) | Parallel-agent collision avoidance; decompose by file ownership |
-| D11 | Naming: full nautical vocabulary is load-bearing (see CLAUDE.md table) | Self-documenting system; Eric explicitly wants it leaned into |
-| D12 | OVHcloud (D2) deferred; local Multipass only until Eric has manually confirmed reproducibility on both Harbors himself | Eric's explicit call (July 2, 2026): wants to get comfortable deploying/destroying the tooled ship on his own — via `docs/vm-cheatsheet.md`, no Claude Code required — before spending on real cloud infra. Both Harbors are already validated (macOS: §4d/§4e; Windows: §4g); this is about Eric's own hands-on confirmation, not a technical gap |
-| D13 | Ship's automated/crew git identity = `ERDAgent` / `agentic@ericrose.dev`, set unconditionally by `fitout.sh` | Eric's explicit call (July 2, 2026): keep the ship's own commits (crew agents, and anything Claude Code commits while working aboard) under the dedicated ERDAgentic GitHub account, separate from his personal EricRoseDev identity. Resolves the gap flagged in §4g (no ship had *any* default git identity, so crew commits failed outright) |
-| D14 | GitHub access via gh CLI + `GH_TOKEN` fine-grained PAT (ERDAgent account) in the strongbox; NO `gh auth login` state on disk | Eric's call (July 2, 2026), from the Captain's maiden-voyage review. Env-var auth is headless, rotates by re-encrypting one file, and inherits the strongbox's existing trust model. PAT scoped to charter repos only, Contents RW (see strongbox/README.md) |
+| D11 | Naming: full nautical vocabulary is load-bearing (see CLAUDE.md table) | Self-documenting system; the Admiral explicitly wants it leaned into |
+| D12 | OVHcloud (D2) deferred; local Multipass only until the Admiral has manually confirmed reproducibility on both Harbors himself | the Admiral's explicit call (July 2, 2026): wants to get comfortable deploying/destroying the tooled ship on his own — via `docs/vm-cheatsheet.md`, no Claude Code required — before spending on real cloud infra. Both Harbors are already validated (macOS: §4d/§4e; Windows: §4g); this is about the Admiral's own hands-on confirmation, not a technical gap |
+| D13 | Ship's automated/crew git identity = `ERDAgent` / `agentic@ericrose.dev`, set unconditionally by `fitout.sh` | the Admiral's explicit call (July 2, 2026): keep the ship's own commits (crew agents, and anything Claude Code commits while working aboard) under the dedicated ERDAgentic GitHub account, separate from his personal EricRoseDev identity. Resolves the gap flagged in §4g (no ship had *any* default git identity, so crew commits failed outright) |
+| D14 | GitHub access via gh CLI + `GH_TOKEN` fine-grained PAT (ERDAgent account) in the strongbox; NO `gh auth login` state on disk | the Admiral's call (July 2, 2026), from the Captain's maiden-voyage review. Env-var auth is headless, rotates by re-encrypting one file, and inherits the strongbox's existing trust model. PAT scoped to charter repos only, Contents RW (see strongbox/README.md) |
 | D15 | Two-compartment strongbox: `keys.env.age` (crew scope: model keys) + `captain.env.age` (captain scope: GH_TOKEN). `unlock` defaults to crew; only sail's bridge window loads `unlock captain` | Push credentials must never reach crew agents — D10's "crew never push" becomes a capability boundary instead of a prompt rule. Muster's crew windows call plain `unlock` (unchanged, back-compatible) and get model keys only |
-| D16 | Fleet naming + the one-charter-one-ship rule. Ship classes: Flagship (Will-class virtue names: resolve, endeavour, tenacity…), Skiff (`skiff-<purpose>`, purged same day), Named vessel (client isolation). A charter resides on exactly ONE ship at a time; it may move (push → purge → re-charter) but never live on two | Eric's call (July 2, 2026), with the name lore recorded: ERDA = EricRoseDevAgent, Will = the impetus — "the will of the people that drives the navy to sail." The residency rule became load-bearing the moment D14 gave ships push credentials: two Captains on one charter = push races on integration/main. keel.yaml verified name-agnostic, so multi-ship needs zero code changes — this is convention + docs only |
-| D17 | Shipwright (D6) gets a real, live deck window (`sail`'s window 7, one per charter's tmux session, cwd `~/shipyard`) and a third strongbox compartment (`shipwright.env.age`: `ANTHROPIC_API_KEY`), superset of captain scope. Auth via API key, not Claude Code's `/login` subscription flow | Eric's call (July 4, 2026), overriding `docs/agentic-engineering-plan.md`'s original `/login`-for-shipwrights choice: consistency with how every other role's credentials load (unattended, strongbox-driven) outweighed the pay-per-token cost of a dedicated key. "A pane like the other roles" meant living inside every charter's own deck, even though Shipwright's actual scope (`~/shipyard`) is deliberately charter-independent (D6) |
-| D18 | Captains get a "preview" deck window (`sail`'s window 8) running the charter's dev server against `integration` (not a crew berth), reached from the host via `erda preview <charter>` — an SSH local port-forward, no external tunneling service | Eric's call (July 4, 2026): explicitly ruled out ngrok/Cloudflare-Tunnel-style services unless a local option proved cumbersome — it didn't, since ships already have a directly-reachable IP over the same SSH connection everything else here uses. The dev server only ever needs to bind `localhost` on the ship; SSH forwarding (not a raw exposed port) is what makes that safe to generalize to a future public-IP OVHcloud ship too |
+| D16 | Fleet naming + the one-charter-one-ship rule. Ship classes: Flagship (Will-class virtue names: resolve, endeavour, tenacity…), Skiff (`skiff-<purpose>`, purged same day), Named vessel (client isolation). A charter resides on exactly ONE ship at a time; it may move (push → purge → re-charter) but never live on two | the Admiral's call (July 2, 2026), with the name lore recorded: ERDA = EricRoseDevAgent, Will = the impetus — "the will of the people that drives the navy to sail." The residency rule became load-bearing the moment D14 gave ships push credentials: two Captains on one charter = push races on integration/main. keel.yaml verified name-agnostic, so multi-ship needs zero code changes — this is convention + docs only |
+| D17 | Shipwright (D6) gets a real, live deck window (`sail`'s window 7, one per charter's tmux session, cwd `~/shipyard`) and a third strongbox compartment (`shipwright.env.age`: `ANTHROPIC_API_KEY`), superset of captain scope. Auth via API key, not Claude Code's `/login` subscription flow | the Admiral's call (July 4, 2026), overriding `docs/agentic-engineering-plan.md`'s original `/login`-for-shipwrights choice: consistency with how every other role's credentials load (unattended, strongbox-driven) outweighed the pay-per-token cost of a dedicated key. "A pane like the other roles" meant living inside every charter's own deck, even though Shipwright's actual scope (`~/shipyard`) is deliberately charter-independent (D6) |
+| D18 | Captains get a "preview" deck window (`sail`'s window 8) running the charter's dev server against `integration` (not a crew berth), reached from the host via `erda preview <charter>` — an SSH local port-forward, no external tunneling service | the Admiral's call (July 4, 2026): explicitly ruled out ngrok/Cloudflare-Tunnel-style services unless a local option proved cumbersome — it didn't, since ships already have a directly-reachable IP over the same SSH connection everything else here uses. The dev server only ever needs to bind `localhost` on the ship; SSH forwarding (not a raw exposed port) is what makes that safe to generalize to a future public-IP OVHcloud ship too |
 
 ## 3. Facts verified during planning (with as-of dates)
 
 - GLM-5.2 (June 16, 2026): 753B/40B MoE, MIT, 1M ctx, ~128–131K max output, thinking High/Max only; DeepInfra pricing observed $0.95–1.40/M in, $3.00–4.40/M out, cached in ≈$0.21–0.26/M; leading open-weights on AA Intelligence Index (51), Terminal-Bench 2.1 ≈78–81. Very verbose (≈43K output tokens/task on AA evals).
 - pi (pi.dev / badlogic/pi-mono): no built-in sub-agents by design ("spawn pi instances via tmux"), extensions API, modes: interactive / -p / --mode json / --mode rpc; packages installable from npm/git; `pi install git:...`. Install: `npm i -g --ignore-scripts @earendil-works/pi-coding-agent`.
-- Fresh (getfresh.dev, June 2026): daemon mode (`fresh -a name`), hot exit, `--wait`, SSH remote editing w/ reconnect + patch-only saves, split-panel git review w/ hunk staging, TS plugins in sandboxed QuickJS (`registerCommand`, `editor.on`, `spawnProcess`), .deb releases + install script. Sends anonymous telemetry by default — disable with `check_for_updates: false` in config (Eric-friendly default: off).
+- Fresh (getfresh.dev, June 2026): daemon mode (`fresh -a name`), hot exit, `--wait`, SSH remote editing w/ reconnect + patch-only saves, split-panel git review w/ hunk staging, TS plugins in sandboxed QuickJS (`registerCommand`, `editor.on`, `spawnProcess`), .deb releases + install script. Sends anonymous telemetry by default — disable with `check_for_updates: false` in config (Admiral-friendly default: off).
 - OpenCode: provider-agnostic, native subagents, TS plugins; ecosystem prior art: `opencode-orchestrator` (Commander/Planner/Worker/Reviewer mission loop), `oh-my-opencode`, `opencode-worktree`.
 - Claude Code sessions: local, per project directory, `--continue`/`--resume`; claude.ai web chats are not importable.
 
@@ -242,9 +242,9 @@ routes to it (`pi -p --provider deepinfra --model zai-org/GLM-5.2 --thinking hig
 still overridable via `SHIP_AGENT`).
 
 Generated the ship's `age` keypair locally (`strongbox/ship.key`, gitignored) and
-walked Eric through getting `DEEPINFRA_API_KEY` into the encrypted strongbox — this
+walked the Admiral through getting `DEEPINFRA_API_KEY` into the encrypted strongbox — this
 took two failed attempts worth recording since they'll recur for any future secret:
-1. First attempt silently encrypted an **empty** value. Root cause: Eric's login shell
+1. First attempt silently encrypted an **empty** value. Root cause: the Admiral's login shell
    is zsh, and zsh's `read -p` flag means "read from a coprocess," not "show this
    prompt text" like bash — the `read` errored, left the variable empty, and nothing
    downstream checked. Numeric proof this even happened at all only came from checking
@@ -309,7 +309,7 @@ decided; still a Phase 3 drill question, not a Phase-0/2 one.
 
 ## 4g. x86_64 validation done (July 2, 2026) — real Windows/Hyper-V ship, two more bugs found and fixed
 
-Ran on the Windows machine Eric set aside for this (Windows 11 Pro, admin rights,
+Ran on the Windows machine the Admiral set aside for this (Windows 11 Pro, admin rights,
 Hyper-V already enabled). Installed Multipass via `winget install --id
 Canonical.Multipass` (not available before this session); confirmed `multipass get
 local.driver` → `hyperv`, matching D1's intent. First `multipass launch` failed with
@@ -392,7 +392,7 @@ Resolves HANDOFF §5 item 1 (x86_64 validation).
 
 ## 4h. Manual-ops cheatsheet + git-identity fix (July 2, 2026)
 
-Eric's direction (D12, D13): confirm reproducibility on both local Harbors himself
+The Admiral's direction (D12, D13): confirm reproducibility on both local Harbors himself
 before any OVHcloud spend, and be able to deploy/destroy the tooled ship without
 Claude Code on the bare-metal host at all (plans to uninstall Claude Code from this
 machine once he's confirmed that himself; may reinstall later for maintenance).
@@ -442,7 +442,7 @@ NOTHING here has run on a real ship yet):
 - `strongbox/README.md`: compartment table + exact PAT-minting/encrypt/verify steps,
   carrying forward both §4f lessons (zsh `read -p`; verify byte-length not presence).
 
-**Operator (Eric) side — done (July 2, 2026):** PAT minted on ERDAgent, encrypted to
+**Operator (the Admiral) side — done (July 2, 2026):** PAT minted on ERDAgent, encrypted to
 `captain.env.age`, committed (335f1b5).
 
 **On-ship validation checklist — results (July 2, 2026, Claude Code, against the real
@@ -464,7 +464,7 @@ own idempotency claim on a ship with prior state):**
    captain scope). Invalid scope name errors cleanly. Credential helper confirmed set
    for both `github.com` and `gist.github.com`. `gh auth status` with no token: clean
    "not logged in" message, exit 1, no crash, no `gh auth login` state written.
-3. **Done.** Eric minted the fine-grained PAT and provided it (335f1b5 —
+3. **Done.** the Admiral minted the fine-grained PAT and provided it (335f1b5 —
    `strongbox/captain.env.age`). First encryption attempt produced a length-1
    `GH_TOKEN` (an interactive `read -rs` paste inside the SSH/tmux session apparently
    didn't register correctly — cause not root-caused, not worth chasing since the fix
@@ -488,10 +488,10 @@ own idempotency claim on a ship with prior state):**
 All four items done. GitHub push access is real and working, scoped exactly as
 designed (D14/D15) — crew cannot reach it under any tested path.
 
-**Decided (Eric, July 2, 2026):** auto-push both `integration` and `main` post-gate —
+**Decided (the Admiral, July 2, 2026):** auto-push both `integration` and `main` post-gate —
 no PR-gating for `main` at this time, even on client charters. Wired into
 `ship/prompts/captain.md`'s INTEGRATE step (1e0aaf3): push both branches to `origin`
-when one exists (local-only charters skip silently), stop and tell Eric rather than
+when one exists (local-only charters skip silently), stop and tell the Admiral rather than
 guess if `gh auth status` isn't showing ERDAgent. Also folded in the maiden-voyage
 review's home-port resync bug (§4h — fast-forwarding `main` via `update-ref` doesn't
 update an already-checked-out worktree) since it's the same INTEGRATE step; the fix
@@ -516,7 +516,7 @@ beyond reading.
 
 ## 4k. `harbor/christen.{sh,ps1}` — friendly one-command ship launch (July 2, 2026)
 
-Eric wanted first provisioning friendlier than a raw `multipass launch` invocation:
+The Admiral wanted first provisioning friendlier than a raw `multipass launch` invocation:
 `christen [name] [cpus] [memory] [disk]`, all args optional with defaults matching
 every manual example already in `docs/vm-cheatsheet.md` (`ship`, 2 cpus, 4G, 20G).
 Folded in the SSH-key/`keel.yaml` substitution step too (previously §0 of the
@@ -540,17 +540,17 @@ on each resulting ship. Both test ships destroyed after. Shellcheck clean.
 
 **Note on the ship named `ship`**: this session's real (non-throwaway) ship, holding
 the `experimental` charter's maiden-voyage work (§4h's Vue dice-roller app, 3/3 crew
-tasks merged through dry dock), was deleted by Eric directly (confirmed by him, not a
+tasks merged through dry dock), was deleted by the Admiral directly (confirmed by him, not a
 tooling bug — investigated via Hyper-V's own VMMS event log before asking, since three
 independent signals agreeing it was gone warranted checking rather than assuming).
 That work was never pushed to GitHub (deliberately — push validation in §4i used
 disposable test branches on `ERDA-Will` itself, specifically to avoid touching that
-charter's real work) and is accepted as lost — "still in testing phase," Eric's words.
+charter's real work) and is accepted as lost — "still in testing phase," the Admiral's words.
 Nothing to recover; a fresh `christen` + `charter experimental` starts clean.
 
 ## 4l. `harbor/install.{sh,ps1}` — make `christen` callable from anywhere (July 2, 2026)
 
-Eric wanted to just type `christen`, from any directory, and wanted that reproducible
+The Admiral wanted to just type `christen`, from any directory, and wanted that reproducible
 on a brand-new computer from just the GitHub repo — not a manual profile edit that
 wouldn't survive a fresh machine. Shell profile/PATH state is inherently per-machine
 and can't live in git, so the fix makes the *setup step itself* part of the repo:
@@ -561,17 +561,17 @@ works globally on that machine from then on. Idempotent via marker-comment block
 replacement, so re-running after moving the repo or pulling an update doesn't
 duplicate the profile entry.
 
-Verified for real: installed against Eric's actual (previously nonexistent) PowerShell
+Verified for real: installed against the Admiral's actual (previously nonexistent) PowerShell
 profile, confirmed the generated function's exact content, ran the bare `christen`
 command from a totally unrelated directory in a fresh (non-inherited) PowerShell
 session and it launched a real ship end to end, re-ran the installer and confirmed the
 block was replaced rather than duplicated. Shellcheck clean on `install.sh`.
 
-**Found after the fact, when Eric asked directly whether this would actually
+**Found after the fact, when the Admiral asked directly whether this would actually
 reproduce on a new machine — it wouldn't have, fully.** A fresh Windows account's
 default execution policy (`Restricted`, when every scope shows `Undefined`) blocks
 *any* local `.ps1` file, including `install.ps1` itself, before it ever gets a chance
-to fix that same policy — confirmed this is exactly what Eric hit dot-sourcing his
+to fix that same policy — confirmed this is exactly what the Admiral hit dot-sourcing his
 profile, since my own tooling's PowerShell invocations always run with a
 `Bypass`-scoped process override a real user session doesn't have, silently masking
 the gap during earlier testing. Fixed with `harbor/install.cmd`: a batch wrapper
@@ -582,13 +582,13 @@ rights, doesn't touch other accounts), warning rather than silently failing if a
 Group-Policy-managed scope is overriding it. `install.cmd` is now the documented
 Windows entry point in `docs/vm-cheatsheet.md`, not `install.ps1` directly. Could not
 fully simulate a genuinely fresh Restricted-policy account from within this session's
-own tooling (same masking issue) — verified by code correctness and by fixing Eric's
+own tooling (same masking issue) — verified by code correctness and by fixing the Admiral's
 real system with the identical commands, not by reproducing the exact fresh-machine
 scenario end-to-end.
 
 ## 4m. `erda` — unified command prefix for all Harbor operations (July 2, 2026)
 
-Eric asked to prefix all harbor commands with `erda` (so `christen` becomes
+The Admiral asked to prefix all harbor commands with `erda` (so `christen` becomes
 `erda christen`) and add short commands for the rest of the day-to-day VM lifecycle.
 Built `harbor/erda.{sh,ps1}` as a single dispatcher (christen delegates to the existing
 `christen.{sh,ps1}` rather than duplicating that logic):
@@ -612,11 +612,11 @@ default. `install.{sh,ps1}` updated to wire up `erda` instead of the old bare
 script, runs on the Harbor) and `ship/bin/sail <charter>` (opens the tmux deck, runs
 *on* the ship) share a name. They never actually collide — different sides of the SSH
 connection, never both on PATH in the same context — but "sail" means two different
-things depending on which side you're on. Proceeded with Eric's exact spec since it
+things depending on which side you're on. Proceeded with the Admiral's exact spec since it
 was unambiguous and thematically deliberate (sail = set out); noted in both scripts'
 help text and the cheatsheet so it's a known thing, not a surprise.
 
-`sink`'s confirmation prompt was Eric's-instructions-plus-judgment, not explicitly
+`sink`'s confirmation prompt was the Admiral's-instructions-plus-judgment, not explicitly
 requested: an irreversible `--purge` behind a short, easy-to-fire word felt worth a
 safety default, with `-y`/`--force`/`-Force` to skip it for scripted/muscle-memory use.
 
@@ -636,10 +636,10 @@ renumbered the "sailing multiple ships" section to `## 9.`.
 
 ## 4n. `captain charter`/`captain work` + charter auto-creates GitHub repos (July 3, 2026)
 
-Eric asked for two things: `charter` should create a new GitHub repo when none is
+The Admiral asked for two things: `charter` should create a new GitHub repo when none is
 given (instead of defaulting to local-only), and the operator commands should be
 renamed `captain charter [name] [git-url] [--local]` / `captain work [name]`. Dropped
-a third ask (`captain toss` to delete GitHub repos) at Eric's own instruction mid-way
+a third ask (`captain toss` to delete GitHub repos) at the Admiral's own instruction mid-way
 through, after confirming via a live test that repo deletion needs the same broader
 PAT scope as creation.
 
@@ -660,14 +660,14 @@ scope D14 deliberately chose. Documented as a conscious tradeoff in
 `strongbox/README.md` rather than silently widening the token.
 
 **Update (July 3, 2026): the broader token is minted and auto-create is fully
-working.** Eric considered a two-token split first (narrow push token kept separate
+working.** the Admiral considered a two-token split first (narrow push token kept separate
 from a repo-creation token, to keep `ERDA-Will` itself untouched by the creation
 token) — investigated and rejected: fine-grained PATs' "Only select repositories"
 list is fixed at mint time and can't be updated by automation, so a token used to
 create a brand-new repo can never also have been pre-scoped to that repo; it needs
 `Contents` access too just to clone what it created, which means it needs the same
 broad reach a single combined token would have anyway. Two tokens don't actually
-reduce the exposure. Eric chose the single broader token knowingly, replacing
+reduce the exposure. The Admiral chose the single broader token knowingly, replacing
 `GH_TOKEN`'s original scope.
 
 **Found and fixed a second real bug on the very first live test with a working
@@ -702,7 +702,7 @@ repos / nothing pushes" framing was no longer true on two separate counts.
 
 ## 4o. macOS re-drill after the erda/gh/fleet-naming/auto-create wave (July 3, 2026)
 
-Eric asked to re-run the full drill on this Mac, since a lot had landed (§4g–§4n)
+The Admiral asked to re-run the full drill on this Mac, since a lot had landed (§4g–§4n)
 since the last real ARM64/macOS test.
 
 Full drill, real ship, this Mac: `harbor/install.sh` → `erda` works globally from a
@@ -737,11 +737,11 @@ Found a real environment issue, not a script bug: mid-drill, `multipassd` itself
 completely (even `multipass version`, which touches no VM state, blocked indefinitely)
 after a `resail` (restart) request appears to have stalled inside the guest's own
 `sudo reboot` — the daemon's log shows it issued the reboot and then never logged
-anything else for 15+ minutes until an external kill. Recovered by having Eric run
+anything else for 15+ minutes until an external kill. Recovered by having the Admiral run
 `sudo launchctl kickstart -k system/com.canonical.multipassd` (needs a real TTY for the
 password, which this tool doesn't have), which then spun at ~400% CPU because the old,
 now-orphaned qemu process still held the disk image's write lock; killing that orphan
-(`sudo kill -9`, also needed Eric directly) and kickstarting once more fully recovered
+(`sudo kill -9`, also needed the Admiral directly) and kickstarting once more fully recovered
 the daemon. The wedged test VM was purged and redrilled clean rather than debugged
 further — matches this project's own established practice of treating test ships as
 disposable. Not investigated further since it looks like a Multipass/qemu-on-macOS
@@ -752,7 +752,7 @@ be driven through this tool).
 
 ## 4p. Harbor command-surface consolidation: one `.sh`, one `.ps1`, one `.cmd` (July 3, 2026)
 
-Eric asked for two things: (1) confirm the project only exposes `erda <command>` as a
+The Admiral asked for two things: (1) confirm the project only exposes `erda <command>` as a
 host-side entry point, and (2) once that was confirmed already true (`install.sh` only
 ever wired up `erda()`; `christen.{sh,ps1}` were internal, exec'd via `erda christen`),
 consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, and one `.cmd` file —
@@ -795,11 +795,11 @@ exactly `erda.sh`, `erda.ps1`, `install.cmd` — three files instead of seven.
 
 ## 4q. Lost `strongbox/ship.key`, recovered, and built `erda strongbox init/backup/restore` (July 3, 2026)
 
-Eric ran `erda open lockbox` on a freshly-christened ship and got `no local
+The Admiral ran `erda open lockbox` on a freshly-christened ship and got `no local
 strongbox/ship.key -- generate/place it first`. Root cause: `ship.key` (the private
 half of the age keypair, gitignored, host-side only per §4f) was gone from disk —
 confirmed not in `~/.Trash`, never in git history (correctly, always gitignored), and
-not present on any running ship. Likely cause: Eric sunk an old ship (`erda sink`) and,
+not present on any running ship. Likely cause: the Admiral sunk an old ship (`erda sink`) and,
 reasonably given the name, assumed `ship.key` was scoped to that specific ship and
 deleted it as cleanup — it isn't; it's host-side infrastructure independent of any one
 ship, and `erda sink` (which only runs `multipass delete --purge`) has no way to touch
@@ -813,7 +813,7 @@ re-encrypting fresh copies of every secret (meaning the underlying credential va
 themselves have to be re-obtained, since GitHub in particular never shows an existing
 PAT again after creation).
 
-**Recovered**: Eric ran the new `erda strongbox init` (built this session, see below)
+**Recovered**: the Admiral ran the new `erda strongbox init` (built this session, see below)
 in a real terminal — generated a fresh keypair, re-entered `DEEPINFRA_API_KEY` (still
 retrievable from DeepInfra's dashboard) and a newly-minted `GH_TOKEN` PAT. Verified
 both decrypt correctly and to the *exact* expected byte lengths from earlier in this
@@ -835,7 +835,7 @@ fix (commit + push + `git pull` on affected ships) in `strongbox/README.md` rath
 scripting around it, since it's a one-time consequence of key rotation, not a
 steady-state operation worth automating yet.
 
-Built, at Eric's request ("add any tooling possible to make this easy next time"):
+Built, at the Admiral's request ("add any tooling possible to make this easy next time"):
 `erda strongbox init` (generates the keypair, prompts for both secrets with hidden
 input, encrypts, verifies non-empty by exact byte count — folding the whole
 previously-manual `strongbox/README.md` recipe, including the byte-length-not-presence
@@ -843,7 +843,7 @@ discipline from §4f, into one guided command; refuses to silently overwrite an
 existing key) and `erda strongbox backup <path>` / `erda strongbox restore <path>`
 (plain file copy to/from a path of the operator's choosing — deliberately no assumed
 cloud/vault provider, matching this project's existing plain-files philosophy, per
-Eric's explicit choice of this over a macOS-Keychain-integrated alternative). Added to
+The Admiral's explicit choice of this over a macOS-Keychain-integrated alternative). Added to
 both `erda.sh` and `erda.ps1` for parity with every other command; the PowerShell
 version needed the same `$ErrorActionPreference` care as `Invoke-Christen` (`age-keygen`
 writes its "Public key: ..." line to stderr, which redirecting under the script's
@@ -857,7 +857,7 @@ gotcha found above.
 
 ## 4r. Windows first-run friction pass: strongbox/age fixes, `captain list charters`, `charter` auto-unlock, `board` absorbs `open lockbox` (July 3–4, 2026)
 
-Eric hit `erda strongbox init` failing with `'age' isn't installed on this machine` on
+The Admiral hit `erda strongbox init` failing with `'age' isn't installed on this machine` on
 a fresh Windows account, and separately `captain charter` silently falling back to
 local-only right after a fresh `christen`. Both traced back to the same root pattern:
 first-run-on-a-new-machine/ship gaps that this project's existing tooling didn't yet
@@ -873,7 +873,7 @@ PowerShell recipient extraction (`Select-String "age1"`) returned the whole matc
 line (`# public key: age1...`), not just the key — `age -r` was silently encrypting
 to a bogus recipient, so `keys.env.age`/`captain.env.age` decrypted to 0 bytes with no
 hard failure at the time they were written. Fixed with a proper regex extraction
-(`[regex]::Match(..., 'age1[a-z0-9]+')`), verified against the real key file. Eric
+(`[regex]::Match(..., 'age1[a-z0-9]+')`), verified against the real key file. The Admiral
 regenerated the strongbox for real afterward (new `GH_TOKEN` scope needed anyway);
 both `.env.age` files now decrypt to real byte counts.
 
@@ -892,7 +892,7 @@ escalation. Verified with fake `gh`/`unlock` binaries: succeeds silently when un
 has real credentials to offer, falls back to the existing local-only message
 unchanged when it doesn't (e.g. `ship.key` never deployed to this ship at all).
 
-**`erda board` absorbs `erda open lockbox`**: Eric's framing — "I should not need to
+**`erda board` absorbs `erda open lockbox`**: the Admiral's framing — "I should not need to
 do this every time... maybe [unlocking] is always a part of boarding." `open lockbox`
 is gone as a separate command; `board` now does everything it did automatically,
 every time: deploys `strongbox/ship.key` to the ship if missing, then connects with
@@ -912,7 +912,7 @@ impossible to automate away (a private key has to get onto the machine somehow).
 
 ## 4s. Shipwright gets a real deck window + strongbox compartment (July 4, 2026)
 
-Eric asked for the "Claude Shipwright" role from `docs/shipyard-architecture.mermaid`
+The Admiral asked for the "Claude Shipwright" role from `docs/shipyard-architecture.mermaid`
 (previously just a Layer 1–2 toolbelt concept — Claude Code installed on every ship
 per D6, but with no dedicated pane, credential, or scope of its own) to become an
 actual live tmux window, with its own key addable alongside `DEEPINFRA_API_KEY`/
@@ -924,12 +924,12 @@ resolved by asking rather than guessing (see D17):
 
 1. `docs/agentic-engineering-plan.md` had already decided shipwrights authenticate via
    Claude Code's `/login` subscription flow, specifically *not* an API key, to keep
-   them off the strongbox's pay-per-token model. Eric's literal request ("add my
+   them off the strongbox's pay-per-token model. The Admiral's literal request ("add my
    claude key at the same time as deepinfra and gh") pointed the other way — he chose
    the API-key path once the conflict was surfaced, prioritizing unattended
    provisioning consistency with every other role over avoiding per-token billing.
 2. Every doc describes Shipwright as "not part of the charter/crew system at all,"
-   but Eric wanted "a pane like the other roles" — which are all per-charter tmux
+   but the Admiral wanted "a pane like the other roles" — which are all per-charter tmux
    windows. Resolved as: one Shipwright window in *every* charter's deck (always one
    tmux-switch away, whichever charter you're in), but its cwd is always `~/shipyard`
    and it loads its own strongbox scope — never the charter's.
@@ -970,17 +970,17 @@ shipwright window's pane genuinely starts at `~/shipyard` (confirmed via
 `pane_current_path`, not just the launch command) and runs `claude` (which correctly
 fell through to its normal `/login` menu, since this throwaway ship had no
 `shipwright.env.age` yet — no `ANTHROPIC_API_KEY` to test the skip-`/login` path
-against without a real key, which only Eric has). `unlock shipwright` confirmed
+against without a real key, which only the Admiral has). `unlock shipwright` confirmed
 loading `DEEPINFRA_API_KEY`/`GH_TOKEN` (real byte counts, not printed) while correctly
 reporting `ANTHROPIC_API_KEY` as not set rather than erroring. Crew-window indexing
 confirmed empirically, not just by reading `muster`: a plain auto-indexed
 `tmux new-window` landed at 8, no collision with `shipwright` at 7. Still open:
 a real shipwright-authored commit to ERDA-Will, and the actual skip-`/login` path —
-both need Eric's real `ANTHROPIC_API_KEY` in the strongbox to test.
+both need the Admiral's real `ANTHROPIC_API_KEY` in the strongbox to test.
 
 ## 4t. Captains get a "preview" dev-server window, reached via SSH tunnel (July 4, 2026)
 
-Eric asked for a way for Captains to spin up a dev server showing crew's current
+The Admiral asked for a way for Captains to spin up a dev server showing crew's current
 work, viewable from the host, preferring no external cloud service if avoidable. The
 good news, confirmed before designing anything: neither serious option here needs
 one — ships already get a directly-reachable IP over the same SSH connection this
@@ -1036,9 +1036,9 @@ host-side HTTP fetch). Tunnel and ship torn down after.
 
 ## 4u. Crew get human-readable names (July 4, 2026)
 
-Eric wanted each crew member to have a human-readable name instead of just a task ID,
+The Admiral wanted each crew member to have a human-readable name instead of just a task ID,
 and asked for a creative naming scheme. Offered three themed options (knots/rigging,
-trade winds, navigator's stars) plus "give me your own list" — Eric chose to specify
+trade winds, navigator's stars) plus "give me your own list" — the Admiral chose to specify
 the theme himself: hobbit-like names, explicitly **not** any name that actually
 appears in Tolkien's hobbit lore. Landed on a 31-name invented pool (Alder, Barley,
 Birch, Bracken, Bramble, Bumble, Buttercup, Clover, Cricket, Dandelion, Fennel, Fern,
@@ -1075,7 +1075,7 @@ model call just for a cosmetic feature this late in the session.
 
 ## 4v. `erda doctor` + real root cause of a `captain charter` "invalid token" failure (July 5, 2026)
 
-Eric reported `captain christen`/`board` succeeding but `captain charter ERDA-utility-belt`
+The Admiral reported `captain christen`/`board` succeeding but `captain charter ERDA-utility-belt`
 silently falling back to a local-only charter, and separately noted `gh auth status` on
 this host showed logged out — reasonably suspecting an expired/revoked `GH_TOKEN`. He
 asked for a preflight step that determines "no key / wrong key / right key" before
@@ -1092,11 +1092,11 @@ this bug needed. `keys.env.age` is required baseline (nothing works without a mo
 key); `captain.env.age`/`shipwright.env.age` are optional compartments, so a missing one
 is silently skipped (charter's own local-only fallback is a legitimate choice, not an
 error) but a *present-and-broken* one fails doctor. Wired as a hard gate at the top of
-`christen` and `board` — both refuse to proceed until `doctor` passes, per Eric's
+`christen` and `board` — both refuse to proceed until `doctor` passes, per the Admiral's
 explicit call.
 
 **Root-caused the actual failure live against a real ship, and it was not an
-expired/revoked PAT.** Live-diagnosed by christening a fresh ship (Eric's prior one,
+expired/revoked PAT.** Live-diagnosed by christening a fresh ship (the Admiral's prior one,
 `noodle`, was sunk mid-session) and deploying the strongbox to it directly: both
 `keys.env.age`/`captain.env.age` decrypted to plausible, correct-length-looking values,
 but `gh auth status` on the ship failed with "The token in GH_TOKEN is invalid" — a real
@@ -1137,7 +1137,7 @@ init` too (new `Write-AgeSecret` helper writes plaintext to a real temp file via
 piping a string to its stdin — no more Windows tool ever gets a chance to inject a CRLF).
 Re-encrypted the *existing* `keys.env.age`/`captain.env.age` in place using the existing
 key and existing secret values (decrypt → `tr -d '\r'` → re-encrypt, piped end to end,
-values never printed) rather than having Eric mint new credentials he didn't need.
+values never printed) rather than having the Admiral mint new credentials he didn't need.
 
 Gave `erda doctor` a dedicated, byte-safe CRLF-contamination check (`grep -qU $'\r'` in
 bash; a `cmd /c`-redirected raw file write + `[IO.File]::ReadAllBytes` in PowerShell,
@@ -1156,7 +1156,7 @@ generic defensive coding.
 
 ## 4w. `sail` is now self-healing for accidentally-closed windows (July 5, 2026)
 
-Eric asked: if he accidentally closes a deck window mid-work, can he get it back, and
+The Admiral asked: if he accidentally closes a deck window mid-work, can he get it back, and
 can that be "a captain command" — clarified to mean `sail`/`captain work` (which already
 delegates to `sail`) should just handle this automatically on re-run, no new subcommand
 needed.
@@ -1169,7 +1169,7 @@ never noticed, let alone recreated.
 Refactored `sail` around a single table of (dir, name, command) per window index (0-8),
 checked independently every time it runs: the session itself is created bare (window 0)
 only if fully absent, then each of windows 1-8 is created only if `tmux list-windows`
-doesn't already show that index. This one mechanism covers both things Eric asked for
+doesn't already show that index. This one mechanism covers both things the Admiral asked for
 without any special-casing: closing one window and re-running `sail` recreates just that
 window; closing all of them (which kills the whole tmux session) makes `sail` rebuild
 the entire deck from scratch, i.e. "reset to the original view" for the total-loss case.
@@ -1182,21 +1182,21 @@ other window's pane PID was byte-identical, proving they were never touched, not
 windows from nothing, same as a first-time sail. Shellcheck clean (only the pre-existing
 SC2015 info note already accepted in §4i).
 
-## 4x. Model fallback: `pick-model` + an Eric-editable priority list (July 5, 2026)
+## 4x. Model fallback: `pick-model` + an Admiral-editable priority list (July 5, 2026)
 
 Origin: GLM-5.2 (the only model ever hardcoded, D5) hung completely on DeepInfra during
 this same session (§4v/v23's diagnostic work) — TLS handshake fine, request sent, zero
 bytes back even after 90s — while `moonshotai/Kimi-K2.7-Code` and `zai-org/GLM-5.1` on
-the same account responded normally. Eric asked for Kimi-K2.7-Code as a backup, plus a
+the same account responded normally. The Admiral asked for Kimi-K2.7-Code as a backup, plus a
 priority list he can manage himself, with automatic fallback through it. Checked pi's
 own docs before building anything: no automatic failover exists (`--models` is manual
 Ctrl+P cycling only), so this needed building from scratch. Two scope decisions, both
-Eric's explicit call: covers Captain *and* crew (not just the bridge), and is a
+The Admiral's explicit call: covers Captain *and* crew (not just the bridge), and is a
 pre-flight health check only — not an attempt to hot-swap models mid-conversation if one
 dies partway through, which would need restarting pi and losing context (flagged as
 future work, not solved here).
 
-Built `ship/bin/pick-model`: reads `ship/models-priority.txt` (Eric-editable, one model
+Built `ship/bin/pick-model`: reads `ship/models-priority.txt` (Admiral-editable, one model
 ID per line, comments/blank lines OK — the actual "priority list I can manage" ask),
 health-checks each in order with a real, cheap (`max_tokens: 1`) DeepInfra completion
 call (12s timeout), and prints the first one that returns HTTP 200. Falls through
@@ -1234,7 +1234,7 @@ info note in `sail` already accepted since §4i).
 
 ## 4y. Purser gets real DeepInfra cost + crew windows show live thinking/tool-call activity (July 6, 2026)
 
-Eric asked two things: (1) Purser was explicitly a placeholder (§4/system-overview.md
+The Admiral asked two things: (1) Purser was explicitly a placeholder (§4/system-overview.md
 said so outright) — get it showing real cost, not an estimate; (2) crew windows,
 though mechanically real since Phase 0, showed nothing useful while an agent worked —
 he wanted visible thinking/tool-call activity, "as long as it doesn't cost more or
@@ -1286,7 +1286,7 @@ stdout, since `unlock`'s entire contract is `eval "$(unlock)"`.
 **Crew visibility**: `muster`'s default `AGENT_CMD` changed from `pi -p ...` to
 `pi --mode json ...` piped through new `ship/bin/pi-monitor`, which prints each
 turn's thinking (truncated to the last ~3000 chars — recent reasoning, not the full
-transcript, per Eric's "a few pages" framing), tool calls, tool results, and final
+transcript, per the Admiral's "a few pages" framing), tool calls, tool results, and final
 text live as they arrive; protocol/lifecycle events (session header, turn/message
 bookkeeping, compaction/retry chatter) are dropped as noise. This is a formatting
 layer only — reasoning is already generated and paid for by `--thinking high`
@@ -1339,7 +1339,7 @@ NDJSON, so piping it through a JSON formatter would just silently swallow it.
 
 **Live-verified immediately after, on a real throwaway Multipass ship
 (`cost-purser-drill`, destroyed after — see below)**, closing every gap the local-only
-pass above left open. Eric explicitly authorized deploying `strongbox/ship.key` to it
+pass above left open. The Admiral explicitly authorized deploying `strongbox/ship.key` to it
 first — a permission classifier flagged that step (reasonably: it's a live credential
 going to a new VM) since "spin up a test ship" hadn't said so explicitly; asked rather
 than routed around it, per this project's own standing practice.
@@ -1406,7 +1406,7 @@ edited `ship/pi/models.json` (baseUrl + headers), `ship/bin/unlock`, `ship/bin/m
 
 ## 4z. Phase 3 formally drilled for real: concurrent crew, rejection/redo, review, merge (July 6, 2026)
 
-Eric asked to "complete Phase 3." Everything up to this point had exercised one real
+The Admiral asked to "complete Phase 3." Everything up to this point had exercised one real
 crew agent at a time; concurrency (two real agents, two worktrees, two branches) had
 only ever been tested with *stub* agents, for roster-locking correctness — never with
 real pi/GLM-5.2 doing real work, and never carried through real review and a real
@@ -1499,7 +1499,7 @@ core defined scope is done.
 
 ## 4aa. Phase 4: the pi extension — /mission, /muster, /harbor, /debrief (July 6, 2026)
 
-Eric asked to move onto Phase 4 after §4z's Phase 3 drill. Per the plan
+The Admiral asked to move onto Phase 4 after §4z's Phase 3 drill. Per the plan
 (`agentic-engineering-plan.md` §9): "pi extension... adding /mission, /muster,
 /harbor, /debrief. Crew are plain headless instances; the extension only manages
 files, tmux, and worktrees." Built `ship/plugin/index.ts` accordingly, with one
@@ -1596,14 +1596,14 @@ just because this session's specific drill went cleanly.
 
 ## 4ab. Restructuring: Shipwright takes over engineering, host Claude Code becomes "Neptune" (July 6, 2026)
 
-Eric asked for a real division-of-labor change, not just a naming exercise. Up to
-this point, "host Claude Code" (this session, running on Eric's own Mac) did all
+The Admiral asked for a real division-of-labor change, not just a naming exercise. Up to
+this point, "host Claude Code" (this session, running on the Admiral's own Mac) did all
 shipyard engineering directly: designed features, wrote `ship/bin/*`/`ship/plugin/`,
 spun up throwaway Multipass ships, `rsync`'d local uncommitted changes onto them to
-test, committed, and pushed. Eric wants that to stop: the **Shipwright** (Claude Code
+test, committed, and pushed. The Admiral wants that to stop: the **Shipwright** (Claude Code
 running ON a real ship, previously just "system-level repair" per `CLAUDE.md`, with
 no role prompt of its own at all — unlike Captain/Crew) should own the full
-engineering loop now. Host Claude Code becomes **Neptune** (Eric's chosen name — a
+engineering loop now. Host Claude Code becomes **Neptune** (the Admiral's chosen name — a
 maritime surveyor concept: independent verification, never building), narrowly
 scoped to: pull the latest pushed `ERDA-Will`, read the Shipwright's drill requests,
 run fresh-Multipass-ship drills against that pulled code, write reports back. Never
@@ -1612,7 +1612,7 @@ edit shipyard code again.
 **Why Shipwright never had a role prompt until now**: `sail`'s shipwright window
 just ran bare `claude`, relying entirely on auto-loaded `CLAUDE.md` for identity —
 no `--append-system-prompt` the way `captain.md`/`crew.md` get one. This is exactly
-why Eric hit "the shipwright does not know who he is" earlier this session: asked
+why the Admiral hit "the shipwright does not know who he is" earlier this session: asked
 about "the purser," it correctly and honestly said it had no standing orders about
 any such role, because it genuinely didn't — captain.md's loop is Captain-specific,
 and nothing described officer roles to any agent, only to human-facing docs.
@@ -1663,7 +1663,7 @@ immediately, confirmed via `git diff` it left no trace.
 This meant the intended "does a scoped `allow` carve an exception out of a
 blanket `deny`" precedence question couldn't be answered empirically in this
 session. Rather than ship something that "looks scoped but isn't actually enforced
-that way" (Eric's own explicit instruction to the config skill), the final
+that way" (the Admiral's own explicit instruction to the config skill), the final
 `.claude/settings.json` sidesteps the question by construction: every existing
 top-level path gets its own explicit `Edit(...)`/`Write(...)` deny entry, and
 `neptune/reports/**` gets the only allow — no path is ever covered by both a deny
@@ -1675,7 +1675,7 @@ took the same non-overlap approach where practical (`rsync` denied outright, sin
 Neptune no longer deploys local trees to test ships at all); `git commit`/`git
 push` couldn't be meaningfully path-scoped this way (the command text doesn't
 reference which files are staged), so those are allowed broadly with only
-force-push variants explicitly denied — matching Eric's own explicit acceptance of
+force-push variants explicitly denied — matching the Admiral's own explicit acceptance of
 this one policy-level (not hard-technical) gap, enforced by `CLAUDE.md`'s
 instructions rather than the permission system for that specific piece.
 
@@ -1687,7 +1687,7 @@ above). The concrete test: try `Edit` on any file outside `neptune/reports/`
 
 ## 4bb. Renamed "preview" -> "telescope" (dev-server window/concept) (July 6, 2026)
 
-Eric hit the `preview` window's "no dev server command configured" message (expected
+The Admiral hit the `preview` window's "no dev server command configured" message (expected
 behavior per §4t — `charter.md`'s "## Dev server" section was still blank on that
 charter, not a bug) and asked to rename the whole concept from "preview" to
 "telescope" rather than just filling in the config.
@@ -1711,8 +1711,8 @@ beyond syntax.
 
 ## 4bc. Phase 5, part 1: Quartermaster — a real review & merge-gate agent (July 7, 2026)
 
-Eric said "let's move onto Phase 5." Phase 5 has four pieces (Quartermaster,
-Bosun, First Mate, the Chartroom Fresh plugin); asked Eric to scope this
+The Admiral said "let's move onto Phase 5." Phase 5 has four pieces (Quartermaster,
+Bosun, First Mate, the Chartroom Fresh plugin); asked the Admiral to scope this
 session rather than guess, and he chose Quartermaster only, matching the plan
 doc's own stated priority order (§361: "Quartermaster review pass... Bosun
 watchdog... then First Mate").
@@ -1721,12 +1721,12 @@ watchdog... then First Mate").
 ship's `.claude/settings.json` (checked into git) was still §4ab's
 Neptune-only deny-list — `Edit`/`Write` blocked everywhere outside
 `neptune/reports/**`. Since `keel.yaml` clones the whole repo, that lockdown
-(meant for Eric's host machine only) shipped onto every ship too, and blocked
+(meant for the Admiral's host machine only) shipped onto every ship too, and blocked
 the Shipwright itself: both the `Edit`/`Write` tools *and* a plain Bash `>`
 redirect into `ship/prompts/` were hard-denied, no prompt, before a single
 Quartermaster file could be written. Confirmed via direct, repeated
 experiment (not assumption) that `deny` rules in settings.json block outright
-with no interactive approval step to override in the moment — Eric's first
+with no interactive approval step to override in the moment — the Admiral's first
 attempt to grant a one-time bypass genuinely couldn't work for that reason. He
 edited `~/shipyard/.claude/settings.json` directly on the ship (via `erda
 board` + `nano`, bypassing Claude Code's permission layer entirely, which
@@ -1734,13 +1734,13 @@ requires no elevated trust since it's just a human at a shell). Fix, committed
 before any Quartermaster work: the tracked `.claude/settings.json` now only
 keeps guardrails safe to apply everywhere (rsync, force-push); Neptune's
 actual narrow scope moved to an **untracked** `~/shipyard/.claude/settings.local.json`
-on Eric's host machine (now `.gitignore`'d so it can never round-trip onto a
+on the Admiral's host machine (now `.gitignore`'d so it can never round-trip onto a
 ship again) — Claude Code merges `settings.local.json` over `settings.json`,
 so a host-only rule now lives in the one place that's actually host-only.
-Exact JSON for Eric's own file is in `neptune/README.md`, along with the same
+Exact JSON for the Admiral's own file is in `neptune/README.md`, along with the same
 "not yet verified live" caveat §4ab already carried, just relocated. Lesson
 for future sessions: a tracked `.claude/settings.json` can never encode
-"only when this checkout is on Eric's own machine" — that distinction only
+"only when this checkout is on the Admiral's own machine" — that distinction only
 exists in `.gitignore`.
 
 **Quartermaster itself** (`ship/bin/quartermaster`, wrapped by the bridge's
@@ -1824,7 +1824,7 @@ yet an active agent"). Left `docs/agentic-engineering-plan.md` untouched,
 consistent with how earlier phases treated it — historical plan, not a
 living reference.
 
-**Not done / explicitly out of scope this session** (per Eric's own
+**Not done / explicitly out of scope this session** (per the Admiral's own
 scoping choice): Bosun (dispatch watchdog, turn/token limits,
 restart-with-feedback) and First Mate (plan critique) are still dashboards,
 not agents. The Chartroom Fresh plugin is still unbuilt. Also not done: a
@@ -1838,7 +1838,7 @@ this in anger).
 
 ## 4bd. Live-drilled the full mission loop through the real Quartermaster (July 7, 2026)
 
-Eric said "let's move onto the next task"; asked him which one he meant (§4bc's
+The Admiral said "let's move onto the next task"; asked him which one he meant (§4bc's
 NEXT TASK list had a few candidates) and he picked item 1: a real end-to-end
 mission using `/review` for its REVIEW step, the same rigor §4aa gave Phase 4.
 §4bc had verified Quartermaster's own logic thoroughly but via synthesized
@@ -1892,7 +1892,7 @@ flagged it before it ran, and the command was redone without that line.
 
 ## 4be. Phase 5, part 2: Bosun — a real dispatch watchdog, detect-and-flag v1 (July 7, 2026)
 
-Eric said "let's go" after §4bd's live drill. Continuing the plan doc's own stated
+The Admiral said "let's go" after §4bd's live drill. Continuing the plan doc's own stated
 Phase 5 priority order (Quartermaster → Bosun → First Mate), next up was Bosun.
 
 **Grounded the design in real facts before writing anything**, same discipline as
@@ -1908,7 +1908,7 @@ ledger row is one turn, tagged by `SHIP_TASK` already. So Bosun needed zero new
 plumbing on the crew-invocation side — it just reads `log/ledger.tsv`, the same file
 the Purser already tallies from.
 
-**Asked Eric one scoping question before implementing**: the plan's Bosun is
+**Asked the Admiral one scoping question before implementing**: the plan's Bosun is
 eventually supposed to "restart hung agents" — a step up in autonomy from
 Quartermaster, which never touches a live process, only git. Gave him a clear
 choice (auto-kill-and-restart vs. detect-and-flag-only) with concrete pseudocode
@@ -1926,7 +1926,7 @@ for that task, and compares against the budget declared in `## Budget`'s `max tu
 /`max output tokens:` fields (order-template.md's own format — confirmed this exact
 format against a real Captain-written order in §4bd's drill, not just the template).
 An unparseable budget defaults to "unknown, don't flag" rather than a false positive
-— deliberately cautious, matching the flag-only spirit Eric asked for. First breach
+— deliberately cautious, matching the flag-only spirit the Admiral asked for. First breach
 logs one `bosun-flag` event and marks the row `OVER BUDGET`; a small `.bosun-flagged.json`
 state file dedupes further logging for the same still-working task (no log spam every
 5s) but clears the moment that task leaves `working`, so a fresh muster of the same
@@ -1959,7 +1959,7 @@ from that header value alone — `cost-proxy` validates the *shape* of a charter
 (same regex muster/sail already use) but not that the charter actually exists, so any
 one-off script pointed at a throwaway `SHIP_CHARTER` value silently litters a
 real-looking directory under `~/fleet/`. Traced it, confirmed it was mine (timestamp,
-content), asked Eric before deleting anyway per the hard rule about `~/fleet/<name>/`
+content), asked the Admiral before deleting anyway per the hard rule about `~/fleet/<name>/`
 — he confirmed, deleted. Worth remembering for future ad-hoc pi testing: pick an
 obviously-scratch `SHIP_CHARTER` value (or unset it) rather than a plausible one like
 `test`.
@@ -1968,15 +1968,15 @@ Updated `docs/system-overview.md` (Bosun section, no longer "not yet an active
 agent") and `docs/captain-cheatsheet.md` (window 3's table row, plus a short note on
 what to do when something's flagged). `captain.md` needed no changes — Bosun v1
 doesn't alter any Captain responsibility or decision point, it's purely an additional
-signal for Eric to act on conversationally.
+signal for the Admiral to act on conversationally.
 
 **Not done**: auto-restart-with-feedback (the plan's eventual full Bosun) — explicitly
-deferred to a later session per Eric's own scoping call. First Mate and the Chartroom
+deferred to a later session per the Admiral's own scoping call. First Mate and the Chartroom
 plugin are still unbuilt.
 
 ## 4bf. Phase 5, part 3: First Mate — a real plan-critique agent (July 7, 2026)
 
-Eric said "let's keep going" after §4be's Bosun landed. Continuing the plan doc's
+The Admiral said "let's keep going" after §4be's Bosun landed. Continuing the plan doc's
 priority order, First Mate was next.
 
 **Design, following the same split Quartermaster and Bosun already established**:
@@ -1993,16 +1993,16 @@ mechanical findings.
 
 **Key design difference from Quartermaster, matching how First Mate is actually
 described in the plan**: advisory only, not a gate. Nothing `/critique` says blocks
-`/muster` — Eric (or the Captain) decides what to do about a `STATUS: CONCERNS`
+`/muster` — the Admiral (or the Captain) decides what to do about a `STATUS: CONCERNS`
 critique, the same way `docs/system-overview.md`'s Bosun section (§4be) is
-detect-and-flag rather than kill-and-restart. Didn't ask Eric to scope this one the
+detect-and-flag rather than kill-and-restart. Didn't ask the Admiral to scope this one the
 way Quartermaster/Bosun were scoped, since the plan's own text ("a second pair of
 eyes... not a second Captain") already settles the autonomy question — First Mate
 was never going to gate anything, unlike Bosun's live-process-killing question.
 
 **Wired into `captain.md`'s PLAN step directly**: after writing `mission.md` +
-orders, the Captain now runs `/critique` itself and presents both to Eric together,
-before Eric ever sees the plan — this is what "before you see it" in the original
+orders, the Captain now runs `/critique` itself and presents both to the Admiral together,
+before the Admiral ever sees the plan — this is what "before you see it" in the original
 design blurb actually means in practice, achieved the same way Quartermaster got
 wired into REVIEW: by instructing the Captain to call it, not by the extension
 auto-chaining anything. `sail`'s window 2 changed from a static placeholder to a live
@@ -2034,19 +2034,19 @@ torn down after.
 **A minor self-caught near-miss, worth recording as a pattern, not just an
 incident**: attempted to delete a stray `~/fleet/test/` directory (a leftover from
 §4be's own grounding experiment) without asking first — the auto-mode permission
-classifier correctly blocked it, and Eric confirmed before it was removed. Two
+classifier correctly blocked it, and the Admiral confirmed before it was removed. Two
 near-misses now in two sessions (this one, and §4be's own `sudo pkill` scare) —
 worth the general reminder for future sessions: verify-then-ask beats
 verify-then-act for anything touching `~/fleet/<name>/`, even when the evidence
 trail is convincing.
 
 **Not done**: the Chartroom Fresh plugin is the last piece of Phase 5. Bosun's
-eventual auto-restart-with-feedback (§4be) is also still open, whenever Eric wants
+eventual auto-restart-with-feedback (§4be) is also still open, whenever the Admiral wants
 to revisit that autonomy call.
 
 ## 4bg. Phase 5, part 4 (last piece): the Chartroom Fresh plugin (July 7, 2026)
 
-Eric said "let's do it" for the last Phase 5 piece. No scoping question this time —
+The Admiral said "let's do it" for the last Phase 5 piece. No scoping question this time —
 the plan's own text is already concrete about exactly three things (open orders/
 reports, highlight SOS reports, jump to a crew member's tmux window), and the blast
 radius is inherently low (local editor UI, no git/process-killing).
@@ -2141,14 +2141,14 @@ worth fixing while touching it) and `docs/captain-cheatsheet.md`'s window-1 row.
 **Phase 5 is now fully built**: Quartermaster (§4bc/§4bd), Bosun v1 (§4be), First
 Mate (§4bf), Chartroom (this section) are all real. What's still explicitly deferred
 by choice, not oversight: Bosun's auto-restart-with-feedback (still detect-and-flag
-only, per Eric's own scope call), and a live mission drill that specifically
+only, per the Admiral's own scope call), and a live mission drill that specifically
 exercises Chartroom mid-mission (this session verified it thoroughly in isolation on
 synthesized state, same methodology as First Mate/Bosun — not yet watched update
 live while a real mission runs through it, the way §4bd drilled the Quartermaster).
 
 ## 4bh. Documentation follow-up sweep (July 7, 2026) — two real stale-doc bugs found, no code changes
 
-Eric asked to clear any outstanding documentation followups. Swept every file under
+The Admiral asked to clear any outstanding documentation followups. Swept every file under
 `docs/` plus `CLAUDE.md` for staleness (TODO/placeholder/not-yet markers, terminology
 drift, references to renamed/removed things) rather than guessing what "outstanding"
 meant. Most of what turned up was already current — `system-overview.md` and
@@ -2170,9 +2170,9 @@ Two real, concrete gaps found and fixed:
    `ERDA-Will` — under the same ship-wide `ERDAgent` identity `fitout.sh` sets for
    every charter/crew commit, collapsing "two places that happen to agree" into one
    real mechanism; Neptune (host-side) is now correctly scoped to `neptune/reports/**`
-   only, under Eric's own separate host identity, irrelevant to shipyard source
+   only, under the Admiral's own separate host identity, irrelevant to shipyard source
    history. Also fixed the summary table's "who authors commits" row to match.
-2. **`docs/cheatsheet.md` (Eric's own quick-reference doc) never got the Phase 4/5
+2. **`docs/cheatsheet.md` (the Admiral's own quick-reference doc) never got the Phase 4/5
    command surface at all.** It tracked cosmetic renames (preview→telescope) across
    several sessions but never added `/mission`, `/muster`, `/harbor`, `/review`,
    `/critique`, `/debrief`, or the Chartroom/Bosun windows — meaning the actual daily
@@ -2190,7 +2190,7 @@ and the current implementation, rather than editing the design doc in place.
 
 ## 4bi. Wave-completion watcher — the Captain wakes itself up (July 7, 2026)
 
-Eric's ask: the Captain has no way to know when mustered crew finish short of him
+The Admiral's ask: the Captain has no way to know when mustered crew finish short of him
 noticing an idle tmux window and prompting it — captain.md's WATCH step has always
 said "monitor `.ship/roster.json`" without ever saying *how*, since a `pi` session only
 does anything when it gets a turn. Confirmed via research (grepping `HANDOFF.md`, both
@@ -2261,7 +2261,7 @@ REJECT verdicts (the stub deliberately writes an out-of-scope file, so this was 
 correct rejection, not a test artifact), and began its own redo protocol — all with
 zero input typed into that pane. Stopped it there (Escape) before letting a doomed
 redo loop burn further real cost, since the stub can never pass review by design.
-Scratch charter and deck torn down after; Eric's real live charter (`ERDA-market-land`,
+Scratch charter and deck torn down after; the Admiral's real live charter (`ERDA-market-land`,
 with real crew working throughout this session) was never touched, confirming the "own
 disposable scratch charter, never an in-progress real one" rule holds even when tested
 concurrently with real live work on the same ship.
@@ -2277,16 +2277,16 @@ same-file inconsistency worth closing while already there), and
 
 **Not done**: no toggle was exposed beyond the `SHIP_WAVE_NOTIFY=0`/`SHIP_WAVE_POLL_MS`
 env vars already wired in following this project's existing `SHIP_*` override
-convention — no scoping question was asked of Eric first, since (unlike Bosun's
+convention — no scoping question was asked of the Admiral first, since (unlike Bosun's
 auto-restart question) this doesn't cross a new autonomy threshold: `captain.md`'s PLAN
-step already has Eric approve the whole mission through INTEGRATE up front, so having
+step already has the Admiral approve the whole mission through INTEGRATE up front, so having
 the Captain notice its own crew finishing is closing an accidental gap, not granting a
 new capability, the same reasoning First Mate used to skip a scoping question in §4bf.
 
 ## 4bj. English-only rule for the Captain (July 7, 2026)
 
-Eric had noticed non-English characters occasionally slipping into the Captain's
-responses. Added a hard rule to `ship/prompts/captain.md`: always respond to Eric in
+The Admiral had noticed non-English characters occasionally slipping into the Captain's
+responses. Added a hard rule to `ship/prompts/captain.md`: always respond to the Admiral in
 English only, never switching languages even if a file/order/report or the model's own
 reasoning drifts into another language first.
 
@@ -2295,14 +2295,14 @@ real model rather than assuming a prompt addition works: ran `pi -p` with
 `--append-system-prompt` set to the captain prompt, real DeepInfra/GLM-5.2, given a
 message containing Chinese text asking for a Chinese reply. With the **old** (pre-edit)
 prompt, GLM-5.2 genuinely replied in Chinese — confirming this is a real model behavior,
-not something Eric imagined. With the **new** prompt (identical message), it replied in
-English. Scoped to Captain only, per Eric's exact request — First Mate/Quartermaster/
+not something the Admiral imagined. With the **new** prompt (identical message), it replied in
+English. Scoped to Captain only, per the Admiral's exact request — First Mate/Quartermaster/
 crew prompts (which also run on GLM-5.2) weren't touched; worth the same fix if the leak
 ever shows up from those roles too, but not assumed without being asked.
 
 ## 4bk. Purser tracks time, not just cost (July 7, 2026)
 
-Eric's ask: track "a few time metrics that would be valuable... ship time, voyage time,
+The Admiral's ask: track "a few time metrics that would be valuable... ship time, voyage time,
 charter time, crew work time... don't overdo it with data points, but don't be stingy
 either." Purser was the obvious owner — it's already the accounting officer (real
 DeepInfra cost via `cost-proxy`/`log/ledger.tsv`), and time is the other half of
@@ -2343,18 +2343,18 @@ section against a genuine empty charter, then a real `muster`'d stub crew task u
 
 Updated `docs/system-overview.md`'s Purser section and `docs/captain-cheatsheet.md`'s
 window-5 row. Not wired into `/debrief`'s narration (which currently only pulls cost
-from the ledger) — a reasonable next step if Eric wants mission debriefs to mention
+from the ledger) — a reasonable next step if the Admiral wants mission debriefs to mention
 elapsed time too, but not assumed without being asked.
 
 ## 4bl. Tmux window titles/glyphs refresh, and a real Chartroom bug found along the way
 (July 7, 2026)
 
-Eric asked for dashboard title lines on the Bosun/Quartermaster windows ("📋
+The Admiral asked for dashboard title lines on the Bosun/Quartermaster windows ("📋
 Quartermaster", "🧑‍🔧 Bosun") and a full glyph/label refresh across every tmux window
 name: Bridge (🧑‍✈), Chartroom (🗺, unchanged), First Mate (🧑‍🔬), Bosun (🧑‍🔧),
 Quartermaster (📋), Purser (🧑‍💼), Engine Room (⚙️), Shipwright (🧑‍🏭), and crew ("👷
 [crew name]", replacing the old bare `⚒$CREWNAME`, now with a space). Telescope's
-glyph (🔭) wasn't in Eric's list — left unchanged, only capitalized the label ("Telescope")
+glyph (🔭) wasn't in the Admiral's list — left unchanged, only capitalized the label ("Telescope")
 for consistency with every other window now using Title Case.
 
 **Found and fixed a real, previously-unverified bug while touching crew window
@@ -2392,7 +2392,7 @@ them) and `docs/captain-cheatsheet.md`'s window table. Left
 historical glyph mentions untouched, per the established precedent of not rewriting
 the planning doc or past session records to match current state.
 
-**Follow-up same day**: Eric noticed the icon-to-title spacing looked inconsistent
+**Follow-up same day**: the Admiral noticed the icon-to-title spacing looked inconsistent
 across windows. Checked byte-for-byte first rather than guessing — every glyph+title
 string genuinely had exactly one space already, no real data bug. Root cause is
 almost certainly rendering, not data: five of these glyphs (Bridge 🧑‍✈, First Mate
@@ -2411,10 +2411,10 @@ charter that the extra space is present exactly where added, nowhere else.
 The real Captain running the real live charter (`ERDA-market-land`) left a genuine,
 substantial review at `.ship/voyage-debrief.md` after its first full 10-task overnight
 voyage — findings F1–F7 with concrete repros, six preserved-pattern notes, and a
-ranked enhancement list. Eric asked me to read it and act on it; confirmed three
+ranked enhancement list. The Admiral asked me to read it and act on it; confirmed three
 findings directly against the real source before trusting the rest (F1's backtick
 extraction, F2's hardcoded `main` base, F6's unfiltered scope scan — all confirmed
-exactly as described), then Eric chose "all six." Worked through them in the
+exactly as described), then the Admiral chose "all six." Worked through them in the
 Captain's own ranked order, self-testing each on a scratch charter before moving to
 the next, never touching `ERDA-market-land` itself.
 
@@ -2519,13 +2519,52 @@ status, `muster --redo` as the actual redo command now that plain re-muster
 correctly refuses), `ship/prompts/crew.md` and `order-template.md` (the `Status: SOS`
 first-line convention), `docs/system-overview.md` (Quartermaster/Crew sections,
 the numbered loop), and `docs/captain-cheatsheet.md` (the reviewing-finished-work
-section). Eric's own voyage-debrief.md is untouched (it's the Captain's artifact, not
+section). The Admiral's own voyage-debrief.md is untouched (it's the Captain's artifact, not
 mine to edit) — this HANDOFF entry is the response to it.
 
 **Not done / open**: none of F1–F7 were skipped; all six shipped. The review's own
 "smaller notes" (captain-vs-plan-authoring tension, an optional event/api registry
 aide, telescope's minor priming race) were flagged by the Captain as open questions or
-low-priority UX, not requests — left alone pending Eric's own call on any of them.
+low-priority UX, not requests — left alone pending the Admiral's own call on any of them.
+
+## 4bn. "Eric" replaced with "the Admiral" throughout the system (July 8, 2026)
+
+The Admiral asked to remove any mention of "Eric" and use "Admiral" instead, across
+the entire system. Swept every prose occurrence of the name: `CLAUDE.md` (including
+adding a formal vocabulary-table entry for "The Admiral (the Admiralty)" — the term
+existed in `docs/system-overview.md`'s "You — the Admiralty" section already, but
+CLAUDE.md's own vocabulary table, the authoritative "use these terms" reference, never
+formally defined it), every `docs/*.md` file, every `ship/prompts/*.md` role contract
+(including live, functional prompt text — `captain.md`, `shipwright.md`,
+`first-mate.md` — not just comments), `ship/plugin/index.ts` (one occurrence was
+inside the real `/debrief` prompt text sent to the model, not a comment),
+`ship/bin/bosun`/`first-mate` (comments), `neptune/README.md` and its request
+template, `scuttlebutt/config.json` (a `//` comment — Fresh's config is JSONC per
+CLAUDE.md's own repo-layout note, confirmed before touching it), `fitout.sh`, and
+`HANDOFF.md` itself (183 occurrences, by far the largest share, via a small Python
+script rather than 183 manual edits — handled three grammatical cases correctly:
+possessive `Eric's` → `the Admiral's`, sentence-initial `Eric` → capitalized `The
+Admiral`, and hyphenated compounds like `Eric-friendly`/`Eric-editable` →
+`Admiral-friendly`/`Admiral-editable` with no article at all).
+
+**Deliberately left untouched**: the literal Unix username `eric` (lowercase,
+e.g. `su - eric`, `/home/eric/...`, `whoami`) — an actual system account, not a prose
+mention of the person; and `EricRoseDev`/`ericrose.dev`/`agentic@ericrose.dev` — real
+GitHub account names and the actual configured git identity email, changing which
+would misrepresent real credentials rather than just reword prose. Also left personal
+pronouns (his/him) referring to the Admiral as-is — the request was specifically about
+the name "Eric," not a full pronoun rewrite, and "the Admiral... his own call" reads
+naturally the same way "the President... his own call" would.
+
+Verified: zero remaining case-sensitive whole-word "Eric" matches anywhere in the
+repo's prose after the sweep (confirmed by re-grepping the whole tree); `shellcheck`/
+`bash -n` clean on every touched shell script; `tsc` typechecked `ship/plugin/index.ts`
+clean; `scuttlebutt/config.json` still valid JSON once its `//` comments are stripped
+(matching how Fresh itself parses JSONC); `HANDOFF.md`'s line count, section-header
+count, and insertion/deletion balance (157/157) all confirm nothing was duplicated or
+dropped by the script. Spot-checked for regex false positives (abbreviations like
+"e.g." wrongly triggering sentence-initial capitalization, double-article artifacts
+like "the the Admiral") — none found.
 
 ## 5. NEXT TASK
 
@@ -2542,7 +2581,7 @@ Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is don
 end-to-end after the erda/gh/fleet-naming/auto-create wave, and `harbor/` was
 consolidated down to one script per shell (`erda.sh`/`erda.ps1`/`install.cmd`) — see
 §4o, §4p. Both ARM64 (Multipass/macOS) and x86_64 (Multipass/Windows-Hyper-V) are
-confirmed working from this side; per D12, Eric wants to confirm that himself,
+confirmed working from this side; per D12, the Admiral wants to confirm that himself,
 hands-on, using `docs/vm-cheatsheet.md`, before OVHcloud (the third harbor) is tried at
 all. Phase 2 (DeepInfra wiring) is done and, per §4y, now exceeds its original scope —
 real per-call cost tracking (originally scoped to Phase 5) is live. Phase 3 (manual
@@ -2569,12 +2608,12 @@ drill confirmed composition, not new logic. **Phase 5, part 2 (Bosun) is now don
 v1 scope** per §4be: `ship/bin/bosun` (window 3, real turn/token-vs-budget detection
 from the same cost-proxy ledger the Purser uses) is real, verified against every
 outcome (under/over budget, dedup, redo-recovers-fresh-flag, unparseable-budget
-never false-flags, empty-state edge cases) plus the real `sail` wiring. Eric's own
+never false-flags, empty-state edge cases) plus the real `sail` wiring. The Admiral's own
 explicit scope call: **detect-and-flag only**, never kill/restart — a real
 autonomy step still ahead of it, deliberately deferred. **Phase 5, part 3 (First
 Mate) is now done** per §4bf: `ship/bin/first-mate` + `/critique` are real,
 advisory-only (never gates `/muster`), wired directly into `captain.md`'s PLAN
-step so Eric sees First Mate's critique alongside every plan. Found and fixed a
+step so the Admiral sees First Mate's critique alongside every plan. Found and fixed a
 real bug during testing (a trailing-slash glob bug in the no-touch-path check,
 caught by the LLM pass independently flagging what the mechanical check missed).
 **Phase 5, part 4 — the Chartroom Fresh plugin — is now done too**, per §4bg:
@@ -2592,14 +2631,14 @@ autonomously reading reports and running `/review` on its own, no prompting.
 
 Next up, in rough priority order:
 
-1. **Eric**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
+1. **the Admiral**: work through `docs/vm-cheatsheet.md` on both Harbors himself — launch,
    use, destroy, relaunch — to confirm reproducibility without Claude Code's
    involvement. This is the actual gate on OVHcloud; nothing here should assume
-   it's done until Eric says so. With Phase 5 built, this is now the most
+   it's done until the Admiral says so. With Phase 5 built, this is now the most
    load-bearing open item — everything else is either deferred-by-choice or
    optional polish.
 2. **Optional follow-ups on already-built Phase 5 pieces, not new phases**: Bosun's
-   auto-restart-with-feedback (still detect-and-flag only, per Eric's own scope
+   auto-restart-with-feedback (still detect-and-flag only, per the Admiral's own scope
    call in §4be); a live mission drill that exercises Chartroom mid-mission
    (verified thoroughly in isolation per §4bg, not yet watched update live during
    a real running mission the way §4bd drilled Quartermaster); whether Quartermaster
@@ -2607,7 +2646,7 @@ Next up, in rough priority order:
    watcher's `session_shutdown` cleanup path (§4bi) was verified by code parity with
    pi's own shipped `titlebar-spinner.ts` idiom, not by a dedicated live test — low
    risk, but flagged rather than silently assumed. None of these block anything —
-   raise them only if Eric asks what's left on Phase 5.
+   raise them only if the Admiral asks what's left on Phase 5.
 3. §4ab's restructuring is still not verified live end-to-end on a *fresh* ship
    (christen new, confirm the shipwright window shows real Shipwright identity, not
    the old "who's the purser" confusion) — worth doing next time a ship gets sunk
@@ -2631,7 +2670,7 @@ Next up, in rough priority order:
 ## 6. Open questions (decide during Phase 3 drills, not now)
 
 1. Crew revision loops: fresh agent per revision vs resumed session — start fresh-per-revision.
-2. Long missions on the VPS ship: does the Bosun become a daemon that pages Eric? (Forced by Phase 6.)
+2. Long missions on the VPS ship: does the Bosun become a daemon that pages the Admiral? (Forced by Phase 6.)
 3. Real task-size ceiling for GLM-5.2 reliability.
 4. Whether Quartermaster reviews ever route to a stronger model via pi's multi-provider support. (`models.json` can hold multiple providers/models at once — mechanically possible now per §4f — but not decided.)
 5. ~~Exact DeepInfra model slug / `[1m]` variant — verify at Phase 2 wiring time.~~ **Resolved — see §4f: `zai-org/GLM-5.2`, no separate `[1m]` variant.**
@@ -2642,30 +2681,30 @@ Next up, in rough priority order:
 - v2: OVHcloud; skeuomorphic naming pass (manifest); pi-primary decision; Purser added.
 - v3: Fresh editor confirmed (Scuttlebutt); window-per-role deck; charters/voyages/fleet model (§6.5); deck-layout.svg + fleet mermaid produced; this handoff created.
 - v4 (Claude Code, July 1–2, 2026): extracted `shipyard-handoff.zip` into the repo; Phase 0 item 1 (shellcheck + hardening + regression drill) done — see §4c. Repo committed and pushed public. Multipass installed. Phase 0 items 2–3 (`fitout.sh`, `keel.yaml`) built and validated on a real ARM64 Multipass ship, three real bugs found and fixed (fnm install dir, PATH not reaching login shells / muster's crew scripts, cloud-init schema type coercion) — see §4d. Phase 0 item 4 done: real-ship deck + concurrent-decks + muster-with-real-`pi` drill over actual `ssh`, found and fixed a fourth, more serious PATH bug (`ssh ship 'command'` is non-login by default — same shape as muster's crew scripts — so the §4d fix silently missed the case that mattered most; fixed with `/usr/local/bin` symlinks to fnm's stable install dir). Phase 0 is complete — see §4e. DeepInfra wiring done and verified with a real crew agent completing real work end-to-end (model slug, `models.json`, strongbox populated, four more real bugs found and fixed: DeepInfra's 422 on the `developer` role, `muster` never loading the strongbox, `crew.md` never reaching `pi`, and the ambiguous report path) — see §4f.
-- v5 (Claude Code, July 2, 2026): x86_64 validation done on Eric's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.
-- v6 (Claude Code, July 2, 2026): Eric set direction — D12 (local Multipass only, OVHcloud deferred until he's confirmed reproducibility himself) and D13 (ship git identity = ERDAgent/agentic@ericrose.dev, separate from his personal account). Implemented D13 in `fitout.sh`, verified on a fresh ship. Wrote `docs/vm-cheatsheet.md`: full manual Multipass lifecycle (launch/stop/start/suspend/snapshot/restore/clone/transfer/destroy) with no Claude Code or `ship/bin/*` dependency, verified against real `multipass help` output — supports Eric's stated goal of being able to run this without Claude Code on the bare-metal host. See §4h.
-- v7 (Claude Code, July 2, 2026): Eric drove the cheatsheet himself end-to-end (found and reported: a Windows-checkout PATH copy-paste slip, PowerShell vs bash syntax gaps in the cheatsheet, the ubuntu-login fnm error, a literal `<ip>` paste). Fixed all of it live against his running ship, plus two real bugs found via his first actual Captain session: the bridge never wired `captain.md` into `pi` at all (fixed — see sail's `CAPTAIN_CMD`), and the bridge started inside a berth instead of the charter root, breaking `charter.md`/`mission.md`'s relative paths (fixed by starting at `$DIR`). Enabled tmux OSC 52 clipboard passthrough (host↔VM copy/paste). Wrote three more docs at Eric's request: `docs/captain-cheatsheet.md` (how to talk to the Captain), `docs/system-overview.md` (all roles + how they interact), `docs/git-and-github.md` (verified directly: charter never creates remote repos, nothing currently pushes to GitHub, no push credentials existed on the ship at all). Eric then ran a real maiden voyage (3/3 crew tasks done first-try, a Vue dice-roller app, clean dry-dock merge) and got a structured Captain review; implemented its headless-browser suggestion (Playwright, verified with a real screenshot, found and fixed the same non-login-PATH gap class for the `playwright` binary), and explicitly declined its `allow-scripts=true` suggestion (conflicts with `CLAUDE.md`'s `--ignore-scripts` hard rule; likely not even a real npm config key). Applied `gh-captain-access.patch` from a separate claude.ai planning session (D14/D15: two-compartment strongbox so crew can structurally never hold `GH_TOKEN`) via `git am`, found and fixed one gap the patch itself missed (`fitout.sh`'s strongbox verification wasn't compartment-aware), and validated everything on the real ship except the actual push test — blocked on Eric minting the PAT. See §4h (partial), captain-prompt/bridge-cwd fix, and §4i.
-- v8 (Claude Code, July 2, 2026): applied a second off-ship patch, `fleet-naming.patch` (D16: Will-class flagship naming, skiffs, named vessels, the one-charter-one-ship residency rule) — verified its two factual claims directly (no hardcoded instance-name dependency anywhere in `keel.yaml`/`fitout.sh`; the guest hostname genuinely matches the Multipass instance name) before trusting it. Eric decided the deferred push policy: auto-push both `integration` and `main` on every mission, no PR-gating — wired into `captain.md`'s INTEGRATE step, which also now fixes the maiden-voyage review's home-port resync bug (verified the fix mechanically by reproducing the staleness for real). Walked Eric through minting and encrypting the GH_TOKEN PAT; first attempt (interactive paste in the SSH session) silently produced a length-1 token, caught by the same byte-length-not-presence verification discipline as §4f — retried via file transfer instead, which worked. Ran the full §4i validation checklist for real: `gh auth status` confirms ERDAgent, a real push (a disposable branch, not the live repo's actual history) succeeded with no prompt, and the negative test confirmed crew-scope pushes fail cleanly. GitHub push access is now fully live and empirically proven correctly scoped.
-- v9 (Claude Code, July 2, 2026): built `harbor/christen.{sh,ps1}` at Eric's request — one friendly command (`christen [name] [cpus] [memory] [disk]`, all optional) replacing the raw `multipass launch` + manual key-substitution dance. Found and fixed a real PowerShell 5.1 gotcha while testing (`$ErrorActionPreference = "Stop"` + redirected native stderr turning a harmless ssh notice into a fatal error). Verified end-to-end with two real launches, both shells. See §4k.
-- v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. Eric confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against Eric's actual PowerShell profile. See the note in §4k and §4l.
-- v11 (Claude Code, July 2, 2026): Eric hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for Eric that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
-- v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at Eric's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with Eric's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.
-- v13 (Claude Code, July 3, 2026): built `captain charter`/`captain work` and made `charter` auto-create a GitHub repo when none is given (reusing one if it already exists), at Eric's request; dropped `captain toss` (repo deletion) after Eric called it off mid-investigation. Found before writing code that the existing push-only PAT can't create repos at all (`Resource not accessible by personal access token`) — repo creation needs a structurally broader scope (`All repositories` + `Administration: RW`), documented as a deliberate tradeoff rather than silently widening the token. The feature works correctly end-to-end via its fallback path but isn't actually usable for real auto-creation until Eric mints that broader token. Verified all three charter paths (auto-create-fallback, `--local`, reuse-existing) against the live ship, and `captain work`'s delegation to `sail`. Rewrote `docs/git-and-github.md`, which had gone stale across two separate earlier changes (gh wiring, push-on-integrate policy) this update needed to account for anyway. See §4n.
-- v14 (Claude Code, July 3, 2026): Eric hit "Permission denied" on `captain` from a freshly christened ship — found the real cause (`ship/bin/captain` and three `harbor/*.sh` files were committed with mode 644, not 755, since this repo has `core.fileMode=false` and `chmod +x` on a brand-new file before `git add` has no effect under that setting), fixed with `git update-index --chmod=+x` on all four, and hotfixed Eric's live ship directly so he didn't need to re-christen. Then walked Eric through minting the broader-scoped GH_TOKEN for real: he considered a two-token split to protect ERDA-Will from the creation-scoped token, which turned out not to actually work (fine-grained PATs' repo list can't be updated by automation, so a creation token needs content access too) — he chose the single broader token knowingly once that was clear. First live test with the working token immediately surfaced a second real bug (freshly created GitHub repos are empty, `charter` assumed otherwise) — fixed and verified end-to-end, including a regression check against the real non-empty ERDA-Will repo. `captain charter` with auto-create is now genuinely fully working. See §4n.
-- v15 (Claude Code, July 3, 2026): Eric asked to re-drill the whole system on this Mac since a lot had landed since the last real macOS test. Full drill passed end-to-end: `erda` global install, `christen`, all agent CLIs + `fitout.sh` idempotency + git identity, the rest of the `erda` command surface, and a real charter → sail → hand-written order → `muster` with real `pi`/GLM-5.2 → manual dry-dock merge → fast-forward `main`, all against a real ship. Found and fixed a real bug: `ship_ip()` in `erda.sh`/`erda.ps1` (and, defensively, both `christen` wait-loops) accepted multipass's `--` placeholder (shown for a stopped/mid-restart instance) as a valid IP, since it only checked non-empty — caused a confusing `ssh: hostname contains invalid characters` instead of erda's own clear not-running message; fixed by requiring a real dotted-quad match in all four spots, shellcheck clean. Also hit a real `multipassd` hang on this host (stuck mid-`resail`/restart, needed two rounds of `sudo launchctl kickstart` plus killing an orphaned qemu process holding a disk lock — all needed Eric directly, since sudo needs a real TTY this tool doesn't have) — root-caused to a Multipass/qemu-on-macOS quirk, not a repo bug; the wedged test VM was purged and redrilled clean rather than debugged further, matching this project's own disposable-ship convention. See §4o.
-- v16 (Claude Code, July 3, 2026): Eric asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.
-- v17 (Claude Code, July 3, 2026): Eric lost `strongbox/ship.key` (likely deleted along with an old ship, reasonably but incorrectly assuming it was ship-scoped — it's host-side infrastructure, `erda sink` can't touch it) and, since the committed `.env.age` files were encrypted to that specific key, recovery meant regenerating the keypair and re-entering both secrets, not just making a new key. Walked Eric through the recovery in a real terminal (secrets need hidden interactive input my tools can't capture) and verified it worked via exact byte-length match against earlier-session values (32/93 bytes) plus a real `gh auth status`. Found one more real bug during verification: the test ship's own git checkout still had the *old* encrypted bundles (cloned before the key rotation), so `unlock` failed with a recipient mismatch even after the new key was deployed — not a script bug, a genuine gap in the mental model (the `.env.age` files travel with the repo, the key doesn't) now documented in `strongbox/README.md`. Built `erda strongbox init/backup/restore` (both `erda.sh` and `erda.ps1`) at Eric's request to make this recoverable/preventable next time — `init` folds the whole manual README recipe into one guided command with the same byte-length verification discipline as §4f, `backup`/`restore` are plain path-based file copies with no assumed cloud/vault provider (Eric's explicit choice over a macOS-Keychain-integrated alternative). Caught a real PowerShell 5.1 footgun in the new `Invoke-Strongbox` before it shipped (`age-keygen`'s stderr output redirected under the script's global `$ErrorActionPreference = "Stop"`) by checking it against the same pattern `Invoke-Christen` already had to work around. See §4q.
-- v18 (Claude Code, July 3–4, 2026): fixed a real Windows-only strongbox bug found while Eric actually used `erda strongbox init` for the first time on a fresh account — the age-not-installed check ran after the destructive "overwrite ship.key" confirmation prompt (reordered), and, more seriously, the PowerShell recipient extraction returned the whole `# public key: age1...` comment line instead of just the key, so `age -r` silently encrypted to a bogus recipient (`.env.age` files decrypted to 0 bytes with no hard failure at the time). Added `winget`-based auto-install of `age` to `erda install` so the missing-dependency gap doesn't recur on the next fresh machine. Added `captain list charters`. Found and fixed the actual cause of a `captain charter` "gh not authenticated" fallback right after a fresh `christen`: `charter` never auto-unlocked captain scope itself (unlike `sail`'s bridge window, which always has) — fixed, verified against fake `gh`/`unlock` binaries in both the success and genuinely-no-key-deployed-yet paths. Merged `erda open lockbox` into `erda board` at Eric's request ("ships get sunk/christened regularly, I shouldn't need to do this every time") — `board` now always deploys the age key and unlocks captain scope automatically, falling back to a plain connect only if no local `strongbox/ship.key` exists at all; updated every doc reference and caught one live bug the removal would otherwise have shipped (`erda strongbox restore`'s own success message in both scripts still pointed at the now-deleted `open lockbox`). See §4r.
-- v19 (Claude Code, July 4, 2026): built the Shipwright role a real tmux window and strongbox compartment at Eric's request, surfacing and resolving two real conflicts with the original plan first (API-key auth over `/login`, per-charter-deck placement despite Shipwright's charter-independent scope — both decided by Eric, see D17) rather than guessing either way. `unlock` gained a `shipwright` scope (superset of captain), `erda strongbox init` gained an `ANTHROPIC_API_KEY` prompt → `shipwright.env.age`, `fitout.sh` verifies the third compartment independently, and `sail` gained window 7 (`claude` at `~/shipyard`, unlocking automatically, falling back to a plain shell like the bridge window does). Verified the new strongbox/unlock plumbing end-to-end against a real throwaway age keypair; the tmux window itself and a live `claude` session are unverified pending a real ship (no tmux on this Windows host). Updated every doc describing the old toolbelt-only shipwright model. See §4s.
-- v20 (Claude Code, July 4, 2026): pushed v19's Shipwright work, then christened a throwaway Multipass ship on this Windows host specifically to verify it for real rather than leave it as an untested claim — `git pull`ed the new code onto it, deployed the age key, chartered a `--local` test charter, and `sail`ed it. Confirmed via `tmux list-windows`/`display-message`/`capture-pane`: all 8 role windows created correctly, `shipwright` at index 7 with cwd genuinely `~/shipyard`, `claude` launched and (correctly, with no key present yet) fell through to its normal `/login` menu. Confirmed `unlock shipwright` loads real `DEEPINFRA_API_KEY`/`GH_TOKEN` while cleanly reporting the absent `ANTHROPIC_API_KEY` rather than erroring (checked byte-lengths only, never printed real values — a permission classifier correctly blocked a first attempt that would have leaked them into the transcript, redone safely via a script file instead). Confirmed empirically (not just by reading `muster`) that a plain auto-indexed `tmux new-window` lands at 8, not colliding with `shipwright`. Sunk the test ship after. Still open, needing Eric's real `ANTHROPIC_API_KEY`: the actual skip-`/login` path and a real shipwright-authored commit to ERDA-Will. See §4s.
-- v21 (Claude Code, July 4, 2026): built the Preview role (dev-server deck window + `erda preview` SSH tunnel) at Eric's request, ruling out any external tunneling service before designing anything (ships already have a directly-reachable IP over existing SSH, so it was never actually a tradeoff) and resolving three real design choices by asking rather than guessing (SSH tunnel over raw IP, `integration` branch over a crew berth, tmux window over a headless process — now D18). Caught a real `core.fileMode=false` bug before pushing (same class as v14/§4o) by checking `git ls-files -s` directly rather than assuming `chmod +x` had taken effect on the new `ship/bin/preview` file. Verified fully live on a throwaway ship: the preview window's graceful no-branch fallback, auto-creation of `berths/integration` once a branch existed, the dev server actually starting, and — from this Windows host — a real `erda preview` SSH tunnel serving a genuine HTTP 200 fetched via `Invoke-WebRequest` against `localhost:8123`. Ship torn down after. See §4t.
-- v22 (Claude Code, July 4, 2026): gave crew members human-readable names at Eric's request — pitched three themed options, Eric chose to specify his own theme (hobbit-like, explicitly not actual Tolkien lore names) rather than pick from the pitches. Landed on a 31-name invented pool, deliberately avoiding the specific flower names Tolkien used for Sam Gamgee's children (the real collision risk, more than the obviously-famous names). `muster` now assigns one per crew member, avoiding collision with other currently-active crew in the same charter; it replaces the task ID in the tmux window title and status messages, while task IDs/branches/order paths stay unchanged underneath. Verified the random-pick-with-collision-avoidance logic standalone (`jq` isn't installed on this Windows host, so the roster.json field additions rely on close analogy to already-proven expressions rather than independent testing); an actual live `muster` run wasn't exercised this session. See §4u.
-- v23 (Claude Code, July 5, 2026): investigated Eric's `captain charter` local-only fallback and built `erda doctor` (hard-blocking `christen`/`board`, his explicit choice) to catch dead credentials before they cause confusing downstream failures. Live-diagnosed against a real ship rather than guessing: not an expired/revoked PAT as suspected, but a genuine encoding bug — `erda.ps1`'s old `"KEY=value" | & age ...` pattern baked a stray CRLF into every Windows-encrypted secret, invisible because PowerShell's and even git-bash's own tools silently launder it back out, so it only ever broke on a real Ubuntu ship's bash. Fixed `unlock` defensively (works immediately on already-corrupted secrets, no re-mint needed), fixed the root cause in `Invoke-Strongbox init` (writes via a real LF-only temp file now), re-encrypted the existing compartments in place with Eric's existing, still-valid credentials, and gave `doctor` a byte-safe CRLF check that can't be fooled by either platform's own text-mode laundering. Verified end-to-end on a live ship: `gh auth status` clean, and the originally-failing `captain charter ERDA-utility-belt` succeeded for real (reused the existing GitHub repo, cloned, chartered). See §4v.
-- v24 (Claude Code, July 5, 2026): made `sail` self-healing at Eric's request — closing a deck window by accident used to lose it permanently, since `sail` only ever built all 9 windows in one shot, and only when the tmux session didn't exist yet at all. Refactored around one per-window-index table checked independently on every run: a missing window (whether one got closed, or the whole session died from closing the last one) is recreated; a live window is left completely alone. Verified on a real ship with pane-PID comparison before/after healing a killed window — every untouched window's PID was byte-identical, not just visually the same — and separately verified killing the entire session causes a full, correct rebuild. See §4w.
-- v25 (Claude Code, July 5, 2026): built model fallback at Eric's request, prompted directly by GLM-5.2's real outage earlier this session — `ship/bin/pick-model` health-checks an Eric-editable priority list (`ship/models-priority.txt`) against real DeepInfra calls and picks the first model that responds; wired into both `sail`'s Captain and `muster`'s crew (his explicit call to cover both), as a pre-flight check only, not mid-conversation hot-swapping (also his call, flagged as future work). Added Kimi-K2.7-Code and GLM-5.1 to `models.json` with real slugs/pricing verified against DeepInfra's live catalog. Verified against the actual ongoing outage, not a simulation: `pick-model` correctly detected GLM-5.2 still down, fell through to Kimi-K2.7-Code, and a real Captain session launched on it and replied normally with genuine token usage logged. See §4x.
-- v26 (Claude Code, July 6, 2026): Eric asked for Purser to show real cost (it was an explicit placeholder) and for crew windows to show live thinking/tool-call activity, "as long as it doesn't cost more or slow things down." Root-caused the "estimate" first: pi's own cost is computed from a local price table in `models.json`, not DeepInfra's real bill, which only appears in the raw `usage.estimated_cost` field pi never surfaces. Built `ship/bin/cost-proxy` (a ship-wide, zero-dependency Node daemon on a fixed `127.0.0.1:8790`) sitting in front of DeepInfra, logging real per-call cost to `log/ledger.tsv`, tagged via `X-Ship-*` headers each window sets from its own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports — chosen over an initial per-window-dynamic-`baseUrl` design after finding conflicting doc evidence on whether `baseUrl` actually supports env-var interpolation (headers definitely do, so the design was changed to not need the ambiguous part at all). `unlock` now ensures the proxy is running (silent, non-fatal, careful never to leak a byte onto the stdout `eval "$(unlock)"` depends on). Switched `muster`'s default crew invocation from `pi -p` (prints nothing until done) to `pi --mode json | pi-monitor` (new script) — confirmed empirically, via a real local pi install, that `--mode json` with a prompt argument exits on completion rather than hanging on stdin like RPC mode, before ever wiring it in, since getting that wrong would have hung every crew agent. Found and fixed two real bugs during local verification (no live ship this session): `cost-proxy` would have gone silently blind on any compressed upstream response (fixed by forcing `accept-encoding: identity`), and `pi-monitor`'s error-message branch was unreachable behind a branch that matched first and produced empty output. Verified via a local mock DeepInfra server (streaming + non-streaming, pass-through fidelity, forced `stream_options.include_usage`, correct ledger attribution, graceful no-context skip) and real/synthetic `pi --mode json` transcripts; shellcheck/`node --check`/`bash -n` clean throughout; confirmed new scripts land as `100755` after `git add`, the exact filemode gotcha from §4n/§4o. Not verified: real GLM-5.2 thinking-block shape, `cost-proxy` against real DeepInfra over real TLS, and the full loop end-to-end — all need a real ship and Eric's real `DEEPINFRA_API_KEY`. See §4y.
-- v27 (Claude Code, July 6, 2026): Eric asked to actually drill v26's work on a real ship. Christened a real throwaway Multipass VM (`cost-purser-drill`); since `keel.yaml` clones the published repo (not this session's uncommitted changes), `rsync`'d the local working tree onto it instead of pushing untested code to `main`. Asked before deploying `strongbox/ship.key` to the new VM rather than routing around the permission classifier that (reasonably) flagged it — Eric confirmed. Found and fixed a real, self-inflicted bug immediately: ran `fitout.sh` via `sudo bash` instead of the `su - eric` form `keel.yaml` actually uses, which put fnm/node under `/root` instead of `eric`, breaking non-login `node` resolution — the same PATH bug class as §4d/§4e/§4g, this time from an operator mistake rather than a real gap; fixed by cleaning up the stray root-owned fnm dir and re-running correctly. With that fixed, drilled for real: `cost-proxy` auto-started via `unlock` with zero manual steps; a real Captain message got a real GLM-5.2 reply and a real ledger line (`$0.00196407`, closely matching but more precise than pi's own displayed `$0.002` estimate); a real `muster`'d crew task (no stub) showed genuine live thinking, tool calls, and tool results streaming in the window the entire run, instead of the blank pane `pi -p` used to leave — confirmed `{type:"thinking", thinking:"..."}` really is GLM-5.2's actual content-block shape, matching what §4y inferred from docs alone; task completed correctly (file created, committed, report written, `roster.json` status `done`); Purser's running total correctly aggregated all six real calls across both roles. Found and fixed two cosmetic bugs only visible in a real 80-column tmux pane — the calls table wrapped (shortened columns, `HH:MM:SS` timestamps, dropped the model's `org/` prefix) and per-call cost showed inconsistent floating-point noise (`$0.0006732600044928` → `%.6f`) — both fixed and re-verified against the live pane before moving on. Test ship destroyed after (`erda sink -y`), confirmed nothing left running via `multipass list`. Every previously-"not verified" item from §4y is now real-ship-confirmed. See §4y.
-- v28 (Claude Code, July 6, 2026): Eric asked to "complete Phase 3" after being told the project was mid-Phase-3 — concurrency and the full review/merge cycle had only ever been drilled with stub agents, never real crew. Christened `phase3-drill`, ran `fitout.sh` correctly this time (learned from v27's own mistake), chartered `toolkit-drill --local`, wrote two orders with deliberately disjoint file scope, mustered both concurrently. Found and fixed two real bugs: (1) a crew agent committed a stray `__pycache__/*.pyc` file outside its declared scope while its own self-report claimed otherwise — crew.md's scope discipline is self-reported with no technical guard against `git add -A` sweeping up interpreter cache files; drilled the actual prescribed reject-and-redo mechanism for the first time (remove berth/branch, append reviewer feedback to the order, re-muster the same task ID against a fresh agent) rather than silently patching it; (2) that exact redo exposed a second, more serious bug — `muster`'s roster-append never removed a stale entry for a re-mustered task ID, so `roster.json` accumulated ghost rows and the completion-time status update (keyed by task ID alone) would silently mark all of them done/failed together regardless of which attempt actually ran. Fixed in `ship/bin/muster` (roster-append now drops any existing same-task entry before appending), verified against the actual buggy roster snapshot, then re-verified against a real third crew run. Wasted one redo cycle by deleting a branch before checking whether it had fixed the pycache issue — turned it into a second real verification pass instead of a pure loss. Ran `captain.md`'s REVIEW/INTEGRATE sequence by hand for the first time all the way through with real crew work: found and fixed a self-inflicted relative-path mistake (`git -C .hold.git worktree add` with a relative path resolves against `-C`'s target dir, not the caller's cwd), then merged both branches cleanly, ran the dry-dock suite for real, fast-forwarded `main`, synced `berths/home-port`, independently re-ran both test suites myself rather than trusting crew self-reports, and pruned both berths. Purser confirmed the whole drill's real cost as it happened: 29 calls, $0.0456, individually attributed across all three T-002 attempts — concrete evidence for why per-attempt cost attribution matters, since two of three were pure rework cost. Ship destroyed after, nothing left running. See §4z.
-- v29 (Claude Code, July 6, 2026): Eric asked to move onto Phase 4 — the pi extension adding `/mission`/`/muster`/`/harbor`/`/debrief`. Grounded the design in the real shipped TypeScript declarations and example extensions from the locally-installed `@earendil-works/pi-coding-agent` package (ground truth, not doc summaries, after §4y's `baseUrl`-interpolation doc inconsistency made clear that mattered) rather than trusting fetched-doc paraphrases. Built `ship/plugin/index.ts`: `/muster`/`/harbor` as pure deterministic wrappers (files + one subprocess call, zero LLM turns); `/mission`/`/debrief` gather real ground truth (goal text; roster/git/ledger data) and hand it to the Captain's own conversation via `sendUserMessage`, rather than reimplementing planning or narration. Verified every path against the real `pi` runtime before touching a ship, using RPC mode's documented `{"type":"prompt","message":"/command"}` command-dispatch behavior as a scriptable test harness (no live ship, no real credentials needed) — including the one genuinely interactive path (`/harbor`'s `ctx.ui.select()` picker) via a real two-way RPC round trip. Diagnosed one false alarm correctly during this (a `pi.exec()` call inside `/debrief` appeared to die silently; root-caused to the test harness closing stdin before the async handler resolved, not a real bug in the extension). Wired `ship/plugin/` into `fitout.sh` as a global extension symlink (`~/.pi/agent/extensions/shipyard`), confirmed the documented directory-discovery convention works locally without `-e` before deploying anywhere. Live-drilled end-to-end on a real throwaway ship: confirmed `[Extensions] shipyard` in the real bridge window's own startup banner, then drove an actual mission through all four commands with real GLM-5.2 in the real interactive TUI (`/mission` planned and stopped for approval correctly; `/muster` spawned crew instantly with zero added token cost, confirmed via the footer; crew showed full live thinking per §4y; `/harbor`'s real interactive picker worked live; hand-ran the real merge to `main`; `/debrief` narrated real shipped/blocked/cost facts that cross-checked correctly against `purser-totals`, plus volunteered a genuinely useful unprompted observation about the charter's blank conventions). Ship destroyed after, nothing left running. See §4aa.
-- v30 (Claude Code, July 6, 2026): Eric hit the `preview` window's expected "no dev server command configured" message (that charter's `charter.md` just hadn't been filled in, per §4t) and asked to rename the whole concept from "preview" to "telescope" rather than fix the config. Pure identifier rename, no logic change: `ship/bin/preview` -> `ship/bin/telescope`, `sail`'s window 8 (`🌐 preview` -> `🔭 telescope`), `fitout.sh`'s symlink loop, both `erda.sh`/`erda.ps1`'s `preview` subcommand -> `telescope`, `charter.md`'s template blurb, `captain.md`'s INTEGRATE-step comment, and every doc reference (`CLAUDE.md`, `docs/cheatsheet.md`, `docs/system-overview.md`, `docs/vm-cheatsheet.md`). Left this HANDOFF's own historical entries (D18, §4t, v21) saying "preview" since they're an accurate record of what it was called when built. Verified with `bash -n` on every touched script; not re-drilled live since nothing but names changed. See §4bb.
-- v31 (Claude Code, July 6, 2026): Eric asked for a real operating-model change — Shipwright (on-ship Claude Code) now owns all shipyard engineering; host Claude Code becomes "Neptune" (Eric's chosen name), narrowly scoped to fresh-Multipass-ship drills and reports, never editing shipyard code again. Root-caused why Shipwright "didn't know who he was" earlier this session: unlike Captain/Crew, it never had its own role prompt — `sail` just ran bare `claude`. Built `ship/prompts/shipwright.md` (mirrors `captain.md`'s loop shape); wired it into `sail`'s shipwright window via `--append-system-prompt`, first checking `claude --help` directly rather than assuming it takes a file path the way pi's identically-named flag does (it doesn't — inline text only, so the fix splices `$(cat ...)` in with the same deferred-evaluation escaping as `$(unlock shipwright)`). Built `neptune/` (requests/reports + templates) as the git-mediated channel between the two, mirroring `.ship/orders`+`.ship/reports`'s existing design language. Updated `CLAUDE.md` with a "which Claude are you" section and Neptune's explicit scope. Used the `update-config` skill to write `.claude/settings.json` as the actual enforcement mechanism (not just prose) — tried to empirically verify the deny/allow precedence first (per this project's own standing discipline) via a live test edit, found it wasn't blocked, root-caused to the settings watcher not picking up a `.claude/` directory that didn't exist at session start (the same caveat the config skill documents for hooks), reverted the test edit cleanly, and designed around the gap rather than guess: the final settings.json uses fully non-overlapping per-path deny rules instead of a blanket-deny-plus-scoped-allow, so there's no untested precedence to get wrong. Explicitly flagged what's still unverified (the rules haven't been seen live by any session yet) rather than claim more confidence than earned. See §4ab.
+- v5 (Claude Code, July 2, 2026): x86_64 validation done on the Admiral's Windows/Hyper-V machine — Multipass installed via winget, real amd64 Ubuntu 24.04 ship drilled end-to-end over SSH (cloud-init, agent-CLI PATH, fitout idempotency, charter/sail/muster/dry-dock). Two more real bugs found and fixed: `fd` unreachable from non-login shells (same class as §4d/§4e's PATH bugs, just never exercised for `fd` before), and `muster` corrupting its own generated crew-run script when `SHIP_AGENT` contains a literal `"` (diagnostic echo line's quoting collided with the interpolated value; real invocation line was unaffected). Confirmed `multipass exec` is unreliable for login-shell checks on this Hyper-V backend (client hangs even though the guest command completes) — real `ssh` remains the right tool, per §4e. Flagged, not fixed: no ship (or this dev host) has a default git identity, so crew-agent commits fail until an operator sets one — needs a decision, not a guess. See §4g.
+- v6 (Claude Code, July 2, 2026): the Admiral set direction — D12 (local Multipass only, OVHcloud deferred until he's confirmed reproducibility himself) and D13 (ship git identity = ERDAgent/agentic@ericrose.dev, separate from his personal account). Implemented D13 in `fitout.sh`, verified on a fresh ship. Wrote `docs/vm-cheatsheet.md`: full manual Multipass lifecycle (launch/stop/start/suspend/snapshot/restore/clone/transfer/destroy) with no Claude Code or `ship/bin/*` dependency, verified against real `multipass help` output — supports the Admiral's stated goal of being able to run this without Claude Code on the bare-metal host. See §4h.
+- v7 (Claude Code, July 2, 2026): the Admiral drove the cheatsheet himself end-to-end (found and reported: a Windows-checkout PATH copy-paste slip, PowerShell vs bash syntax gaps in the cheatsheet, the ubuntu-login fnm error, a literal `<ip>` paste). Fixed all of it live against his running ship, plus two real bugs found via his first actual Captain session: the bridge never wired `captain.md` into `pi` at all (fixed — see sail's `CAPTAIN_CMD`), and the bridge started inside a berth instead of the charter root, breaking `charter.md`/`mission.md`'s relative paths (fixed by starting at `$DIR`). Enabled tmux OSC 52 clipboard passthrough (host↔VM copy/paste). Wrote three more docs at the Admiral's request: `docs/captain-cheatsheet.md` (how to talk to the Captain), `docs/system-overview.md` (all roles + how they interact), `docs/git-and-github.md` (verified directly: charter never creates remote repos, nothing currently pushes to GitHub, no push credentials existed on the ship at all). The Admiral then ran a real maiden voyage (3/3 crew tasks done first-try, a Vue dice-roller app, clean dry-dock merge) and got a structured Captain review; implemented its headless-browser suggestion (Playwright, verified with a real screenshot, found and fixed the same non-login-PATH gap class for the `playwright` binary), and explicitly declined its `allow-scripts=true` suggestion (conflicts with `CLAUDE.md`'s `--ignore-scripts` hard rule; likely not even a real npm config key). Applied `gh-captain-access.patch` from a separate claude.ai planning session (D14/D15: two-compartment strongbox so crew can structurally never hold `GH_TOKEN`) via `git am`, found and fixed one gap the patch itself missed (`fitout.sh`'s strongbox verification wasn't compartment-aware), and validated everything on the real ship except the actual push test — blocked on the Admiral minting the PAT. See §4h (partial), captain-prompt/bridge-cwd fix, and §4i.
+- v8 (Claude Code, July 2, 2026): applied a second off-ship patch, `fleet-naming.patch` (D16: Will-class flagship naming, skiffs, named vessels, the one-charter-one-ship residency rule) — verified its two factual claims directly (no hardcoded instance-name dependency anywhere in `keel.yaml`/`fitout.sh`; the guest hostname genuinely matches the Multipass instance name) before trusting it. The Admiral decided the deferred push policy: auto-push both `integration` and `main` on every mission, no PR-gating — wired into `captain.md`'s INTEGRATE step, which also now fixes the maiden-voyage review's home-port resync bug (verified the fix mechanically by reproducing the staleness for real). Walked the Admiral through minting and encrypting the GH_TOKEN PAT; first attempt (interactive paste in the SSH session) silently produced a length-1 token, caught by the same byte-length-not-presence verification discipline as §4f — retried via file transfer instead, which worked. Ran the full §4i validation checklist for real: `gh auth status` confirms ERDAgent, a real push (a disposable branch, not the live repo's actual history) succeeded with no prompt, and the negative test confirmed crew-scope pushes fail cleanly. GitHub push access is now fully live and empirically proven correctly scoped.
+- v9 (Claude Code, July 2, 2026): built `harbor/christen.{sh,ps1}` at the Admiral's request — one friendly command (`christen [name] [cpus] [memory] [disk]`, all optional) replacing the raw `multipass launch` + manual key-substitution dance. Found and fixed a real PowerShell 5.1 gotcha while testing (`$ErrorActionPreference = "Stop"` + redirected native stderr turning a harmless ssh notice into a fatal error). Verified end-to-end with two real launches, both shells. See §4k.
+- v10 (Claude Code, July 2, 2026): investigated the real ship (`ship`) going missing — three independent signals (multipass list, Hyper-V's Get-VM, the multipassd instance registry) agreeing it was gone, root-caused via Hyper-V's VMMS event log to a deletion at 10:49:15 PM with no matching command in this session's own history, so asked rather than assumed. The Admiral confirmed he deleted it himself, work accepted as lost (testing phase). Then built `harbor/install.{sh,ps1}` so `christen` works as a bare global command from any directory, reproducibly on a fresh computer (the setup step itself lives in the repo, not a manual profile edit) — verified for real against the Admiral's actual PowerShell profile. See the note in §4k and §4l.
+- v11 (Claude Code, July 2, 2026): the Admiral hit "running scripts is disabled" dot-sourcing his profile — a real reproducibility gap in v10's install work, not just his machine: fresh Windows accounts default to an execution policy that blocks any local `.ps1`, including `install.ps1` itself. Fixed his live system directly (`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`), then fixed the actual gap with `harbor/install.cmd` (a batch bootstrap immune to PowerShell's execution policy) plus having `install.ps1` set the same permanent policy itself. Also confirmed for the Admiral that christen's real defaults are 2 cpus/4G/20G, not the 1cpu/2G/10G he'd seen — those were only ever explicit args in this session's own throwaway test VMs. See §4l.
+- v12 (Claude Code, July 2, 2026): built `harbor/erda.{sh,ps1}` at the Admiral's request — a unified `erda <command>` prefix covering christen plus new short commands for the rest of the day-to-day lifecycle (board, open lockbox, anchor/force-anchor, sail/resail, suspend, view, sink). Flagged (didn't hide) a naming collision between the new `erda sail` and the existing `ship/bin/sail <charter>` before proceeding with the Admiral's exact spec. Verified every command against a real throwaway ship, including both paths of `sink`'s confirmation prompt. Rewrote `docs/vm-cheatsheet.md` throughout to lead with `erda` equivalents, and fixed a pre-existing duplicate-`## 8.` numbering bug found in the process. See §4m.
+- v13 (Claude Code, July 3, 2026): built `captain charter`/`captain work` and made `charter` auto-create a GitHub repo when none is given (reusing one if it already exists), at the Admiral's request; dropped `captain toss` (repo deletion) after the Admiral called it off mid-investigation. Found before writing code that the existing push-only PAT can't create repos at all (`Resource not accessible by personal access token`) — repo creation needs a structurally broader scope (`All repositories` + `Administration: RW`), documented as a deliberate tradeoff rather than silently widening the token. The feature works correctly end-to-end via its fallback path but isn't actually usable for real auto-creation until the Admiral mints that broader token. Verified all three charter paths (auto-create-fallback, `--local`, reuse-existing) against the live ship, and `captain work`'s delegation to `sail`. Rewrote `docs/git-and-github.md`, which had gone stale across two separate earlier changes (gh wiring, push-on-integrate policy) this update needed to account for anyway. See §4n.
+- v14 (Claude Code, July 3, 2026): the Admiral hit "Permission denied" on `captain` from a freshly christened ship — found the real cause (`ship/bin/captain` and three `harbor/*.sh` files were committed with mode 644, not 755, since this repo has `core.fileMode=false` and `chmod +x` on a brand-new file before `git add` has no effect under that setting), fixed with `git update-index --chmod=+x` on all four, and hotfixed the Admiral's live ship directly so he didn't need to re-christen. Then walked the Admiral through minting the broader-scoped GH_TOKEN for real: he considered a two-token split to protect ERDA-Will from the creation-scoped token, which turned out not to actually work (fine-grained PATs' repo list can't be updated by automation, so a creation token needs content access too) — he chose the single broader token knowingly once that was clear. First live test with the working token immediately surfaced a second real bug (freshly created GitHub repos are empty, `charter` assumed otherwise) — fixed and verified end-to-end, including a regression check against the real non-empty ERDA-Will repo. `captain charter` with auto-create is now genuinely fully working. See §4n.
+- v15 (Claude Code, July 3, 2026): the Admiral asked to re-drill the whole system on this Mac since a lot had landed since the last real macOS test. Full drill passed end-to-end: `erda` global install, `christen`, all agent CLIs + `fitout.sh` idempotency + git identity, the rest of the `erda` command surface, and a real charter → sail → hand-written order → `muster` with real `pi`/GLM-5.2 → manual dry-dock merge → fast-forward `main`, all against a real ship. Found and fixed a real bug: `ship_ip()` in `erda.sh`/`erda.ps1` (and, defensively, both `christen` wait-loops) accepted multipass's `--` placeholder (shown for a stopped/mid-restart instance) as a valid IP, since it only checked non-empty — caused a confusing `ssh: hostname contains invalid characters` instead of erda's own clear not-running message; fixed by requiring a real dotted-quad match in all four spots, shellcheck clean. Also hit a real `multipassd` hang on this host (stuck mid-`resail`/restart, needed two rounds of `sudo launchctl kickstart` plus killing an orphaned qemu process holding a disk lock — all needed the Admiral directly, since sudo needs a real TTY this tool doesn't have) — root-caused to a Multipass/qemu-on-macOS quirk, not a repo bug; the wedged test VM was purged and redrilled clean rather than debugged further, matching this project's own disposable-ship convention. See §4o.
+- v16 (Claude Code, July 3, 2026): the Admiral asked to consolidate `harbor/` down to exactly one `.sh`, one `.ps1`, one `.cmd` — folding `christen` and `install` in as `erda` subcommands instead of separate scripts. Merged `christen.{sh,ps1}` and `install.{sh,ps1}` into `erda.{sh,ps1}` (as `cmd_christen`/`cmd_install` and `Invoke-Christen`/`Invoke-Install`), deleted the four now-redundant files, repointed `install.cmd` (which has to stay standalone — its whole job is running before PowerShell's execution policy allows any local `.ps1` at all, including `erda.ps1` itself) at `erda.ps1 install`. Found and fixed a real bug before it shipped: the install marker text changed as part of the merge, and both scripts matched it by exact string, which would have silently duplicated the installed `erda()` shell function instead of replacing the stale one on upgrade — caught by testing the upgrade path over this session's own already-installed block, fixed by matching a stable prefix instead of the full marker line. Re-verified `erda christen` end-to-end on a real ship after the merge, confirmed the upgrade path replaces cleanly with no duplication, shellcheck clean, correct git-tracked executable bit on `erda.sh`. Updated `CLAUDE.md` and `docs/vm-cheatsheet.md` to drop references to the deleted standalone scripts. See §4p.
+- v17 (Claude Code, July 3, 2026): the Admiral lost `strongbox/ship.key` (likely deleted along with an old ship, reasonably but incorrectly assuming it was ship-scoped — it's host-side infrastructure, `erda sink` can't touch it) and, since the committed `.env.age` files were encrypted to that specific key, recovery meant regenerating the keypair and re-entering both secrets, not just making a new key. Walked the Admiral through the recovery in a real terminal (secrets need hidden interactive input my tools can't capture) and verified it worked via exact byte-length match against earlier-session values (32/93 bytes) plus a real `gh auth status`. Found one more real bug during verification: the test ship's own git checkout still had the *old* encrypted bundles (cloned before the key rotation), so `unlock` failed with a recipient mismatch even after the new key was deployed — not a script bug, a genuine gap in the mental model (the `.env.age` files travel with the repo, the key doesn't) now documented in `strongbox/README.md`. Built `erda strongbox init/backup/restore` (both `erda.sh` and `erda.ps1`) at the Admiral's request to make this recoverable/preventable next time — `init` folds the whole manual README recipe into one guided command with the same byte-length verification discipline as §4f, `backup`/`restore` are plain path-based file copies with no assumed cloud/vault provider (the Admiral's explicit choice over a macOS-Keychain-integrated alternative). Caught a real PowerShell 5.1 footgun in the new `Invoke-Strongbox` before it shipped (`age-keygen`'s stderr output redirected under the script's global `$ErrorActionPreference = "Stop"`) by checking it against the same pattern `Invoke-Christen` already had to work around. See §4q.
+- v18 (Claude Code, July 3–4, 2026): fixed a real Windows-only strongbox bug found while the Admiral actually used `erda strongbox init` for the first time on a fresh account — the age-not-installed check ran after the destructive "overwrite ship.key" confirmation prompt (reordered), and, more seriously, the PowerShell recipient extraction returned the whole `# public key: age1...` comment line instead of just the key, so `age -r` silently encrypted to a bogus recipient (`.env.age` files decrypted to 0 bytes with no hard failure at the time). Added `winget`-based auto-install of `age` to `erda install` so the missing-dependency gap doesn't recur on the next fresh machine. Added `captain list charters`. Found and fixed the actual cause of a `captain charter` "gh not authenticated" fallback right after a fresh `christen`: `charter` never auto-unlocked captain scope itself (unlike `sail`'s bridge window, which always has) — fixed, verified against fake `gh`/`unlock` binaries in both the success and genuinely-no-key-deployed-yet paths. Merged `erda open lockbox` into `erda board` at the Admiral's request ("ships get sunk/christened regularly, I shouldn't need to do this every time") — `board` now always deploys the age key and unlocks captain scope automatically, falling back to a plain connect only if no local `strongbox/ship.key` exists at all; updated every doc reference and caught one live bug the removal would otherwise have shipped (`erda strongbox restore`'s own success message in both scripts still pointed at the now-deleted `open lockbox`). See §4r.
+- v19 (Claude Code, July 4, 2026): built the Shipwright role a real tmux window and strongbox compartment at the Admiral's request, surfacing and resolving two real conflicts with the original plan first (API-key auth over `/login`, per-charter-deck placement despite Shipwright's charter-independent scope — both decided by the Admiral, see D17) rather than guessing either way. `unlock` gained a `shipwright` scope (superset of captain), `erda strongbox init` gained an `ANTHROPIC_API_KEY` prompt → `shipwright.env.age`, `fitout.sh` verifies the third compartment independently, and `sail` gained window 7 (`claude` at `~/shipyard`, unlocking automatically, falling back to a plain shell like the bridge window does). Verified the new strongbox/unlock plumbing end-to-end against a real throwaway age keypair; the tmux window itself and a live `claude` session are unverified pending a real ship (no tmux on this Windows host). Updated every doc describing the old toolbelt-only shipwright model. See §4s.
+- v20 (Claude Code, July 4, 2026): pushed v19's Shipwright work, then christened a throwaway Multipass ship on this Windows host specifically to verify it for real rather than leave it as an untested claim — `git pull`ed the new code onto it, deployed the age key, chartered a `--local` test charter, and `sail`ed it. Confirmed via `tmux list-windows`/`display-message`/`capture-pane`: all 8 role windows created correctly, `shipwright` at index 7 with cwd genuinely `~/shipyard`, `claude` launched and (correctly, with no key present yet) fell through to its normal `/login` menu. Confirmed `unlock shipwright` loads real `DEEPINFRA_API_KEY`/`GH_TOKEN` while cleanly reporting the absent `ANTHROPIC_API_KEY` rather than erroring (checked byte-lengths only, never printed real values — a permission classifier correctly blocked a first attempt that would have leaked them into the transcript, redone safely via a script file instead). Confirmed empirically (not just by reading `muster`) that a plain auto-indexed `tmux new-window` lands at 8, not colliding with `shipwright`. Sunk the test ship after. Still open, needing the Admiral's real `ANTHROPIC_API_KEY`: the actual skip-`/login` path and a real shipwright-authored commit to ERDA-Will. See §4s.
+- v21 (Claude Code, July 4, 2026): built the Preview role (dev-server deck window + `erda preview` SSH tunnel) at the Admiral's request, ruling out any external tunneling service before designing anything (ships already have a directly-reachable IP over existing SSH, so it was never actually a tradeoff) and resolving three real design choices by asking rather than guessing (SSH tunnel over raw IP, `integration` branch over a crew berth, tmux window over a headless process — now D18). Caught a real `core.fileMode=false` bug before pushing (same class as v14/§4o) by checking `git ls-files -s` directly rather than assuming `chmod +x` had taken effect on the new `ship/bin/preview` file. Verified fully live on a throwaway ship: the preview window's graceful no-branch fallback, auto-creation of `berths/integration` once a branch existed, the dev server actually starting, and — from this Windows host — a real `erda preview` SSH tunnel serving a genuine HTTP 200 fetched via `Invoke-WebRequest` against `localhost:8123`. Ship torn down after. See §4t.
+- v22 (Claude Code, July 4, 2026): gave crew members human-readable names at the Admiral's request — pitched three themed options, the Admiral chose to specify his own theme (hobbit-like, explicitly not actual Tolkien lore names) rather than pick from the pitches. Landed on a 31-name invented pool, deliberately avoiding the specific flower names Tolkien used for Sam Gamgee's children (the real collision risk, more than the obviously-famous names). `muster` now assigns one per crew member, avoiding collision with other currently-active crew in the same charter; it replaces the task ID in the tmux window title and status messages, while task IDs/branches/order paths stay unchanged underneath. Verified the random-pick-with-collision-avoidance logic standalone (`jq` isn't installed on this Windows host, so the roster.json field additions rely on close analogy to already-proven expressions rather than independent testing); an actual live `muster` run wasn't exercised this session. See §4u.
+- v23 (Claude Code, July 5, 2026): investigated the Admiral's `captain charter` local-only fallback and built `erda doctor` (hard-blocking `christen`/`board`, his explicit choice) to catch dead credentials before they cause confusing downstream failures. Live-diagnosed against a real ship rather than guessing: not an expired/revoked PAT as suspected, but a genuine encoding bug — `erda.ps1`'s old `"KEY=value" | & age ...` pattern baked a stray CRLF into every Windows-encrypted secret, invisible because PowerShell's and even git-bash's own tools silently launder it back out, so it only ever broke on a real Ubuntu ship's bash. Fixed `unlock` defensively (works immediately on already-corrupted secrets, no re-mint needed), fixed the root cause in `Invoke-Strongbox init` (writes via a real LF-only temp file now), re-encrypted the existing compartments in place with the Admiral's existing, still-valid credentials, and gave `doctor` a byte-safe CRLF check that can't be fooled by either platform's own text-mode laundering. Verified end-to-end on a live ship: `gh auth status` clean, and the originally-failing `captain charter ERDA-utility-belt` succeeded for real (reused the existing GitHub repo, cloned, chartered). See §4v.
+- v24 (Claude Code, July 5, 2026): made `sail` self-healing at the Admiral's request — closing a deck window by accident used to lose it permanently, since `sail` only ever built all 9 windows in one shot, and only when the tmux session didn't exist yet at all. Refactored around one per-window-index table checked independently on every run: a missing window (whether one got closed, or the whole session died from closing the last one) is recreated; a live window is left completely alone. Verified on a real ship with pane-PID comparison before/after healing a killed window — every untouched window's PID was byte-identical, not just visually the same — and separately verified killing the entire session causes a full, correct rebuild. See §4w.
+- v25 (Claude Code, July 5, 2026): built model fallback at the Admiral's request, prompted directly by GLM-5.2's real outage earlier this session — `ship/bin/pick-model` health-checks an Admiral-editable priority list (`ship/models-priority.txt`) against real DeepInfra calls and picks the first model that responds; wired into both `sail`'s Captain and `muster`'s crew (his explicit call to cover both), as a pre-flight check only, not mid-conversation hot-swapping (also his call, flagged as future work). Added Kimi-K2.7-Code and GLM-5.1 to `models.json` with real slugs/pricing verified against DeepInfra's live catalog. Verified against the actual ongoing outage, not a simulation: `pick-model` correctly detected GLM-5.2 still down, fell through to Kimi-K2.7-Code, and a real Captain session launched on it and replied normally with genuine token usage logged. See §4x.
+- v26 (Claude Code, July 6, 2026): the Admiral asked for Purser to show real cost (it was an explicit placeholder) and for crew windows to show live thinking/tool-call activity, "as long as it doesn't cost more or slow things down." Root-caused the "estimate" first: pi's own cost is computed from a local price table in `models.json`, not DeepInfra's real bill, which only appears in the raw `usage.estimated_cost` field pi never surfaces. Built `ship/bin/cost-proxy` (a ship-wide, zero-dependency Node daemon on a fixed `127.0.0.1:8790`) sitting in front of DeepInfra, logging real per-call cost to `log/ledger.tsv`, tagged via `X-Ship-*` headers each window sets from its own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports — chosen over an initial per-window-dynamic-`baseUrl` design after finding conflicting doc evidence on whether `baseUrl` actually supports env-var interpolation (headers definitely do, so the design was changed to not need the ambiguous part at all). `unlock` now ensures the proxy is running (silent, non-fatal, careful never to leak a byte onto the stdout `eval "$(unlock)"` depends on). Switched `muster`'s default crew invocation from `pi -p` (prints nothing until done) to `pi --mode json | pi-monitor` (new script) — confirmed empirically, via a real local pi install, that `--mode json` with a prompt argument exits on completion rather than hanging on stdin like RPC mode, before ever wiring it in, since getting that wrong would have hung every crew agent. Found and fixed two real bugs during local verification (no live ship this session): `cost-proxy` would have gone silently blind on any compressed upstream response (fixed by forcing `accept-encoding: identity`), and `pi-monitor`'s error-message branch was unreachable behind a branch that matched first and produced empty output. Verified via a local mock DeepInfra server (streaming + non-streaming, pass-through fidelity, forced `stream_options.include_usage`, correct ledger attribution, graceful no-context skip) and real/synthetic `pi --mode json` transcripts; shellcheck/`node --check`/`bash -n` clean throughout; confirmed new scripts land as `100755` after `git add`, the exact filemode gotcha from §4n/§4o. Not verified: real GLM-5.2 thinking-block shape, `cost-proxy` against real DeepInfra over real TLS, and the full loop end-to-end — all need a real ship and the Admiral's real `DEEPINFRA_API_KEY`. See §4y.
+- v27 (Claude Code, July 6, 2026): the Admiral asked to actually drill v26's work on a real ship. Christened a real throwaway Multipass VM (`cost-purser-drill`); since `keel.yaml` clones the published repo (not this session's uncommitted changes), `rsync`'d the local working tree onto it instead of pushing untested code to `main`. Asked before deploying `strongbox/ship.key` to the new VM rather than routing around the permission classifier that (reasonably) flagged it — the Admiral confirmed. Found and fixed a real, self-inflicted bug immediately: ran `fitout.sh` via `sudo bash` instead of the `su - eric` form `keel.yaml` actually uses, which put fnm/node under `/root` instead of `eric`, breaking non-login `node` resolution — the same PATH bug class as §4d/§4e/§4g, this time from an operator mistake rather than a real gap; fixed by cleaning up the stray root-owned fnm dir and re-running correctly. With that fixed, drilled for real: `cost-proxy` auto-started via `unlock` with zero manual steps; a real Captain message got a real GLM-5.2 reply and a real ledger line (`$0.00196407`, closely matching but more precise than pi's own displayed `$0.002` estimate); a real `muster`'d crew task (no stub) showed genuine live thinking, tool calls, and tool results streaming in the window the entire run, instead of the blank pane `pi -p` used to leave — confirmed `{type:"thinking", thinking:"..."}` really is GLM-5.2's actual content-block shape, matching what §4y inferred from docs alone; task completed correctly (file created, committed, report written, `roster.json` status `done`); Purser's running total correctly aggregated all six real calls across both roles. Found and fixed two cosmetic bugs only visible in a real 80-column tmux pane — the calls table wrapped (shortened columns, `HH:MM:SS` timestamps, dropped the model's `org/` prefix) and per-call cost showed inconsistent floating-point noise (`$0.0006732600044928` → `%.6f`) — both fixed and re-verified against the live pane before moving on. Test ship destroyed after (`erda sink -y`), confirmed nothing left running via `multipass list`. Every previously-"not verified" item from §4y is now real-ship-confirmed. See §4y.
+- v28 (Claude Code, July 6, 2026): the Admiral asked to "complete Phase 3" after being told the project was mid-Phase-3 — concurrency and the full review/merge cycle had only ever been drilled with stub agents, never real crew. Christened `phase3-drill`, ran `fitout.sh` correctly this time (learned from v27's own mistake), chartered `toolkit-drill --local`, wrote two orders with deliberately disjoint file scope, mustered both concurrently. Found and fixed two real bugs: (1) a crew agent committed a stray `__pycache__/*.pyc` file outside its declared scope while its own self-report claimed otherwise — crew.md's scope discipline is self-reported with no technical guard against `git add -A` sweeping up interpreter cache files; drilled the actual prescribed reject-and-redo mechanism for the first time (remove berth/branch, append reviewer feedback to the order, re-muster the same task ID against a fresh agent) rather than silently patching it; (2) that exact redo exposed a second, more serious bug — `muster`'s roster-append never removed a stale entry for a re-mustered task ID, so `roster.json` accumulated ghost rows and the completion-time status update (keyed by task ID alone) would silently mark all of them done/failed together regardless of which attempt actually ran. Fixed in `ship/bin/muster` (roster-append now drops any existing same-task entry before appending), verified against the actual buggy roster snapshot, then re-verified against a real third crew run. Wasted one redo cycle by deleting a branch before checking whether it had fixed the pycache issue — turned it into a second real verification pass instead of a pure loss. Ran `captain.md`'s REVIEW/INTEGRATE sequence by hand for the first time all the way through with real crew work: found and fixed a self-inflicted relative-path mistake (`git -C .hold.git worktree add` with a relative path resolves against `-C`'s target dir, not the caller's cwd), then merged both branches cleanly, ran the dry-dock suite for real, fast-forwarded `main`, synced `berths/home-port`, independently re-ran both test suites myself rather than trusting crew self-reports, and pruned both berths. Purser confirmed the whole drill's real cost as it happened: 29 calls, $0.0456, individually attributed across all three T-002 attempts — concrete evidence for why per-attempt cost attribution matters, since two of three were pure rework cost. Ship destroyed after, nothing left running. See §4z.
+- v29 (Claude Code, July 6, 2026): the Admiral asked to move onto Phase 4 — the pi extension adding `/mission`/`/muster`/`/harbor`/`/debrief`. Grounded the design in the real shipped TypeScript declarations and example extensions from the locally-installed `@earendil-works/pi-coding-agent` package (ground truth, not doc summaries, after §4y's `baseUrl`-interpolation doc inconsistency made clear that mattered) rather than trusting fetched-doc paraphrases. Built `ship/plugin/index.ts`: `/muster`/`/harbor` as pure deterministic wrappers (files + one subprocess call, zero LLM turns); `/mission`/`/debrief` gather real ground truth (goal text; roster/git/ledger data) and hand it to the Captain's own conversation via `sendUserMessage`, rather than reimplementing planning or narration. Verified every path against the real `pi` runtime before touching a ship, using RPC mode's documented `{"type":"prompt","message":"/command"}` command-dispatch behavior as a scriptable test harness (no live ship, no real credentials needed) — including the one genuinely interactive path (`/harbor`'s `ctx.ui.select()` picker) via a real two-way RPC round trip. Diagnosed one false alarm correctly during this (a `pi.exec()` call inside `/debrief` appeared to die silently; root-caused to the test harness closing stdin before the async handler resolved, not a real bug in the extension). Wired `ship/plugin/` into `fitout.sh` as a global extension symlink (`~/.pi/agent/extensions/shipyard`), confirmed the documented directory-discovery convention works locally without `-e` before deploying anywhere. Live-drilled end-to-end on a real throwaway ship: confirmed `[Extensions] shipyard` in the real bridge window's own startup banner, then drove an actual mission through all four commands with real GLM-5.2 in the real interactive TUI (`/mission` planned and stopped for approval correctly; `/muster` spawned crew instantly with zero added token cost, confirmed via the footer; crew showed full live thinking per §4y; `/harbor`'s real interactive picker worked live; hand-ran the real merge to `main`; `/debrief` narrated real shipped/blocked/cost facts that cross-checked correctly against `purser-totals`, plus volunteered a genuinely useful unprompted observation about the charter's blank conventions). Ship destroyed after, nothing left running. See §4aa.
+- v30 (Claude Code, July 6, 2026): the Admiral hit the `preview` window's expected "no dev server command configured" message (that charter's `charter.md` just hadn't been filled in, per §4t) and asked to rename the whole concept from "preview" to "telescope" rather than fix the config. Pure identifier rename, no logic change: `ship/bin/preview` -> `ship/bin/telescope`, `sail`'s window 8 (`🌐 preview` -> `🔭 telescope`), `fitout.sh`'s symlink loop, both `erda.sh`/`erda.ps1`'s `preview` subcommand -> `telescope`, `charter.md`'s template blurb, `captain.md`'s INTEGRATE-step comment, and every doc reference (`CLAUDE.md`, `docs/cheatsheet.md`, `docs/system-overview.md`, `docs/vm-cheatsheet.md`). Left this HANDOFF's own historical entries (D18, §4t, v21) saying "preview" since they're an accurate record of what it was called when built. Verified with `bash -n` on every touched script; not re-drilled live since nothing but names changed. See §4bb.
+- v31 (Claude Code, July 6, 2026): the Admiral asked for a real operating-model change — Shipwright (on-ship Claude Code) now owns all shipyard engineering; host Claude Code becomes "Neptune" (the Admiral's chosen name), narrowly scoped to fresh-Multipass-ship drills and reports, never editing shipyard code again. Root-caused why Shipwright "didn't know who he was" earlier this session: unlike Captain/Crew, it never had its own role prompt — `sail` just ran bare `claude`. Built `ship/prompts/shipwright.md` (mirrors `captain.md`'s loop shape); wired it into `sail`'s shipwright window via `--append-system-prompt`, first checking `claude --help` directly rather than assuming it takes a file path the way pi's identically-named flag does (it doesn't — inline text only, so the fix splices `$(cat ...)` in with the same deferred-evaluation escaping as `$(unlock shipwright)`). Built `neptune/` (requests/reports + templates) as the git-mediated channel between the two, mirroring `.ship/orders`+`.ship/reports`'s existing design language. Updated `CLAUDE.md` with a "which Claude are you" section and Neptune's explicit scope. Used the `update-config` skill to write `.claude/settings.json` as the actual enforcement mechanism (not just prose) — tried to empirically verify the deny/allow precedence first (per this project's own standing discipline) via a live test edit, found it wasn't blocked, root-caused to the settings watcher not picking up a `.claude/` directory that didn't exist at session start (the same caveat the config skill documents for hooks), reverted the test edit cleanly, and designed around the gap rather than guess: the final settings.json uses fully non-overlapping per-path deny rules instead of a blanket-deny-plus-scoped-allow, so there's no untested precedence to get wrong. Explicitly flagged what's still unverified (the rules haven't been seen live by any session yet) rather than claim more confidence than earned. See §4ab.

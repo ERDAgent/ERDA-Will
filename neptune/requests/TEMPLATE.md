@@ -17,4 +17,4 @@ PATH resolution, etc.) — if it's not provisioning-sensitive, this probably
 doesn't need a Neptune drill at all; self-test on your own ship instead.
 
 ## Priority
-Optional — anything Eric should know about urgency/blocking.
+Optional — anything the Admiral should know about urgency/blocking.
