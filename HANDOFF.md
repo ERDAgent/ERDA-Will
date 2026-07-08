@@ -2600,6 +2600,34 @@ Admiral's request was general ("when the crew member is done working"), and the
 report/roster/events trail already covers what a lingering pane would have shown.
 Worth revisiting only if that trail ever proves insufficient in practice.
 
+## 4bp. New auto-created charters are public GitHub repos by default (July 8, 2026)
+
+The Admiral asked for all new charter GitHub repos (`captain charter <name>` with no
+URL, no `--local`) to be created public instead of private by default — matching
+`ERDA-Will`'s own visibility. One-flag change in `ship/bin/charter`'s `gh repo create`
+call (`--private` → `--public`), plus added a `CHARTER_VISIBILITY` env var override
+(`private`/`internal`/`public`, validated, rejects anything else with a clear error)
+for the cases that should stay non-public — client work, anything sensitive — matching
+this project's established default-plus-override convention (`SHIP_AGENT`, `GH_OWNER`,
+etc.). Checked `gh repo create --help` directly first: this gh version takes three
+separate boolean flags (`--public`/`--private`/`--internal`), not a single
+`--visibility=X` value, so the override branches on which flag to pass rather than
+templating one.
+
+Verified against the real GitHub API, not just the script's own echo message: created
+two real disposable repos under ERDAgent (`shipwright-visibility-test`,
+`shipwright-visibility-test2`) — the default path and the `CHARTER_VISIBILITY=private`
+override — and confirmed both via `gh api repos/ERDAgent/<name> --jq '.private,
+.visibility'` showed exactly what was intended (`false`/`public` and `true`/`private`
+respectively), not just trusting `charter`'s own printed confirmation. Also confirmed
+the invalid-value guard rejects a bogus `CHARTER_VISIBILITY` before ever calling `gh`.
+Both real test repos deleted after (`gh repo delete ... --yes`, confirmed gone via
+`gh repo view`), local scratch charter dirs removed. `shellcheck`/`bash -n` clean.
+
+Updated `docs/git-and-github.md` (the command reference, the "what charter does"
+walkthrough, and the summary table) and `docs/captain-cheatsheet.md`'s charter
+description.
+
 ## 5. NEXT TASK
 
 **Per §4bm (July 8, 2026): the real Captain's first full voyage on `ERDA-market-land`

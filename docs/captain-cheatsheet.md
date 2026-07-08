@@ -16,11 +16,13 @@ captain work <name>                          # opens the deck; window 0 ("bridge
 ```
 
 `captain charter` with no `git-url`: creates (or reuses, if it already exists) a
-private GitHub repo under the ERDAgent account and clones that — needs `gh`
-authenticated with repo-*creation* permission, broader than the default push-only PAT
-scope (see `strongbox/README.md`); falls back to a local-only charter with a clear
-message if that's not set up. Pass `--local` to skip GitHub entirely on purpose. Give
-an explicit `git-url` to charter an existing repo instead, same as before.
+public GitHub repo under the ERDAgent account and clones that (`CHARTER_VISIBILITY=private`
+or `=internal` overrides this for one call, e.g. client work that must stay
+non-public) — needs `gh` authenticated with repo-*creation* permission, broader than
+the default push-only PAT scope (see `strongbox/README.md`); falls back to a
+local-only charter with a clear message if that's not set up. Pass `--local` to skip
+GitHub entirely on purpose. Give an explicit `git-url` to charter an existing repo
+instead, same as before.
 
 `captain work <name>` on a project you've already chartered just reattaches to the
 same deck — same Captain conversation, same mission, same everything, picking up

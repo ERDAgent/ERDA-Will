@@ -3,17 +3,31 @@
 # usage: charter <name> [git-url] [--local]
 #   charter royal-guest git@github.com:eric/royal-guest-site.git   # clone an existing repo
 #   charter royal-guest                                            # no url: create a new
-#                                                                   #   private ERDAgent/royal-guest
+#                                                                   #   public ERDAgent/royal-guest
 #                                                                   #   repo (or use it if it
 #                                                                   #   already exists), needs gh
 #                                                                   #   authenticated with repo-
 #                                                                   #   creation permission
 #   charter scratchpad --local                                     # explicitly local-only, no
 #                                                                   #   remote at all, empty hold
+# CHARTER_VISIBILITY=private|internal overrides the public default for one call.
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
 GH_OWNER="${GH_OWNER:-ERDAgent}"
+# Default matches ERDA-Will's own visibility; override per-call for a charter
+# that must stay private (client work, anything sensitive) --
+# CHARTER_VISIBILITY=private charter <name>. gh only accepts these three as
+# separate flags (confirmed via `gh repo create --help`), not a single
+# --visibility=X value.
+CHARTER_VISIBILITY="${CHARTER_VISIBILITY:-public}"
+case "$CHARTER_VISIBILITY" in
+  public|private|internal) ;;
+  *)
+    echo "invalid CHARTER_VISIBILITY: '$CHARTER_VISIBILITY' (must be public, private, or internal)" >&2
+    exit 1
+    ;;
+esac
 
 NAME=""
 URL=""
@@ -67,8 +81,8 @@ if [[ -z "$URL" && "$LOCAL_ONLY" -eq 0 ]]; then
     if gh repo view "$GH_OWNER/$NAME" >/dev/null 2>&1; then
       echo "GitHub repo $GH_OWNER/$NAME already exists -- using it"
       URL="https://github.com/$GH_OWNER/$NAME.git"
-    elif gh repo create "$GH_OWNER/$NAME" --private >/dev/null 2>&1; then
-      echo "created GitHub repo $GH_OWNER/$NAME (private)"
+    elif gh repo create "$GH_OWNER/$NAME" "--$CHARTER_VISIBILITY" >/dev/null 2>&1; then
+      echo "created GitHub repo $GH_OWNER/$NAME ($CHARTER_VISIBILITY)"
       URL="https://github.com/$GH_OWNER/$NAME.git"
     else
       echo "charter: couldn't create $GH_OWNER/$NAME on GitHub -- likely a PAT scope issue" >&2

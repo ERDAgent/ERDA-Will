@@ -32,7 +32,7 @@ still doesn't.
 
 ```bash
 captain charter <name> <git-url>   # clone an existing repo
-captain charter <name>             # no url: create (or reuse) a private GitHub repo
+captain charter <name>             # no url: create (or reuse) a public GitHub repo
 captain charter <name> --local     # explicitly local-only, no remote at all
 ```
 
@@ -42,8 +42,10 @@ URL, for both fetch *and* push.
 
 **No URL, no `--local`** (the new default, since `captain charter` was added): checks
 `gh repo view ERDAgent/<name>` first — if that repo already exists, uses it; if not,
-tries `gh repo create ERDAgent/<name> --private`. Either way the result feeds into the
-same `git clone --bare` path above, so `origin` ends up set exactly like the
+tries `gh repo create ERDAgent/<name> --public` (matches `ERDA-Will`'s own visibility;
+override per-call with `CHARTER_VISIBILITY=private` or `=internal` for a charter that
+must stay non-public — client work, anything sensitive). Either way the result feeds
+into the same `git clone --bare` path above, so `origin` ends up set exactly like the
 existing-URL case. **This needs `gh` authenticated with repo-*creation* permission** —
 broader than the Contents-R/W-on-specific-repos scope the strongbox's `GH_TOKEN` was
 originally minted with (D14). Verified directly against the real ship: the original
@@ -129,7 +131,7 @@ GitHub org requirement, no monorepo assumption.
 
 | Question | Answer |
 |---|---|
-| Does `captain charter` create new GitHub repos? | **Yes**, by default, when no `git-url` and no `--local` — private, under ERDAgent, reusing one if it already exists. Needs a broader PAT scope than the original push-only one; falls back to local-only with a clear message if that's not configured. |
+| Does `captain charter` create new GitHub repos? | **Yes**, by default, when no `git-url` and no `--local` — public, under ERDAgent, reusing one if it already exists. Override with `CHARTER_VISIBILITY=private`/`=internal` for a charter that must stay non-public. Needs a broader PAT scope than the original push-only one; falls back to local-only with a clear message if that's not configured. |
 | Does the system push anything to GitHub automatically? | **Yes**, now — the Captain pushes `integration` and `main` on every mission's INTEGRATE step, when the charter has a real `origin`. |
 | Does crew ever push? | No — structurally can't; crew-scope shells never hold `GH_TOKEN` at all. |
 | Who authors commits and pushes? | `ERDAgent` / `agentic@ericrose.dev`, set globally per-ship by `fitout.sh` (D13) — covers crew, Captain, and the on-ship Shipwright's own commits alike. Neptune (host-side, drill reports only) uses the Admiral's own separately-configured host identity, irrelevant to shipyard source history |
