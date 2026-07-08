@@ -64,7 +64,7 @@ else
   rm -f "$FLAGGED.tmp"
 fi
 
-echo "🧑‍🔧 Bosun"
+echo "🧑‍🔧  Bosun"
 echo
 
 echo "== roster =="

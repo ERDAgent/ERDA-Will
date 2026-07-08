@@ -113,9 +113,18 @@ WINDOW_DIRS=(
   "$DIR"          "$DIR/.ship"    "$DIR/.ship"    "$DIR/.ship"
   "$DIR"          "$DIR/.ship"    "$DIR"          "$SHIPYARD_DIR"  "$DIR"
 )
+# Role glyphs are one space away from their label via g()'s own trailing
+# space, except the five "person + ZWJ + role" compound emoji (Bridge, First
+# Mate, Bosun, Purser, Shipwright) -- these are 3-codepoint sequences joined
+# by a zero-width joiner, which not every terminal font renders as one
+# glued glyph the way it does simple single-codepoint emoji (Chartroom,
+# Quartermaster, Telescope, crew's own 👷). An inconsistent render can visibly
+# eat the following space, so those five get one extra literal space as a
+# buffer -- can't fix a font's own ZWJ support from here, only make the gap
+# more robust against it.
 WINDOW_NAMES=(
-  "$(g 🧑‍✈)Bridge"          "$(g 🗺)Chartroom"      "$(g 🧑‍🔬)First Mate"     "$(g 🧑‍🔧)Bosun"
-  "$(g 📋)Quartermaster"    "$(g 🧑‍💼)Purser"        "$(g ⚙️)Engine Room"      "$(g 🧑‍🏭)Shipwright" "$(g 🔭)Telescope"
+  "$(g 🧑‍✈) Bridge"         "$(g 🗺)Chartroom"      "$(g 🧑‍🔬) First Mate"    "$(g 🧑‍🔧) Bosun"
+  "$(g 📋)Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️)Engine Room"      "$(g 🧑‍🏭) Shipwright" "$(g 🔭)Telescope"
 )
 WINDOW_CMDS=(
   "$BRIDGE_CMD"

@@ -2392,6 +2392,20 @@ them) and `docs/captain-cheatsheet.md`'s window table. Left
 historical glyph mentions untouched, per the established precedent of not rewriting
 the planning doc or past session records to match current state.
 
+**Follow-up same day**: Eric noticed the icon-to-title spacing looked inconsistent
+across windows. Checked byte-for-byte first rather than guessing — every glyph+title
+string genuinely had exactly one space already, no real data bug. Root cause is
+almost certainly rendering, not data: five of these glyphs (Bridge 🧑‍✈, First Mate
+🧑‍🔬, Bosun 🧑‍🔧, Purser 🧑‍💼, Shipwright 🧑‍🏭) are 3-codepoint "person + ZWJ + role"
+sequences, while the rest (Chartroom, Quartermaster, Engine Room, Telescope, crew's
+👷) are one or two codepoints. Terminal/tmux font support for zero-width-joiner
+ligatures is inconsistent — a font that doesn't join the sequence can visually eat
+the space that follows it, exactly matching "some have spaces, some don't." Can't fix
+a font's own ZWJ rendering from here, so added one extra literal space after those
+five specific glyphs (`ship/bin/sail`'s `WINDOW_NAMES`, `ship/bin/bosun`'s title line)
+as a buffer robust to the rendering variance. Verified live again on a second scratch
+charter that the extra space is present exactly where added, nowhere else.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
