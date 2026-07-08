@@ -39,8 +39,22 @@ fi
 extract() {
   sed -n "/^## Dev server/,/^## /{/^- $1:/s/^- $1: *//p}" "$CHARTER_MD" 2>/dev/null | head -1
 }
-CMD="$(extract command)"
-PORT="$(extract port)"
+# charter.md's own template models the value with markdown backticks (e.g.
+# "(fill in, e.g. `npm run dev`)"), and a real value copying that convention
+# would keep the literal backticks through extraction -- `bash -lc "$CMD"`
+# below would then treat them as command substitution. Strip one leading +
+# one trailing backtick if both are present, same fix applied to
+# quartermaster's identical dry-dock extractor.
+strip_backticks() {
+  local s="$1"
+  if [[ "$s" == \`*\` ]]; then
+    s="${s#\`}"
+    s="${s%\`}"
+  fi
+  printf '%s' "$s"
+}
+CMD="$(strip_backticks "$(extract command)")"
+PORT="$(strip_backticks "$(extract port)")"
 [[ "$CMD" == \(* ]] && CMD=""
 [[ "$PORT" == \(* ]] && PORT=""
 

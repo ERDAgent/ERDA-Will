@@ -16,8 +16,11 @@ you can break nothing outside it.
 
 ## Prime directive: SOS over improvisation
 If acceptance criteria can't be met, scope is wrong, or you'd need to touch
-out-of-scope paths — STOP. Write the report with status SOS explaining exactly
-why, and exit. A wrong guess merged costs more than an aborted task.
+out-of-scope paths — STOP. Make the report's first line exactly `Status: SOS`,
+then explain exactly why, and exit. A wrong guess merged costs more than an
+aborted task. (That exact first line matters: it's what lets `muster` mark
+this in the roster as `sos` rather than a plain `done`, so the Captain
+notices without having to read every report in full.)
 
 ## Hard limits
 - Never merge, never push, never switch branches, never leave your berth.

@@ -7,7 +7,7 @@
 # filesystem birth time (charter), the bridge pane's process elapsed time
 # (voyage -- one Captain session lifetime under a charter, per CLAUDE.md's
 # vocabulary table), and roster.json's `started` field paired with
-# log/events.log's crew-done/crew-failed timestamps (crew work). Run
+# log/events.log's crew-done/crew-failed/crew-sos timestamps (crew work). Run
 # relative to cwd — sail always launches this with cwd = the charter's
 # .ship/ dir, same convention the bosun/quartermaster dashboard commands
 # already rely on.
@@ -65,7 +65,7 @@ if [[ -s "$ROSTER" ]]; then
       crew_live=$(( crew_live + 1 ))
     else
       finish_ts="$(awk -F'\t' -v t="$task" '
-        $2 == "crew-done" || $2 == "crew-failed" { split($3, d, " "); if (d[1] == t) last = $1 }
+        $2 == "crew-done" || $2 == "crew-failed" || $2 == "crew-sos" { split($3, d, " "); if (d[1] == t) last = $1 }
         END { if (last) print last }
       ' "$EVENTS" 2>/dev/null)"
       if [[ -n "$finish_ts" ]]; then

@@ -2406,7 +2406,136 @@ five specific glyphs (`ship/bin/sail`'s `WINDOW_NAMES`, `ship/bin/bosun`'s title
 as a buffer robust to the rendering variance. Verified live again on a second scratch
 charter that the extra space is present exactly where added, nowhere else.
 
+## 4bm. All six of the Captain's voyage-debrief fixes landed (July 8, 2026)
+
+The real Captain running the real live charter (`ERDA-market-land`) left a genuine,
+substantial review at `.ship/voyage-debrief.md` after its first full 10-task overnight
+voyage — findings F1–F7 with concrete repros, six preserved-pattern notes, and a
+ranked enhancement list. Eric asked me to read it and act on it; confirmed three
+findings directly against the real source before trusting the rest (F1's backtick
+extraction, F2's hardcoded `main` base, F6's unfiltered scope scan — all confirmed
+exactly as described), then Eric chose "all six." Worked through them in the
+Captain's own ranked order, self-testing each on a scratch charter before moving to
+the next, never touching `ERDA-market-land` itself.
+
+**F2+F3 — `ship/bin/muster` cuts new berths from `integration`, not `main`, and
+hardlink-copies `node_modules`.** Every multi-wave voyage used to start each new wave's
+berths from `main`'s pre-mission state (`main` only advances at the final INTEGRATE
+step), missing every prior wave's own merged work — crews improvised differently every
+time (rebase, checkout, symlink). Now cuts from `integration` (same
+`show-ref --verify --quiet refs/heads/integration` existence check `quartermaster` and
+`telescope` already use, falling back to `main` only before the first-ever review).
+Also hardlink-copies `berths/integration/node_modules` into new berths when present
+(`cp -al`, not a live symlink — crews already independently proved this pattern works
+on the real voyage; a live symlink would let one crew's own `npm install` mutate a
+concurrently-running sibling's berth, a hardlink copy can't). Verified live: a
+two-wave scratch charter where wave 2's berth genuinely contained wave 1's merged
+file and a hardlinked (same-inode, confirmed via `stat`) `node_modules`, independently
+mutable from the source without cross-contamination.
+
+**F4 — `muster --redo [--feedback <file>]`.** captain.md's documented redo loop
+("respawn a FRESH crew agent, same order, feedback appended") always meant manually
+`git worktree remove --force` + `git branch -D` first, since plain `muster` refuses an
+occupied berth/existing branch outright — real friction on the real voyage. `--redo`
+does that cleanup itself; with no explicit `--feedback`, defaults to
+`.ship/reviews/<task-id>.review.md` if one exists (the exact file a REJECT already
+wrote) and appends it as a `## Feedback (redo)` section to the *permanent* order (so
+it flows into every subsequent redo, not just the next berth). Verified live: the
+full reject→redo→re-review cycle, the explicit `--feedback <file>` override, and that
+plain `muster` (no `--redo`) still correctly refuses — the original safety behavior
+is unchanged.
+
+**F1 — backtick stripping in `charter.md` field extractors.** `charter.md`'s own
+template modeled the anti-pattern (`(fill in, e.g. \`npm test\`)`), a real value
+copied it verbatim, and `quartermaster`'s dry-dock extractor + `telescope`'s
+command/port extractor both captured the literal backticks — `bash -c "$CMD"` then
+treated them as command substitution, REJECTing clean crew work with `command not
+found`. Reproduced the exact failure and fix directly (same extraction line, same
+charter.md shape as the review's repro): old behavior exits 127, stripped behavior
+exits 0. Fixed both extractors (shared `strip_backticks()` helper, one leading + one
+trailing backtick only) and rewrote `ship/bin/charter`'s own template placeholders to
+stop modeling backticks. Verified end-to-end against the real `quartermaster` too, not
+just the extraction logic in isolation.
+
+**F5 — SOS is now its own roster status, not indistinguishable from `done`.**
+`roster.json` could only ever write `done`/`failed` from the crew process's exit
+code, even when crew.md's prime directive had the crew explicitly raise SOS in its
+report — the Captain had to read every report in full to catch one. Tightened
+crew.md's (and order-template.md's) wording: the report's first line must now be
+exactly `Status: SOS` when raising SOS. `.crew-run.sh`'s post-run hook greps
+specifically that first line (only on an otherwise-clean exit — a crash stays
+`failed`) and marks the roster `sos` instead of `done`. `quartermaster` now refuses
+outright to review an `sos` task ("this needs your own judgment, not a merge-gate
+review"); the plugin's `/review` tab-completion and the wave-completion watcher's
+message (§4bi) both updated to match — that message used to explicitly warn roster
+couldn't distinguish SOS; now it can, so it says so. **Also caught and fixed a small
+same-session regression while touching this**: `purser-totals`' crew-work-time
+calculator (§4bk, built the day before) only recognized `crew-done`/`crew-failed` in
+`log/events.log`, so an SOS'd task's time would have been silently dropped from the
+total the moment this landed — added `crew-sos` to its match. Verified live: an SOS
+report's first-line detection (roster shows `sos`, quartermaster refuses with a clear
+message), a regression check that a report merely *mentioning* "SOS" in its body
+(not as the exact first line) still correctly gets `done`, and the purser-totals fix
+with synthesized state.
+
+**F6 — First Mate's scope-conflict scan skips `merged`/`rejected` orders.** The scan
+included every order file under `.ship/orders/` regardless of roster status, so a
+later legitimate re-brief of an already-merged file (the real voyage's exact
+repro: an `M1F` follow-up order re-touching `scheduler.ts` after `M1` already merged
+it) got flagged as a false SCOPE CONFLICT — the Mate's own LLM pass correctly
+dismissed it as benign every time, but a less careful reading might not have. Now
+looks up each order's task in `roster.json` and skips `merged`/`rejected` (terminal)
+from the conflict scan; still counts `working`/`sos`/not-yet-mustered orders, which
+really can collide. Verified live: the exact merged-then-re-briefed scenario now
+shows zero mechanical conflicts (LLM pass still independently notes the relationship
+as its own qualitative judgment, which is correct), and a regression check that two
+genuinely still-live orders claiming the same file are still flagged.
+
+**F7 — Quartermaster REJECT retains a salvage pointer.** A REJECT already left the
+crew branch untouched in the hold (only `integration` gets rolled back), but nothing
+referenced it — a future redo had to manually discover it was cherry-pickable
+(`git branch --list 'crew/...*'`). Real voyage: this worked out (a redo cherry-picked
+the rejected branch's six correct files instead of re-implementing them), but only
+because the Captain thought to look. Now `reject()` captures the branch's current tip
+sha, writes it into both `.ship/reviews/<task-id>.review.md` (a **Salvage:** line with
+the exact `git cherry-pick` command) and `roster.json`'s new `salvageSha` field.
+`approve()` is unaffected (nothing to salvage once merged). Verified live: a real
+REJECT's salvage sha matched the actual branch tip exactly, in both files.
+
+**Composite drill, after all six landed**: a real multi-wave scratch voyage exercising
+several fixes together — muster (wrong file) → real quartermaster REJECT with salvage
+sha → `muster --redo` (auto feedback) → real quartermaster (transient REJECT on the
+first pass, confirmed via direct `git diff`/`git log` inspection to be a genuine LLM
+judgment flake on unchanged, correct state, not a bug — re-running the identical
+review immediately gave the correct APPROVE) → wave 2 mustered from `integration`,
+correctly containing wave 1's merged file. `shellcheck`/`bash -n` clean on all six
+touched scripts (`charter`, `first-mate`, `muster`, `purser-totals`, `quartermaster`,
+`telescope`); `tsc` typechecked `ship/plugin/index.ts` clean against pi's real
+`.d.ts`. Every scratch charter and deck torn down after; `ERDA-market-land` (which
+kept running real crew throughout this session) was never touched.
+
+Updated `ship/prompts/captain.md` (WATCH/REVIEW/INTEGRATE steps — `sos` as its own
+status, `muster --redo` as the actual redo command now that plain re-muster
+correctly refuses), `ship/prompts/crew.md` and `order-template.md` (the `Status: SOS`
+first-line convention), `docs/system-overview.md` (Quartermaster/Crew sections,
+the numbered loop), and `docs/captain-cheatsheet.md` (the reviewing-finished-work
+section). Eric's own voyage-debrief.md is untouched (it's the Captain's artifact, not
+mine to edit) — this HANDOFF entry is the response to it.
+
+**Not done / open**: none of F1–F7 were skipped; all six shipped. The review's own
+"smaller notes" (captain-vs-plan-authoring tension, an optional event/api registry
+aide, telescope's minor priming race) were flagged by the Captain as open questions or
+low-priority UX, not requests — left alone pending Eric's own call on any of them.
+
 ## 5. NEXT TASK
+
+**Per §4bm (July 8, 2026): the real Captain's first full voyage on `ERDA-market-land`
+produced a genuine review (`.ship/voyage-debrief.md`), and all six of its findings
+(F1–F7: berth-base + node_modules, `muster --redo`, backtick-stripping, SOS status,
+First Mate scope-conflict filtering, Quartermaster salvage pointers) are now shipped
+and live-verified.** This is the first real evidence the harness holds up under
+genuine sustained load, not just drills — worth watching the next real voyage for
+whether these fixes actually reduce friction as intended, or surface anything new.
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
 §4f. x86_64 validation is done — see §4g. macOS/ARM64 was re-confirmed fully working

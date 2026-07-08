@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
 # muster — spawn a crew member for one work order
-# usage: muster <charter> <task-id> <order-file>
+# usage: muster [--redo] [--feedback <file>] <charter> <task-id> <order-file>
 #   muster royal-guest T-014 ~/fleet/royal-guest/.ship/orders/T-014-booking-dates.md
 # Creates: berth (worktree) + branch crew/<task-id>-<slug> + tmux window running
 # the agent headless on the order. Registers in roster.json and the event log.
+#
+# --redo: crew.md's prescribed reject-and-redo loop ("respawn a FRESH crew
+# agent, same order, feedback appended") used to mean the caller manually ran
+# `git worktree remove --force` + `git branch -D` before re-mustering the
+# same task ID, since a plain muster refuses an occupied berth or an
+# existing branch outright. --redo does that cleanup itself.
+# --feedback <file>: appends the file's content as a "## Feedback (redo)"
+# section on the permanent order (not just the berth's copy), so a later
+# redo or manual inspection sees the accumulated history. With --redo and no
+# explicit --feedback, defaults to `.ship/reviews/<task-id>.review.md` if one
+# exists -- the exact file the Quartermaster's own REJECT already wrote.
 set -euo pipefail
+
+REDO=0
+FEEDBACK_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --redo) REDO=1; shift ;;
+    --feedback) FEEDBACK_FILE="${2:?--feedback requires a file path}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) break ;;
+  esac
+done
 
 # resolve the real shipyard checkout even when invoked via the
 # /usr/local/bin symlink fitout.sh sets up (readlink -f, not just
@@ -48,9 +71,10 @@ else
   MONITOR_PIPE=" | pi-monitor"
 fi
 
-NAME="${1:?usage: muster <charter> <task-id> <order-file>}"
-TASK="${2:?usage: muster <charter> <task-id> <order-file>}"
-ORDER="${3:?usage: muster <charter> <task-id> <order-file>}"
+USAGE="usage: muster [--redo] [--feedback <file>] <charter> <task-id> <order-file>"
+NAME="${1:?$USAGE}"
+TASK="${2:?$USAGE}"
+ORDER="${3:?$USAGE}"
 
 DIR="$FLEET/$NAME"
 SES="ship-$NAME"
@@ -69,12 +93,46 @@ BUS="$DIR/.ship"
 [[ -d "$HOLD" ]] || { echo "no hold for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
 [[ -f "$ORDER" ]] || { echo "order file not found: $ORDER" >&2; exit 1; }
 tmux has-session -t "=$SES" 2>/dev/null || { echo "deck not open — run: sail $NAME" >&2; exit 1; }
-[[ -e "$BERTH" ]] && { echo "berth already occupied: $BERTH" >&2; exit 1; }
 
 # slug from order filename: T-014-booking-dates.md -> booking-dates
 BASE="$(basename "$ORDER" .md)"
 SLUG="${BASE#"$TASK"-}"; [[ "$SLUG" == "$BASE" ]] && SLUG="task"
 BRANCH="crew/$TASK-$SLUG"
+
+# A plain muster refuses an occupied berth or an existing branch outright --
+# --redo clears both instead, the cleanup crew.md's documented reject-and-
+# redo loop always needed but never actually got (found live: this was
+# manual `git worktree remove --force` + `git branch -D` every time before
+# this flag existed).
+if [[ -e "$BERTH" ]]; then
+  if [[ "$REDO" -eq 1 ]]; then
+    echo "muster --redo: removing existing berth $BERTH" >&2
+    git -C "$HOLD" worktree remove --force "$BERTH" 2>/dev/null || rm -rf "$BERTH"
+  else
+    echo "berth already occupied: $BERTH (use --redo to replace it)" >&2
+    exit 1
+  fi
+fi
+if git -C "$HOLD" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  if [[ "$REDO" -eq 1 ]]; then
+    echo "muster --redo: dropping existing branch $BRANCH" >&2
+    git -C "$HOLD" branch -D "$BRANCH" >/dev/null
+  else
+    echo "branch already exists: $BRANCH (use --redo to replace it)" >&2
+    exit 1
+  fi
+fi
+
+# --redo with no explicit --feedback: default to the Quartermaster's own
+# REJECT review, if one exists for this exact task -- the real, common case
+# (redo right after a reject) needs nothing extra typed.
+if [[ "$REDO" -eq 1 && -z "$FEEDBACK_FILE" && -f "$BUS/reviews/$TASK.review.md" ]]; then
+  FEEDBACK_FILE="$BUS/reviews/$TASK.review.md"
+fi
+if [[ -n "$FEEDBACK_FILE" ]]; then
+  [[ -f "$FEEDBACK_FILE" ]] || { echo "feedback file not found: $FEEDBACK_FILE" >&2; exit 1; }
+  printf '\n## Feedback (redo)\n%s\n' "$(cat "$FEEDBACK_FILE")" >> "$ORDER"
+fi
 
 # --- crew name: a human-readable callsign, not just a task ID ---
 # Invented, hobbit-flavored names -- deliberately NOT any name from Tolkien's
@@ -102,7 +160,34 @@ done < <(printf '%s\n' "${CREW_NAMES[@]}" | shuf)
 log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
 
 # --- berth + branch ---
-git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" main >/dev/null
+# Cut from `integration`, not `main` -- `main` only advances at the final
+# INTEGRATE step, so on any multi-wave voyage every berth after wave 1 used
+# to start without wave 1's own merged work (no package.json, no src/, stale
+# by however much has already landed on `integration`). `integration` is the
+# already-reviewed *build* boundary; `main` is the *publish* boundary --
+# conflating them cost real crew turns on a real voyage (found via the
+# Captain's own voyage-debrief.md, confirmed against this exact line before
+# fixing it). Same existence check ship/bin/quartermaster and
+# ship/bin/telescope already use for the same reason: `integration` doesn't
+# exist until the first `/review` creates it, so fall back to `main` until
+# then.
+BASE_REF="main"
+git -C "$HOLD" show-ref --verify --quiet refs/heads/integration && BASE_REF="integration"
+git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" "$BASE_REF" >/dev/null
+
+# A fresh worktree has no node_modules even when the project needs one --
+# every crew discovered this independently on the same real voyage and
+# improvised differently (symlink, hardlink-copy, npm install), burning
+# turns each time. Hardlink-copy (not a live symlink) from the integration
+# worktree's own node_modules if it has one: cheap (shared inodes, no real
+# duplication) but still gives each berth an independent directory tree, so
+# one crew's own `npm install` can't mutate a sibling's concurrently-running
+# berth the way a shared symlink would. No-op for non-Node charters or
+# before `integration` has any installed deps yet.
+if [[ -d "$DIR/berths/integration/node_modules" ]]; then
+  cp -al "$DIR/berths/integration/node_modules" "$BERTH/node_modules" 2>/dev/null || true
+fi
+
 cp "$ORDER" "$BERTH/.order.md"
 # crew.md says "write .ship/reports/<TASK-ID>.report.md" without saying
 # relative to what -- the agent's cwd is the berth, and a real run wrote a
@@ -176,6 +261,16 @@ RC=\$?
 # shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
 STATUS=done
 [[ \$RC -ne 0 ]] && STATUS=failed
+# roster.json used to be unable to distinguish a clean SOS exit from a
+# normal success -- both wrote "done", so the Captain had to read every
+# report in full to catch one. crew.md's prime directive now has crew make
+# the report's first line exactly "Status: SOS" when raising SOS; surface
+# that here as its own roster status. Only checked on an otherwise-clean
+# exit -- a nonzero RC is a crash, not a considered SOS, and stays "failed".
+if [[ "\$STATUS" == done ]] && [[ -f "$BUS/reports/$TASK.report.md" ]] && \
+   head -n1 "$BUS/reports/$TASK.report.md" | grep -qEi '^Status:[[:space:]]*SOS[[:space:]]*\$'; then
+  STATUS=sos
+fi
 (
   flock 9
   TMPJ="\$(mktemp)"

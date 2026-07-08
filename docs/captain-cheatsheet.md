@@ -109,17 +109,28 @@ directly if you want to re-run one order without a full conversational round tri
 
 ## Reviewing finished work
 
-For each `done` report, the Captain runs `/review <task-id>` — the Quartermaster, a
-real agent as of Phase 5, not the Captain's own judgment call anymore. It merges the
-branch into `integration`, runs the charter's real dry-dock test, and judges the diff
-against the order's acceptance criteria with a headless, tool-less review pass
-(`ship/prompts/quartermaster.md`). A REJECT (merge conflict, failing test, or the
-review agent's own verdict) already rolled `integration` back and wrote
+For each `done` report (not `sos` — see below), the Captain runs `/review <task-id>` —
+the Quartermaster, a real agent as of Phase 5, not the Captain's own judgment call
+anymore. It merges the branch into `integration`, runs the charter's real dry-dock
+test, and judges the diff against the order's acceptance criteria with a headless,
+tool-less review pass (`ship/prompts/quartermaster.md`). A REJECT (merge conflict,
+failing test, or the review agent's own verdict) already rolled `integration` back,
+retained the crew branch for salvage (its sha lands in both the review and
+`roster.json`'s `salvageSha` field, so a redo can cherry-pick whatever part of the
+attempt was actually correct instead of re-implementing from scratch), and wrote
 `.ship/reviews/<task-id>.review.md` with specific feedback — the Captain respawns a
-**fresh** crew agent with that feedback (rejected work is never silently patched by
-resuming the old one). An APPROVE already merged into `integration`; nothing more to
-do for that task until the mission-level INTEGRATE step. You can steer this:
+**fresh** crew agent with `muster --redo <task-id>` (replaces the prior berth/branch
+and appends the review's feedback to the order automatically; rejected work is never
+silently patched by resuming the old one). An APPROVE already merged into
+`integration`; nothing more to do for that task until the mission-level INTEGRATE
+step. You can steer this:
 > "Review T-003." / "What did the Quartermaster say about T-003?"
+
+**A crew SOS is different from a REJECT** — `roster.json` marks it `sos`, not `done`,
+the moment the report's first line is exactly `Status: SOS` (crew.md's prime
+directive), and `/review` refuses to touch an `sos` task at all: it needs the
+Captain's own judgment (fix the order/scope, then `muster --redo`), not a merge-gate
+pass.
 
 Or just let it run and ask for the outcome:
 > "What landed and what got rejected?"

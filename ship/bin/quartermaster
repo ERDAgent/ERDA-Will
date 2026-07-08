@@ -57,6 +57,12 @@ case "$STATUS" in
     echo "quartermaster: '$TASK' was already merged into integration — nothing to do" >&2
     exit 0
     ;;
+  sos)
+    echo "quartermaster: '$TASK' raised SOS — this needs your own judgment (crew.md's prime" >&2
+    echo "directive), not a merge-gate review. Read $BUS/reports/$TASK.report.md, then either" >&2
+    echo "fix the order/scope and 'muster --redo $TASK', or resolve it another way." >&2
+    exit 1
+    ;;
 esac
 
 REPORT="$BUS/reports/$TASK.report.md"
@@ -89,6 +95,17 @@ set_status() {
   ) 9>"$BUS/.roster.lock"
 }
 
+set_salvage() {
+  local sha="$1"
+  (
+    flock 9
+    TMPJ="$(mktemp)"
+    jq --arg t "$TASK" --arg sha "$sha" \
+       '(.[] | select(.task==$t) | .salvageSha) = $sha' \
+       "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
+  ) 9>"$BUS/.roster.lock"
+}
+
 # The diff that actually matters is what the crew introduced since they
 # forked from main -- not integration's post-merge diff, which would also
 # include whatever earlier orders this mission already merged. Computed
@@ -97,7 +114,7 @@ set_status() {
 DIFF="$(git -C "$HOLD" diff "main...$BRANCH" 2>/dev/null | head -c 300000)"
 
 write_review() {
-  local verdict="$1" reason="$2"
+  local verdict="$1" reason="$2" extra="${3:-}"
   cat > "$REVIEW" <<EOF
 # Review: $TASK ($BRANCH)
 
@@ -105,12 +122,27 @@ write_review() {
 **Reviewed:** $(date -Is)
 
 $reason
+${extra:+
+$extra}
 EOF
 }
 
 reject() {
   local reason="$1"
-  write_review "REJECT" "$reason"
+  # REJECT already leaves the crew branch untouched in the hold (only
+  # integration gets rolled back) -- but nothing pointed to it, so a future
+  # redo had to manually discover it was cherry-pickable. Real voyage: a
+  # partial-credit REJECT (most of the diff was fine, one piece wasn't) got
+  # re-implemented from prose instead of cherry-picked, burning a wave that
+  # didn't need to be burned. Pin the branch's current tip explicitly, in
+  # both the review and the roster, so a redo doesn't have to go hunting.
+  local salvage_sha salvage_note=""
+  salvage_sha="$(git -C "$HOLD" rev-parse --short "$BRANCH" 2>/dev/null || true)"
+  if [[ -n "$salvage_sha" ]]; then
+    salvage_note="**Salvage:** crew branch \`$BRANCH\` retained at \`$salvage_sha\` — cherry-pickable for a redo (e.g. \`git -C .hold.git cherry-pick $salvage_sha\` from a fresh berth, or reference it directly in the redo order) if some of this attempt was actually correct."
+    set_salvage "$salvage_sha"
+  fi
+  write_review "REJECT" "$reason" "$salvage_note"
   set_status "rejected"
   log "quartermaster-reject" "$TASK $BRANCH"
   echo "REJECT: $TASK ($BRANCH) — see $REVIEW"
@@ -167,11 +199,29 @@ rm -f "$MERGE_LOG"
 # same extraction idiom telescope already uses for its "command:"/"port:"
 # fields. A failing (or unconfigured) dry-dock test is judged deterministically,
 # never left to the LLM's discretion. ---
+# charter.md's own template models the value with markdown backticks (e.g.
+# "(fill in, e.g. `npm test`)"), and a real voyage copied that convention into
+# a real value -- sed's extraction keeps the literal backticks, and
+# `bash -c` below then treats them as command substitution, running the
+# captured build/test's own stdout as a brand-new command and REJECTing
+# clean crew work on a documentation defect, not a real failure. Strip one
+# leading + one trailing backtick if both are present, same fix applied to
+# telescope's identical extractor.
+strip_backticks() {
+  local s="$1"
+  if [[ "$s" == \`*\` ]]; then
+    s="${s#\`}"
+    s="${s%\`}"
+  fi
+  printf '%s' "$s"
+}
+
 DRYDOCK_CMD=""
 if [[ -f "$CHARTER_MD" ]]; then
   DRYDOCK_CMD="$(sed -n '/^## Test commands/,/^## /{/^- dry dock:/s/^- dry dock: *//p}' "$CHARTER_MD" | head -1)"
 fi
 [[ "$DRYDOCK_CMD" == \(* ]] && DRYDOCK_CMD=""
+DRYDOCK_CMD="$(strip_backticks "$DRYDOCK_CMD")"
 
 TEST_SUMMARY=""
 if [[ -n "$DRYDOCK_CMD" ]]; then

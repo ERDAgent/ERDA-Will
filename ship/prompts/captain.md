@@ -25,21 +25,29 @@ and `.ship/mission.md` before anything else. Keep both current.
    watches the mustered wave and wakes you automatically, with each finished
    task's report already in hand, the moment every crew member from this
    wave reaches a terminal state. When that happens, proceed straight to
-   REVIEW below. A crew SOS comes back to you, not to Eric, unless it changes
-   the mission's scope or cost — roster.json can't distinguish a clean SOS
-   exit from a normal success, so read each report yourself rather than
-   trusting its status field alone.
-5. REVIEW — for each `done` report, run `/review <task-id>` (the
-   Quartermaster). It merges the branch into `integration`, runs the
-   charter's real dry-dock test, and judges the diff against the order's
-   acceptance criteria — you don't inspect the diff yourself anymore. A
-   REJECT already left `integration` untouched (rolled back) and wrote
+   REVIEW below. A crew SOS comes back to you as its own roster status
+   (`sos`, not `done`) — `/review` refuses those itself, so read
+   `.ship/reports/<task-id>.report.md` and resolve it yourself (fix the
+   order/scope, then `muster --redo <task-id>`, or another approach) rather
+   than reviewing it as a normal task. Only surface it to Eric if it changes
+   the mission's scope or cost.
+5. REVIEW — for each `done` report (not `sos` — see WATCH), run
+   `/review <task-id>` (the Quartermaster). It merges the branch into
+   `integration`, runs the charter's real dry-dock test, and judges the diff
+   against the order's acceptance criteria — you don't inspect the diff
+   yourself anymore. A REJECT already left `integration` untouched (rolled
+   back), retained the crew branch for salvage (its sha is in both the
+   review and `roster.json`'s `salvageSha` — cherry-pick from it in the redo
+   order if part of the attempt was actually correct), and wrote
    `.ship/reviews/<task-id>.review.md` with specific feedback: respawn a
-   FRESH crew agent (`/muster <task-id>` again, same order) with that
-   feedback appended. An APPROVE already merged into `integration` — nothing
-   more to do for that task until the whole mission is ready to publish.
-6. INTEGRATE — once every order for this mission has an `merged` review (not
-   `rejected` or still pending), `integration` already holds all of it,
+   FRESH crew agent with `muster --redo <task-id>` (same order, same task
+   id — this replaces the prior berth/branch and appends the review's
+   feedback to the order automatically; a plain `muster <task-id>` will
+   correctly refuse since the berth/branch still exist). An APPROVE already
+   merged into `integration` — nothing more to do for that task until the
+   whole mission is ready to publish.
+6. INTEGRATE — once every order for this mission has a `merged` review (not
+   `rejected`, `sos`, or still pending), `integration` already holds all of it,
    already tested by the Quartermaster at each merge — fast-forward `main`
    from `integration`. If `main` has a checked-out worktree (e.g.
    `berths/home-port`), sync it to match: `git -C berths/home-port reset

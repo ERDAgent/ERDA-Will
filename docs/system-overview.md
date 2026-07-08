@@ -62,12 +62,15 @@ projects, deliberately, for context purity and cost attribution. Its loop:
 4. **WATCH** — no manual polling needed: the bridge extension tracks the mustered
    wave via `log/events.log` and wakes the Captain automatically, with every
    finished task's report already in hand, the moment the whole wave reaches a
-   terminal state (see "Wave-completion watcher" below). A crew SOS comes back
-   to the Captain, not to you, unless it changes scope or cost.
-5. **REVIEW** — runs `/review <task-id>` (the Quartermaster) for each finished
-   task; it merges into `integration`, runs the real dry-dock tests, and judges
-   the diff against the order's acceptance criteria. Accepts, or rejects with
-   feedback to a **fresh** crew agent (never resumes a rejected one).
+   terminal state (see "Wave-completion watcher" below). A crew SOS surfaces as
+   its own roster status (`sos`, distinct from `done`) — it comes back to the
+   Captain, not to you, unless it changes scope or cost.
+5. **REVIEW** — runs `/review <task-id>` (the Quartermaster) for each `done`
+   task (never an `sos` one — the Quartermaster refuses those itself); it merges
+   into `integration`, runs the real dry-dock tests, and judges the diff against
+   the order's acceptance criteria. Accepts, or rejects with feedback to a
+   **fresh** crew agent via `muster --redo <task-id>` (never resumes a rejected
+   one) — REJECT also retains the crew branch's sha for salvage/cherry-picking.
 6. **INTEGRATE** — merges accepted branches into `integration` (dry dock), runs the
    full test suite, fast-forwards `main` (home port), removes berths, logs everything.
 7. **DEBRIEF** — summarizes to you: shipped, blocked, cost.
@@ -171,7 +174,9 @@ correctly against real crew runs for a while.
 **A real agent as of Phase 5** (`ship/bin/quartermaster`, wrapped by the bridge's
 `/review <task-id>`). Window 4 is unchanged (still the read-only hold/branches view) —
 the Quartermaster itself runs headless, on demand, once per `done` report, not as a
-standing window process.
+standing window process. Refuses outright (no LLM call, no merge attempt) on a
+`working` or `sos` roster status — an `sos` task needs the Captain's own judgment,
+never a merge-gate pass.
 
 What it actually does, in order, for one task: merges the crew's branch into
 `integration` (creating that branch/worktree on first use, same lazy-create
@@ -188,11 +193,19 @@ nothing for a stray tool call to break.
 
 A merge conflict, a failing dry-dock test, or a malformed/missing verdict are all
 automatic REJECTs — never left to the LLM's discretion, mirroring the Captain's own
-"never merge without dry-dock tests passing" hard rule. Any REJECT rolls `integration`
-back to its pre-merge commit (via `git reset --hard` to a SHA captured before the
-merge attempt) and writes `.ship/reviews/<task-id>.review.md`; the Captain re-musters
-the same task with that feedback. Reviews for one charter are serialized through a
-`flock` on `.ship/.integration.lock`, since every review shares the one
+"never merge without dry-dock tests passing" hard rule. `charter.md`'s own test-command
+fields are stripped of a leading/trailing markdown backtick pair before being run —
+the template's own placeholder example used to model that anti-pattern, and a value
+copying it verbatim would otherwise have `bash -c` treat the backticks as command
+substitution, REJECTing clean crew work on a documentation defect rather than a real
+failure. Any REJECT rolls `integration` back to its pre-merge commit (via
+`git reset --hard` to a SHA captured before the merge attempt), pins the crew branch's
+current tip as a salvage point (`.ship/reviews/<task-id>.review.md` and
+`roster.json`'s `salvageSha` — cherry-pickable if part of the attempt was actually
+correct), and writes that review; the Captain re-musters the same task with
+`muster --redo <task-id>`, which replaces the prior berth/branch and appends the
+review's feedback to the order automatically. Reviews for one charter are serialized
+through a `flock` on `.ship/.integration.lock`, since every review shares the one
 `berths/integration` worktree (the same one the telescope dev server runs against).
 
 Still not automatic: the Captain decides *when* to call `/review` and whether to
@@ -230,18 +243,24 @@ pairing `roster.json`'s `started` field with `log/events.log`'s `crew-done`/
 ### Crew — the ones who actually write code
 Real, working today (`ship/prompts/crew.md`, wired by `muster`). Spawned fresh per
 work order, one at a time, one order each, in its own git worktree (a "berth") on its
-own branch (`crew/<task-id>-<slug>`). Its loop: read the order and the charter's
-standing rules fully, implement *only* what's in scope, prove it with the order's own
-test commands, commit with clear messages, write a structured report to an exact path
-the order specifies, exit. Hard limits: never merge, push, switch branches, or leave
-its berth; never touch no-touch paths or anything in `.ship/` besides its own report.
+own branch (`crew/<task-id>-<slug>`), cut from `integration` (falling back to `main`
+only before any wave has ever been reviewed) so a berth mustered mid-voyage starts
+from whatever's already landed, not from `main`'s pre-mission state — and, if the
+integration worktree already has `node_modules`, gets it hardlink-copied in too. Its
+loop: read the order and the charter's standing rules fully, implement *only* what's
+in scope, prove it with the order's own test commands, commit with clear messages,
+write a structured report to an exact path the order specifies, exit. Hard limits:
+never merge, push, switch branches, or leave its berth; never touch no-touch paths or
+anything in `.ship/` besides its own report.
 
 The prime directive is **SOS over improvisation**: if the order's acceptance criteria
-can't be met, or it would need to touch out-of-scope paths, it stops and reports SOS
-rather than guessing — "a wrong guess merged costs more than an aborted task." Crew
-never resumes after rejection; a reviewer's feedback always spawns a brand-new crew
-agent against the same order, so there's no drift between what was reviewed and what a
-"fixed" version might silently become.
+can't be met, or it would need to touch out-of-scope paths, it stops, makes the
+report's first line exactly `Status: SOS`, and explains why rather than guessing — "a
+wrong guess merged costs more than an aborted task." That exact first line is what
+lets `muster` mark it `sos` in the roster instead of a plain `done`. Crew never
+resumes after rejection; a reviewer's feedback always spawns a brand-new crew agent
+(`muster --redo <task-id>`) against the same order, so there's no drift between what
+was reviewed and what a "fixed" version might silently become.
 
 Each crew member also gets a human-readable name (`muster` picks one at random from an
 invented, hobbit-flavored pool — deliberately not any actual Tolkien hobbit name — that

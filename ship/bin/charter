@@ -131,18 +131,22 @@ if [[ ! -f charter.md ]]; then
 - (fill in: languages, frameworks, formatter, lint)
 
 ## Test commands
-- crew (per-order): (fill in: how crew prove their work, e.g. \`npm test\`)
+- crew (per-order): (fill in: how crew prove their work -- plain shell, no markdown backticks, e.g. npm test)
 
 Read by \`ship/bin/quartermaster\` before approving a merge into \`integration\` --
-keep this field to the exact test invocation, nothing else on the line.
-- dry dock: (fill in, e.g. \`npm test\`)
+keep this field to the exact test invocation, nothing else on the line, and
+write it as plain shell (no surrounding backticks) -- this line is run
+literally via \`bash -c\`, so a markdown-style \`npm test\` would be captured
+with its backticks intact and misread as command substitution.
+- dry dock: (fill in -- plain shell, no markdown backticks, e.g. npm test)
 
 ## Dev server
 Read by \`ship/bin/telescope\` (the deck's "telescope" window) and \`erda telescope\` (the
 host-side tunnel). Bind localhost only, never 0.0.0.0 -- access is always via SSH
 tunnel, never a raw exposed port. Runs against the integration branch (crew's
-merged, reviewed work), not any one crew berth.
-- command: (fill in, e.g. \`npm run dev\`)
+merged, reviewed work), not any one crew berth. Same rule as above: plain
+shell, no markdown backticks around the value.
+- command: (fill in, e.g. npm run dev)
 - port: (fill in, e.g. 5173)
 
 ## No-touch paths

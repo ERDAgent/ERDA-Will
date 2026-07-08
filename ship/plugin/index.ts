@@ -211,8 +211,11 @@ export default function (pi: ExtensionAPI) {
 			if (!existsSync(rosterPath)) return null;
 			try {
 				const roster = JSON.parse(readFileSync(rosterPath, "utf8")) as RosterEntry[];
+				// "sos" excluded deliberately -- quartermaster itself refuses to
+				// review an SOS'd task (that needs the Captain's own judgment, not
+				// a merge-gate pass), so don't even offer it here.
 				const items = roster
-					.filter((r) => r.status !== "working" && r.task.startsWith(prefix))
+					.filter((r) => r.status !== "working" && r.status !== "sos" && r.task.startsWith(prefix))
 					.map((r) => ({ value: r.task, label: `${r.task} (${r.status})` }));
 				return items.length > 0 ? items : null;
 			} catch {
@@ -373,10 +376,9 @@ export default function (pi: ExtensionAPI) {
 					content:
 						`A wave of crew work just finished -- ${finishedCount} task(s). ` +
 						"Follow your WATCH -> REVIEW step now: for each status=done report below, run " +
-						'/review <task-id>. roster.json can\'t distinguish a clean SOS exit from success (both ' +
-						'show status "done"), so read each report yourself and handle any SOS per crew.md\'s ' +
-						"prime directive before treating it as a normal review. Once every task here is merged " +
-						"or rejected-with-redo, continue as usual.\n\n" +
+						"/review <task-id>. Any status=sos report needs your own judgment per crew.md's prime " +
+						"directive instead -- quartermaster itself refuses to review those. Once every " +
+						"non-SOS task here is merged or rejected-with-redo, continue as usual.\n\n" +
 						summary,
 				},
 				{ triggerTurn: true },

@@ -66,11 +66,29 @@ notouch_paths() {
   sed -n '/^## No-touch paths/,/^## /{/^- /s/^- *//p}' "$CHARTER_MD" | grep -v '^(' || true
 }
 
+ROSTER="$BUS/roster.json"
+task_status() {
+  [[ -f "$ROSTER" ]] || { echo ""; return; }
+  jq -r --arg t "$1" '[.[] | select(.task==$t)][0].status // empty' "$ROSTER" 2>/dev/null
+}
+
 PAIRS="$(mktemp)"
 
 for order in "${ORDERS[@]}"; do
   task="$(order_task_id "$order")"
   [[ -z "$task" ]] && task="(unknown task id in $(basename "$order"))"
+  # Skip orders whose roster status is already terminal (merged/rejected) --
+  # their scope claim is history, not a live conflict. A real voyage hit
+  # this as a real false positive: a later legitimate re-brief of the same
+  # file (e.g. a "-F" follow-up order re-touching a file its own already-
+  # merged predecessor also listed) flagged SCOPE CONFLICT every time even
+  # though the Mate's own LLM pass correctly judged it benign. Still count
+  # "working"/"sos" (not yet resolved) and not-yet-mustered orders (no
+  # roster entry at all) -- those really can collide.
+  status="$(task_status "$task")"
+  case "$status" in
+    merged|rejected) continue ;;
+  esac
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
     printf '%s\t%s\n' "$f" "$task" >> "$PAIRS"
