@@ -246,8 +246,11 @@ agent against the same order, so there's no drift between what was reviewed and 
 Each crew member also gets a human-readable name (`muster` picks one at random from an
 invented, hobbit-flavored pool — deliberately not any actual Tolkien hobbit name — that
 avoids colliding with any other currently-active crew member in the same charter). The
-tmux window shows the name (e.g. "⚒Clover"); the roster (Bosun's window) shows name,
+tmux window shows the name (e.g. "👷 Clover"); the roster (Bosun's window) shows name,
 task, status, and branch together, so "Clover" and "T-014" are always one glance apart.
+`roster.json`'s own `window` field stores this exact, already-glyph-decorated string
+(not the bare name) specifically so Chartroom's "jump to crew window" targets the real
+tmux window correctly regardless of the `SHIP_GLYPHS` setting.
 
 The window itself now shows real activity, not just a blank pane until the task ends:
 crew run with `pi --mode json` (not `-p`) piped through `ship/bin/pi-monitor`, which
@@ -329,14 +332,16 @@ just a live view of its own artifacts:
 
 | # | Window | Role | Real agent today? |
 |---|--------|------|---|
-| 0 | ⚓ bridge | Captain | **Yes** |
-| 1 | 🗺 chartroom | Chartroom (Fresh plugin) | **Yes** — `scuttlebutt/plugins/chartroom.ts`: commands to open the mission/orders/reports (flagging SOS reports), jump to a crew member's tmux window (contextual from their report), and a live dashboard panel showing roster status + SOS reports |
-| 2 | 🧭 first-mate | First Mate | **Yes** — `/critique`, advisory only, wired into the Captain's own PLAN step |
-| 3 | 📣 bosun | Bosun | **Yes**, v1 scope — `ship/bin/bosun` detects and flags turn/token budget breaches; doesn't kill/restart yet (deliberately deferred) |
-| 4 | ⚖ quartermaster | Quartermaster | **Yes** — `/review <task-id>`, real merge gate (merges into `integration`, runs the dry-dock test, judges the diff) |
-| 5 | 🪙 purser | Purser | No — dashboard, but the numbers are real (cost-proxy logs actual DeepInfra cost) |
-| 6 | ⚙ engine-room | (system monitor) | n/a — it's `htop` |
-| 7+ | ⚒ crew-T### | Crew | **Yes**, one window per active task, auto-created/closed by `muster` |
+| 0 | 🧑‍✈ Bridge | Captain | **Yes** |
+| 1 | 🗺 Chartroom | Chartroom (Fresh plugin) | **Yes** — `scuttlebutt/plugins/chartroom.ts`: commands to open the mission/orders/reports (flagging SOS reports), jump to a crew member's tmux window (contextual from their report), and a live dashboard panel showing roster status + SOS reports |
+| 2 | 🧑‍🔬 First Mate | First Mate | **Yes** — `/critique`, advisory only, wired into the Captain's own PLAN step |
+| 3 | 🧑‍🔧 Bosun | Bosun | **Yes**, v1 scope — `ship/bin/bosun` detects and flags turn/token budget breaches; doesn't kill/restart yet (deliberately deferred) |
+| 4 | 📋 Quartermaster | Quartermaster | **Yes** — `/review <task-id>`, real merge gate (merges into `integration`, runs the dry-dock test, judges the diff) |
+| 5 | 🧑‍💼 Purser | Purser | No — dashboard, but the numbers are real (cost-proxy logs actual DeepInfra cost) |
+| 6 | ⚙️ Engine Room | (system monitor) | n/a — it's `htop` |
+| 7 | 🧑‍🏭 Shipwright | Shipwright | **Yes** — system-level Claude Code, scoped to `~/shipyard`, not the charter |
+| 8 | 🔭 Telescope | (dev server) | n/a — runs the charter's dev server against `integration` |
+| 9+ | 👷 [crew name] | Crew | **Yes**, one window per active task, auto-created/closed by `muster` |
 
 (Window 4's own contents are still just the git-branches dashboard — the Quartermaster *agent* runs headless via `/review`, not inside that window. Same pattern for window 2 and First Mate/`/critique`, and window 3's dashboard now also reflects Bosun's real budget checks each refresh.)
 

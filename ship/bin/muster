@@ -118,6 +118,18 @@ printf '\n## Report path\nWrite your report to exactly this absolute path: %s/re
 EXCL="$(git -C "$BERTH" rev-parse --git-path info/exclude)"
 grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n.crew-run.sh\n' >> "$EXCL"
 
+# Real tmux window name -- computed here (not down by the tmux new-window
+# call below) so roster.json's own "window" field can store it exactly.
+# Found and fixed a real bug while wiring this: roster.json used to store
+# the bare $CREWNAME here, but the actual tmux window carries a glyph prefix
+# by default (SHIP_GLYPHS=1) -- confirmed live that `tmux select-window`
+# does NOT substring-match a bare name against a glyph-prefixed one, so
+# Chartroom's "jump to crew window" (scuttlebutt/plugins/chartroom.ts,
+# targeting `ship-<charter>:<roster window field>`) was silently broken for
+# any charter running with the default glyph setting. Storing the exact,
+# already-glyph-decorated name here fixes it for both settings.
+WIN="$CREWNAME"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="👷 $WIN"
+
 # --- roster entry ---
 # Drop any existing entry for this task before appending the new one -- a
 # rejected attempt re-mustered against the same task ID (crew.md's prescribed
@@ -130,7 +142,7 @@ grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n
 (
   flock 9
   TMPJ="$(mktemp)"
-  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$CREWNAME" --arg n "$CREWNAME" --arg s "$(date -Is)" \
+  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$WIN" --arg n "$CREWNAME" --arg s "$(date -Is)" \
      '[.[] | select(.task != $t)] + [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
      "$BUS/roster.json" > "$TMPJ" && mv "$TMPJ" "$BUS/roster.json"
 ) 9>"$BUS/.roster.lock"
@@ -178,6 +190,5 @@ read -r
 EOF
 chmod +x "$RUNNER"
 
-WIN="$CREWNAME"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="⚒$WIN"
 tmux new-window -t "$SES" -n "$WIN" "$RUNNER"
 echo "mustered $TASK as '$CREWNAME' on $BRANCH → window $WIN (deck: $SES)"

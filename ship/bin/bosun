@@ -64,6 +64,9 @@ else
   rm -f "$FLAGGED.tmp"
 fi
 
+echo "🧑‍🔧 Bosun"
+echo
+
 echo "== roster =="
 jq -r '.[] | [.name,.task,.status,.branch] | @tsv' "$ROSTER" 2>/dev/null | column -t -s $'\t' || cat "$ROSTER"
 

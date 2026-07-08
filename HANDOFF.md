@@ -2346,6 +2346,52 @@ window-5 row. Not wired into `/debrief`'s narration (which currently only pulls 
 from the ledger) — a reasonable next step if Eric wants mission debriefs to mention
 elapsed time too, but not assumed without being asked.
 
+## 4bl. Tmux window titles/glyphs refresh, and a real Chartroom bug found along the way
+(July 7, 2026)
+
+Eric asked for dashboard title lines on the Bosun/Quartermaster windows ("📋
+Quartermaster", "🧑‍🔧 Bosun") and a full glyph/label refresh across every tmux window
+name: Bridge (🧑‍✈), Chartroom (🗺, unchanged), First Mate (🧑‍🔬), Bosun (🧑‍🔧),
+Quartermaster (📋), Purser (🧑‍💼), Engine Room (⚙️), Shipwright (🧑‍🏭), and crew ("👷
+[crew name]", replacing the old bare `⚒$CREWNAME`, now with a space). Telescope's
+glyph (🔭) wasn't in Eric's list — left unchanged, only capitalized the label ("Telescope")
+for consistency with every other window now using Title Case.
+
+**Found and fixed a real, previously-unverified bug while touching crew window
+naming**: `roster.json`'s `window` field has always stored the *bare* `$CREWNAME`
+(no glyph), while Chartroom's "jump to crew window"
+(`scuttlebutt/plugins/chartroom.ts:99`, `ship-<charter>:<entry.window>`) targets tmux
+by that same value. Verified live, directly, before assuming: `tmux select-window`
+does **not** substring-match a bare name against a glyph-prefixed real window name —
+confirmed both with the new `👷 ` prefix and, going back, with the *old* `⚒` prefix
+too. So the jump feature has been silently broken since Chartroom shipped (§4bg) for
+any charter running with the default `SHIP_GLYPHS=1` — §4bg's own live verification
+only ever exercised it against two hand-made dummy tmux windows (`Alder`/`Birch`)
+created without the glyph prefix at all, which happened to match the bare roster
+value by coincidence and never exposed the mismatch. Root-caused, not just patched:
+moved `WIN` (the real, glyph-decorated tmux window name) computation in
+`ship/bin/muster` to before the roster-append block, and store `$WIN` (not
+`$CREWNAME`) in the `window` field — the only place in the codebase that field is
+ever read.
+
+Verified thoroughly, live, on a scratch charter (`shipwright-glyph-test`): a real
+`sail` showed all 9 fixed-role windows with the correct new names; a real `muster`'d
+crew task produced window `👷 Marrow` and a matching `roster.json["window"]` value;
+`tmux select-window -t "ship-shipwright-glyph-test:👷 Marrow"` (the exact string
+Chartroom would construct) correctly activated the real window — confirmed the fix,
+not just the rename. Bosun's and Quartermaster's dashboard content both render their
+new title lines. `shellcheck` clean on all three touched scripts (installed
+`shellcheck` fresh on this ship via `apt-get` — wasn't present before, same gap
+§4n/§4o hit on other hosts).
+
+Updated `docs/system-overview.md` (the crew-window example, the window-role table —
+which was also missing rows for windows 7/8 entirely, jumping straight from 6 to
+"7+" even though Shipwright and Telescope have been real windows since §4s/§4t; added
+them) and `docs/captain-cheatsheet.md`'s window table. Left
+`docs/agentic-engineering-plan.md` (the original design doc) and HANDOFF's own
+historical glyph mentions untouched, per the established precedent of not rewriting
+the planning doc or past session records to match current state.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see
