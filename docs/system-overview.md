@@ -216,6 +216,17 @@ each work order (`ship/prompts/order-template.md`) remains the only thing that a
 *caps* spend; the ledger only reports it. Still not an active agent: tallying per-mission
 totals and flagging budget breaches is Phase 5+.
 
+**Purser also tracks time now**, from sources that already existed — no new
+instrumentation anywhere. Four durations, always shown first in the dashboard: **ship
+uptime** (`uptime -p`), **charter age** (the charter directory's own filesystem birth
+time — deliberately not `charter.md`'s mtime, which gets bumped every time it's kept
+current per the Captain's own standing instruction), **voyage time** (the bridge tmux
+pane's process elapsed time — a voyage *is* one Captain session lifetime under a
+charter, so this is the literal definition, not an approximation), and **crew work
+time** (cumulative wall-clock across every crew task ever mustered in this charter,
+pairing `roster.json`'s `started` field with `log/events.log`'s `crew-done`/
+`crew-failed` timestamp per task, or "now" for anything still `working`).
+
 ### Crew — the ones who actually write code
 Real, working today (`ship/prompts/crew.md`, wired by `muster`). Spawned fresh per
 work order, one at a time, one order each, in its own git worktree (a "berth") on its

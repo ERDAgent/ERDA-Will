@@ -2300,6 +2300,52 @@ English. Scoped to Captain only, per Eric's exact request — First Mate/Quarter
 crew prompts (which also run on GLM-5.2) weren't touched; worth the same fix if the leak
 ever shows up from those roles too, but not assumed without being asked.
 
+## 4bk. Purser tracks time, not just cost (July 7, 2026)
+
+Eric's ask: track "a few time metrics that would be valuable... ship time, voyage time,
+charter time, crew work time... don't overdo it with data points, but don't be stingy
+either." Purser was the obvious owner — it's already the accounting officer (real
+DeepInfra cost via `cost-proxy`/`log/ledger.tsv`), and time is the other half of
+resource accounting a mission actually cares about. No new role, no new window, no new
+instrumentation: all four durations are derivable from state that already exists.
+
+Added a `== time ==` section to `ship/bin/purser-totals` (window 5), printed
+unconditionally before the existing cost section (which still degrades gracefully to
+"no calls logged yet" on an empty ledger, but that no longer skips the time section
+too):
+
+- **Ship uptime** — plain `uptime -p`.
+- **Charter age** — the charter directory's (`~/fleet/<name>/`) own filesystem birth
+  time (`stat -c %W`), confirmed this ship's ext4 actually reports real birth times
+  before relying on it. Deliberately birth time, not `charter.md`'s mtime, which would
+  get reset every time the Captain edits it to "keep it current" per its own standing
+  instruction — checked this against captain.md's actual wording before picking the
+  anchor, not assumed.
+- **Voyage time** — the bridge tmux pane's process elapsed time (`ps -o etimes=` on the
+  `pane_pid` for `ship-<charter>:0`). This is the literal definition already in
+  CLAUDE.md's vocabulary table ("Voyage: one mission = one Captain session lifetime
+  under a charter"), not an approximation invented for this feature.
+- **Crew work time** — cumulative wall-clock across every crew task ever mustered in
+  the charter: pairs `roster.json`'s `started` field with `log/events.log`'s
+  `crew-done`/`crew-failed` timestamp per task (or "now" for anything still
+  `working`), summed, with a live-task count called out separately. Matched precisely
+  on the task-id column (not a substring match) specifically to avoid a `T-1`/`T-10`
+  collision — verified directly with that exact pair of task ids, not just reasoned
+  about.
+
+Verified thoroughly: synthesized roster/events/ledger state (empty charter, a mix of
+done/failed/still-working tasks, the `T-1`/`T-10` collision check, no-tmux-session
+graceful degradation) all computed correctly; `shellcheck` clean (installed it fresh on
+this ship via `apt-get`, wasn't present before). Then live on a real scratch charter
+(`shipwright-purser-test`) via real `charter`/`sail`: window 5 rendered the real time
+section against a genuine empty charter, then a real `muster`'d stub crew task updated
+`crew work time` correctly once it finished. Scratch charter and deck torn down after.
+
+Updated `docs/system-overview.md`'s Purser section and `docs/captain-cheatsheet.md`'s
+window-5 row. Not wired into `/debrief`'s narration (which currently only pulls cost
+from the ledger) — a reasonable next step if Eric wants mission debriefs to mention
+elapsed time too, but not assumed without being asked.
+
 ## 5. NEXT TASK
 
 Phase 0 (lay the keel) is done — see §4c, §4d, §4e. DeepInfra wiring is done — see

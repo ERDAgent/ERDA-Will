@@ -136,7 +136,7 @@ interrupting the Captain's context if you just want a quick look:
 | 2 | 🧭 first-mate | latest `.ship/mission-critique.md`, live — the Captain writes this via `/critique` (a real agent as of Phase 5) as part of every PLAN step, advisory only, never a gate | you want to read First Mate's actual critique text, not the Captain's summary of it |
 | 3 | 📣 bosun | `roster.json` + real turn/token usage vs. each working order's declared budget + last 8 events, auto-refreshing every 5s — flags `OVER BUDGET` (and logs a `bosun-flag` event, once) the first time a task breaches; v1 is detect-only, it never kills or restarts anything itself | "is anything still running, right now" — or "is anything stuck/over budget" |
 | 4 | ⚖ quartermaster | git branches + last 10 commits across the whole hold (window itself is still just a dashboard; the Quartermaster *agent* runs headless via `/review`, not in this window) | "what's actually landed on `main`/`integration`" |
-| 5 | 🪙 purser | running total + last 10 calls from `log/ledger.tsv`, real DeepInfra cost (`usage.estimated_cost`) logged by `cost-proxy` — not pi's own local-price-table guess | you want to know what a mission is actually costing, right now |
+| 5 | 🪙 purser | ship uptime, charter age, voyage time, and cumulative crew work time, plus running total + last 10 calls from `log/ledger.tsv`, real DeepInfra cost (`usage.estimated_cost`) logged by `cost-proxy` — not pi's own local-price-table guess | you want to know what a mission is actually costing, or how long anything's been running, right now |
 | 6 | ⚙ engine-room | `htop`/`top` on the ship itself | the ship feels slow and you want to know if it's actually loaded |
 
 If window 3 shows `OVER BUDGET` on a task, nothing happens automatically — decide for

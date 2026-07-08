@@ -1,12 +1,96 @@
 #!/usr/bin/env bash
-# purser-totals — running real-cost summary for the purser dashboard (sail's
-# window 5). Reads log/ledger.tsv (written by cost-proxy from DeepInfra's own
-# usage.estimated_cost, not pi's local price-table guess), relative to cwd —
-# sail always launches this with cwd = the charter's .ship/ dir, same
-# convention the bosun/quartermaster dashboard commands already rely on.
+# purser-totals — running real-cost + time summary for the purser dashboard
+# (sail's window 5). Cost comes from log/ledger.tsv (written by cost-proxy
+# from DeepInfra's own usage.estimated_cost, not pi's local price-table
+# guess). Time comes from four existing, already-durable sources -- no new
+# instrumentation anywhere: `uptime` (ship), the charter directory's own
+# filesystem birth time (charter), the bridge pane's process elapsed time
+# (voyage -- one Captain session lifetime under a charter, per CLAUDE.md's
+# vocabulary table), and roster.json's `started` field paired with
+# log/events.log's crew-done/crew-failed timestamps (crew work). Run
+# relative to cwd — sail always launches this with cwd = the charter's
+# .ship/ dir, same convention the bosun/quartermaster dashboard commands
+# already rely on.
 set -uo pipefail
 
 LEDGER="log/ledger.tsv"
+ROSTER="roster.json"
+EVENTS="log/events.log"
+CHARTER_DIR="$(dirname "$(pwd)")"
+CHARTER_NAME="$(basename "$CHARTER_DIR")"
+SES="ship-$CHARTER_NAME"
+NOW=$(date +%s)
+
+fmtdur() {
+  local secs=${1:-0}
+  (( secs < 0 )) && secs=0
+  local d=$(( secs / 86400 )) h=$(( (secs % 86400) / 3600 )) m=$(( (secs % 3600) / 60 ))
+  if (( d > 0 )); then printf '%dd %dh %dm' "$d" "$h" "$m"
+  elif (( h > 0 )); then printf '%dh %dm' "$h" "$m"
+  else printf '%dm' "$m"
+  fi
+}
+
+echo "== time =="
+
+if command -v uptime >/dev/null 2>&1; then
+  ship_up="$(uptime -p 2>/dev/null | sed 's/^up //')"
+  printf "ship uptime:    %s\n" "${ship_up:-unknown}"
+fi
+
+# Birth time, not mtime -- charter.md is expected to be kept current (edited
+# throughout a mission), which would otherwise reset "charter age" every time
+# it's touched. The directory itself is created once by `charter` and never
+# rewritten again.
+charter_birth="$(stat -c %W "$CHARTER_DIR" 2>/dev/null || echo 0)"
+if [[ "$charter_birth" -gt 0 ]]; then
+  printf "charter age:    %s\n" "$(fmtdur $(( NOW - charter_birth )))"
+else
+  printf "charter age:    unknown (filesystem doesn't report birth time)\n"
+fi
+
+bridge_pid="$(tmux list-panes -t "${SES}:0" -F '#{pane_pid}' 2>/dev/null | head -1)"
+if [[ -n "$bridge_pid" ]]; then
+  bridge_etime="$(ps -o etimes= -p "$bridge_pid" 2>/dev/null | tr -d ' ')"
+  [[ -n "$bridge_etime" ]] && printf "voyage time:    %s (this Captain session)\n" "$(fmtdur "$bridge_etime")"
+fi
+
+if [[ -s "$ROSTER" ]]; then
+  crew_secs=0 crew_done=0 crew_live=0
+  while IFS=$'\t' read -r task status started; do
+    [[ -z "$task" ]] && continue
+    start_epoch="$(date -d "$started" +%s 2>/dev/null)" || continue
+    if [[ "$status" == "working" ]]; then
+      crew_secs=$(( crew_secs + NOW - start_epoch ))
+      crew_live=$(( crew_live + 1 ))
+    else
+      finish_ts="$(awk -F'\t' -v t="$task" '
+        $2 == "crew-done" || $2 == "crew-failed" { split($3, d, " "); if (d[1] == t) last = $1 }
+        END { if (last) print last }
+      ' "$EVENTS" 2>/dev/null)"
+      if [[ -n "$finish_ts" ]]; then
+        finish_epoch="$(date -d "$finish_ts" +%s 2>/dev/null)"
+        if [[ -n "$finish_epoch" ]]; then
+          crew_secs=$(( crew_secs + finish_epoch - start_epoch ))
+          crew_done=$(( crew_done + 1 ))
+        fi
+      fi
+    fi
+  done < <(jq -r '.[] | "\(.task)\t\(.status)\t\(.started)"' "$ROSTER" 2>/dev/null)
+
+  total_tasks=$(( crew_done + crew_live ))
+  if (( total_tasks > 0 )); then
+    plural=""; (( total_tasks != 1 )) && plural="s"
+    live_note=""; (( crew_live > 0 )) && live_note=", $crew_live still working"
+    printf "crew work time: %s across %d task%s%s\n" "$(fmtdur "$crew_secs")" "$total_tasks" "$plural" "$live_note"
+  else
+    echo "crew work time: no crew mustered yet"
+  fi
+else
+  echo "crew work time: no crew mustered yet"
+fi
+
+echo
 
 if [[ ! -s "$LEDGER" ]]; then
   echo "[purser] no calls logged yet -- log/ledger.tsv is empty"
