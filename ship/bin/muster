@@ -280,8 +280,14 @@ fi
 ) 9>"$BUS/.roster.lock"
 printf '%s\t%s\t%s\n' "\$(date -Is)" "crew-\$STATUS" "$TASK rc=\$RC" >> "$BUS/log/events.log"
 echo; echo "[$CREWNAME/$TASK] \$STATUS (rc=\$RC) — report expected in .ship/reports/$TASK.report.md"
-echo "[$CREWNAME/$TASK] press enter to close this window"
-read -r
+# Window closes on its own from here (no read -r/keypress wait) -- tmux's
+# default (remain-on-exit off, confirmed not set anywhere in
+# dotfiles/tmux/ship.tmux.conf) closes a window the instant its pane's
+# command exits. The bridge no longer needs a human to babysit finished crew
+# windows to notice completion anyway -- the wave-completion watcher (§4bi)
+# already wakes the Captain with the real report content the moment a wave
+# finishes, and roster.json/events.log/the report file are the durable
+# record; the tmux pane itself was never the source of truth.
 EOF
 chmod +x "$RUNNER"
 

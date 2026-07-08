@@ -2566,6 +2566,40 @@ dropped by the script. Spot-checked for regex false positives (abbreviations lik
 "e.g." wrongly triggering sentence-initial capitalization, double-article artifacts
 like "the the Admiral") — none found.
 
+## 4bo. Crew tmux windows now close themselves when done (July 8, 2026)
+
+The Admiral asked for crew tmux windows to auto-close once the crew member finishes,
+instead of sitting there needing a manual keypress. Root cause of the old behavior:
+`.crew-run.sh`'s final lines were `echo "... press enter to close this window"` +
+`read -r`, blocking indefinitely. Confirmed `dotfiles/tmux/ship.tmux.conf` never sets
+`remain-on-exit` (tmux's default is off), so simply removing the `read -r` block was
+sufficient — tmux already closes a window the instant its pane's command exits, no
+extra flag or `tmux kill-window` call needed.
+
+This was likely originally there so a human glancing at the deck could still read the
+final status line before the pane vanished — less necessary now than when it was
+built, since the wave-completion watcher (§4bi) already wakes the Captain with the
+real report content the moment a wave finishes, and `roster.json`/`log/events.log`/
+the report file are the durable record; the tmux pane's own scrollback was never the
+source of truth. Checked `scuttlebutt/plugins/chartroom.ts`'s "jump to crew window"
+feature before shipping this, since a race that used to be rare (window closed early)
+is now the common case for any finished task — it already degrades gracefully
+(`editor.error("chartroom: couldn't select tmux window ...")`, no crash), so no
+companion fix was needed there.
+
+Verified live on a scratch charter: a fast stub crew's window was completely gone
+from `tmux list-panes` immediately after it finished (confirmed via `roster.json`
+showing real `status: "done"` and a real `crew-done` event, so the work itself still
+completed correctly — only the window-lingering behavior changed); a slower stub
+crew's window was confirmed present via `tmux list-panes` *while still working*, then
+confirmed gone entirely once it finished — the definitive before/after proof, not
+just "no error was thrown." `shellcheck`/`bash -n` clean on `ship/bin/muster`.
+
+**Not done**: no carve-out for failed/SOS tasks to linger for inspection — the
+Admiral's request was general ("when the crew member is done working"), and the
+report/roster/events trail already covers what a lingering pane would have shown.
+Worth revisiting only if that trail ever proves insufficient in practice.
+
 ## 5. NEXT TASK
 
 **Per §4bm (July 8, 2026): the real Captain's first full voyage on `ERDA-market-land`
