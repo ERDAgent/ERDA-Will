@@ -107,6 +107,42 @@ else
   ln -sfn "$SHIPYARD_DIR/ship/pi/models.json" "$HOME/.pi/agent/models.json"
 fi
 
+# ship/pi/settings.json's compaction block merged (NOT symlinked) into
+# ~/.pi/agent/settings.json (tunes auto-compaction). Found via a real ledger
+# audit of a live 28-hour Captain voyage: prompt_tokens climbed monotonically
+# from 2,337 to 297,172 across 322 calls, and pi's own auto-compaction (on by
+# default, triggers at contextTokens > contextWindow - reserveTokens --
+# confirmed against dist/core/compaction/compaction.js, not just docs) never
+# fired even once, since the default reserveTokens (16384) against GLM-5.2's
+# 1M-token window puts the real trigger point at ~983,616 -- nowhere near
+# what a real voyage reaches. reserveTokens: 925000 here moves that trigger
+# down to ~75,000 tokens (the Admiral's own chosen aggressiveness over
+# gentler alternatives), applied ship-wide since crew/quartermaster/
+# first-mate's short-lived contexts rarely approach even that, so this is a
+# no-op for them in practice while it caps the Captain's runaway growth. One
+# accepted side effect: for the two fallback models (Kimi-K2.7-Code 262144,
+# GLM-5.1 202752 -- see models.json), this reserveTokens value makes
+# contextWindow - reserveTokens negative, so compaction fires on essentially
+# every turn while a fallback model is active -- fine, even desirable,
+# tighter cost control on a backup model used only during an outage.
+#
+# A merge, not the models.json symlink pattern, deliberately: confirmed live
+# that ~/.pi/agent/settings.json already existed on a real ship
+# (`{"lastChangelogVersion": "0.80.3", "theme": "dark"}`) -- pi itself owns
+# and can rewrite this file (theme changes, changelog-shown tracking),
+# unlike models.json which pi only ever reads. Symlinking it into the git
+# tree would risk pi's own interactive-session writes landing as
+# uncommitted changes inside the shipyard repo. jq merges just the
+# `compaction` key in, preserving whatever else pi has written, and is
+# idempotent (re-running sets the same value, no diff).
+mkdir -p "$HOME/.pi/agent"
+[[ -f "$HOME/.pi/agent/settings.json" ]] || echo '{}' > "$HOME/.pi/agent/settings.json"
+PI_SETTINGS_TMP="$(mktemp)"
+jq --slurpfile s "$SHIPYARD_DIR/ship/pi/settings.json" \
+   '.compaction = $s[0].compaction' \
+   "$HOME/.pi/agent/settings.json" > "$PI_SETTINGS_TMP" \
+  && mv "$PI_SETTINGS_TMP" "$HOME/.pi/agent/settings.json"
+
 # ship/plugin/ → ~/.pi/agent/extensions/shipyard (Phase 4: /mission, /muster,
 # /harbor, /debrief -- global, not per-charter, so it's active in every
 # charter's bridge window with no per-charter setup, same rationale as

@@ -2628,7 +2628,122 @@ Updated `docs/git-and-github.md` (the command reference, the "what charter does"
 walkthrough, and the summary table) and `docs/captain-cheatsheet.md`'s charter
 description.
 
+## 4bq. Found and fixed the real cause of the Captain's runaway spend (July 8, 2026)
+
+The Admiral reported real per-role spend on `ERDA-market-land`: Quartermaster $0.50,
+Crew $9.55, First Mate $0.65, **Captain $20.53** — roughly double the crew despite
+crew doing all the actual code-writing. Asked for ways to cut it, specifically about
+"skills." Refused to guess — spawned two parallel research passes (real ledger
+analysis on the live charter, read-only; real pi mechanism research against the
+locally-installed package's actual shipped source, not doc summaries) before
+proposing anything.
+
+**Root cause, confirmed empirically, not hypothesized**: Captain made *fewer* calls
+than crew (322 vs 755), and completion_tokens (verbose output) are nearly identical
+between them (781 vs 714 avg) — so it's neither call volume nor verbosity.
+**Captain's average prompt (input) size is 4.1x crew's (171,634 vs 42,152 tokens)**,
+and sampling calls across the real 322-call, ~28-hour session showed prompt_tokens
+climbing monotonically and almost linearly from 2,337 to 297,172 — never once
+dropping. Crew never exhibits this (max observed 123,127 across 755 calls) because
+each crew agent is spawned fresh per task and exits; the Captain is one single,
+ever-growing conversation for the entire voyage.
+
+Cross-referenced against pi's real auto-compaction implementation (confirmed against
+compiled source, `dist/core/compaction/compaction.js`, not just `docs/compaction.md`'s
+prose): it triggers at `contextTokens > contextWindow - reserveTokens`, default
+`reserveTokens` 16384. Against GLM-5.2's 1,000,000-token context window
+(`ship/pi/models.json`), that's an effective trigger point of ~983,616 tokens —
+nowhere near the 297,172 the real voyage reached. **Auto-compaction had never fired
+once**, on a real, already-running system, since the day it shipped. This is the
+entire explanation for the cost gap; it isn't call count, verbosity, or the system
+prompt/skills (see below).
+
+**Directly addressed the Admiral's "skills?" question with the data, not a guess**:
+pi's skills mechanism (`docs/skills.md`) only keeps a skill's name + one-line
+description always in the system prompt; the full body loads on-demand via `read`.
+Real mechanism — but `captain.md` is ~78 lines (roughly 1-2K tokens), and the data
+shows 100% of the growth is accumulated conversation history, not system-prompt size.
+Moving captain.md content into skills would save a few hundred tokens against a
+context that grew to 297,000 — not the right lever here. Also ruled out (with
+reasons, not just noted): `/fork`/`/clone` don't reduce resent context (confirmed
+against `docs/sessions.md`'s own comparison table, only `/new`/`ctx.newSession()`
+does) so manual per-mission session resets would just reinvent what properly-tuned
+auto-compaction already does automatically; and `pi.setThinkingLevel()` (a real,
+confirmed extension API) governs completion_tokens, which the data shows isn't the
+problem.
+
+**The fix, Admiral's own choice of aggressiveness (~75K-token trigger, the more
+aggressive of three options offered)**: new `ship/pi/settings.json`
+(`{"compaction":{"enabled":true,"reserveTokens":925000,"keepRecentTokens":20000}}`,
+925000 = 1,000,000 - 75,000) merged into `~/.pi/agent/settings.json` by `fitout.sh`.
+**Deliberately a `jq` merge, not the `models.json` symlink pattern** — found live,
+before committing to the symlink approach, that `~/.pi/agent/settings.json` already
+existed on this ship with real content pi itself had written
+(`{"lastChangelogVersion":"0.80.3","theme":"dark"}`) and confirmed pi owns/can
+rewrite this file for its own state (unlike `models.json`, which pi only ever reads)
+— symlinking it into the git tree would have risked the Captain's own interactive
+session (theme changes, etc.) landing as uncommitted changes inside the shipyard
+repo. The merge preserves whatever pi has written and is idempotent (verified: two
+consecutive `fitout.sh` runs produce byte-identical output).
+
+Also, alongside the fix: `ship/bin/cost-proxy` now logs two new trailing ledger
+columns, `cached_tokens`/`cache_write_tokens`, giving real visibility into cache-hit
+behavior going forward. Grounded the exact field names in a real DeepInfra response
+rather than assuming pi's own internal `cacheRead`/`cacheWrite` naming applied here —
+made two real raw calls (bypassing pi, curling DeepInfra's endpoint directly) with an
+identical large system prompt; the second (cache-hit) call showed
+`usage.prompt_tokens_details.cached_tokens` populated and `estimated_cost` dropping
+~5x, confirming both the real field name and that DeepInfra's cost figure already
+accounts for cache discounts correctly. Purely additive — `purser-totals`/`bosun`
+read fixed leading columns and are unaffected (verified against a live proxy
+instance on a separate test port, never the real one).
+
+**Verified live, decisively, not just "should work"**: on a scratch charter, drove a
+real interactive Captain session (`SHIP_ROLE=captain`, real `pi`, real GLM-5.2) by
+pasting large text blocks via `tmux load-buffer`/`paste-buffer` (send-keys with a
+~675KB single literal crashed the pane once — smaller ~110KB chunks worked reliably)
+until the ledger showed `prompt_tokens` climb 25,438 → 50,450 → 75,462, then watched
+the very next call drop to 50,304 with pi's own on-screen confirmation: **"[compaction]
+Compacted from 75,467 tokens"** — the exact mechanism, firing at the exact configured
+threshold, with no manual intervention. This is the same real-ledger-driven
+methodology used to find the problem in the first place, now closing the loop on the
+fix. Test charter and tmux session torn down after; `ERDA-market-land`'s own real,
+currently-running `cost-proxy` instance (PID confirmed, port 8790) was never touched
+— all proxy testing used a separate port against a scratch `FLEET` directory.
+
+Updated `docs/system-overview.md`'s Purser section (the new ledger columns, and a
+correction: the existing text implied the per-order crew budget was the *only* thing
+capping spend, which was true for crew but never was for the Captain's own unbounded
+session — now describes auto-compaction as the real, separate mechanism for that).
+
+**Not done, and why**: dynamic thinking-level lowering and skills-based system-prompt
+trimming are real, available levers (see above) but wouldn't have addressed the
+actual problem in this data — left as documented, not-implemented options for later
+if a *different* cost pattern ever emerges (e.g., if completion_tokens start
+dominating instead of prompt_tokens).
+
+**One outstanding manual step, flagged rather than done unilaterally**: the real,
+already-running `cost-proxy` process on this ship (and any other already-running
+ship) is serving requests with the *old* code (no cache columns) since Node doesn't
+hot-reload a running process and `unlock` only starts a new instance if the port is
+unresponsive — it won't restart a stale-but-alive one. Restarting it to pick up the
+new ledger columns is safe (purely additive, no behavior change to existing columns)
+but touches a live, real, currently-in-use process — left for the Admiral to do
+whenever convenient rather than doing it unilaterally mid-voyage.
+
 ## 5. NEXT TASK
+
+**Per §4bq (July 8, 2026): the Captain's runaway cost (~$20.53, ~2x crew) is fixed** —
+root-caused via a real ledger audit to auto-compaction never firing once against
+GLM-5.2's 1M-token window (default threshold ~983K tokens, real voyage only reached
+297K). `ship/pi/settings.json`'s `compaction.reserveTokens` now triggers real
+compaction at ~75K tokens (the Admiral's chosen aggressiveness), merged into
+`~/.pi/agent/settings.json` by `fitout.sh`, live-verified with pi's own on-screen
+`[compaction] Compacted from 75,467 tokens` confirmation. `cost-proxy` also gained
+real cache-hit visibility (`cached_tokens`/`cache_write_tokens` ledger columns).
+**One manual step still open, deliberately not done unilaterally**: the real,
+already-running `cost-proxy` process needs a restart (whenever convenient — it's
+running fine, just without the new columns until then) to pick up the ledger change.
 
 **Per §4bm (July 8, 2026): the real Captain's first full voyage on `ERDA-market-land`
 produced a genuine review (`.ship/voyage-debrief.md`), and all six of its findings

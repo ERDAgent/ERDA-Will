@@ -225,9 +225,31 @@ window's own `SHIP_ROLE`/`SHIP_CHARTER`/`SHIP_NAME`/`SHIP_TASK` exports). `ship/
 starts the proxy on demand (127.0.0.1:8790, ship-wide, one instance serves every
 charter's deck) if it isn't already running. Window 5 (`purser-totals`) shows a running
 total — overall and by role — plus the last 10 calls. The per-order turn/token budget in
-each work order (`ship/prompts/order-template.md`) remains the only thing that actually
-*caps* spend; the ledger only reports it. Still not an active agent: tallying per-mission
+each work order (`ship/prompts/order-template.md`) caps *crew* spend; nothing analogous
+ever bounded the Captain's own single, voyage-long session — see the auto-compaction
+note below, the real fix for that gap. Still not an active agent: tallying per-mission
 totals and flagging budget breaches is Phase 5+.
+
+Each ledger row also carries `cached_tokens`/`cache_write_tokens` (columns 10-11,
+DeepInfra's real `usage.prompt_tokens_details` shape — confirmed directly against a
+real response, not assumed from pi's own differently-named internal `cacheRead`/
+`cacheWrite` fields, which are a different provider convention) — purely additive,
+existing consumers (`purser-totals`, `bosun`) read fixed leading columns and are
+unaffected. This is what makes it possible to actually *see* whether a given call
+benefited from GLM-5.2's real cache discount ($0.18/M cached vs $0.93/M fresh per
+`ship/pi/models.json`) rather than inferring it indirectly from `estimated_cost` alone.
+
+**Auto-compaction is tuned ship-wide to actually bound the Captain's cost** (found via
+a real ledger audit: one real 28-hour Captain voyage saw `prompt_tokens` climb
+monotonically from 2,337 to 297,172 across 322 calls, since pi's default
+auto-compaction threshold — `contextTokens > contextWindow - reserveTokens`, default
+`reserveTokens` 16384 — sits at ~983,616 tokens for GLM-5.2's 1M-token window, nowhere
+near what a real voyage reaches). `ship/pi/settings.json`'s `compaction.reserveTokens`
+(925000, live-verified to trigger real compaction at ~75,000 tokens — pi's own
+`[compaction] Compacted from 75,467 tokens` message, confirmed on a live interactive
+session, not inferred) is merged (not symlinked — pi itself owns and rewrites this
+file for its own state, like `theme`) into `~/.pi/agent/settings.json` by `fitout.sh`,
+same idempotent-merge discipline as every other ship-wide config step.
 
 **Purser also tracks time now**, from sources that already existed — no new
 instrumentation anywhere. Four durations, always shown first in the dashboard: **ship

@@ -57,6 +57,13 @@ function ledgerPathFor(charter) {
 function appendLedger(ctx, model, usage) {
   const ledger = ledgerPathFor(ctx.charter);
   if (!ledger) return; // no charter context (e.g. ad-hoc manual pi use) — nothing to attribute to, skip silently
+  // Real DeepInfra response shape confirmed directly (not assumed from pi's
+  // own internal cacheRead/cacheWrite naming, which is a different provider's
+  // convention): cache info rides in usage.prompt_tokens_details, OpenAI-
+  // compatible-style, and is entirely absent (null) on a cold call rather
+  // than present-with-zeros -- hence the `?.` and blank-not-zero fallback,
+  // so a blank column means "no cache data reported" not "confirmed zero".
+  const details = usage.prompt_tokens_details || {};
   const line =
     [
       new Date().toISOString(),
@@ -68,6 +75,8 @@ function appendLedger(ctx, model, usage) {
       usage.completion_tokens ?? '',
       usage.total_tokens ?? '',
       usage.estimated_cost ?? '',
+      details.cached_tokens ?? '',
+      details.cache_write_tokens ?? '',
     ].join('\t') + '\n';
   fs.mkdir(path.dirname(ledger), { recursive: true }, (mkErr) => {
     if (mkErr) return console.error(`cost-proxy: mkdir ${path.dirname(ledger)}: ${mkErr.message}`);
