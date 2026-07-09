@@ -314,7 +314,7 @@ charter, for both:
   compartment (`ANTHROPIC_API_KEY`, see `strongbox/README.md`), not the charter's
   model keys — chosen over `/login` so it can be provisioned unattended. The role
   contract reaches it via `claude --append-system-prompt "$(cat shipwright.md)"`.
-- **Shipwright CO** (`sail`'s window 9, Codex): stays on the Admiral's own
+- **Shipwright CO** (`sail`'s window 8, Codex, directly after CC): stays on the Admiral's own
   OpenAI/ChatGPT subscription via `codex login` instead — a one-time manual step per
   ship, deliberately not strongbox-provisioned (see `strongbox/README.md`). Codex has
   no system-prompt flag; it auto-loads `AGENTS.md` from the repo root into its
@@ -327,7 +327,7 @@ has a "working alongside the other shipwright" section covering that (pull befor
 starting, commit/push in small increments, don't assume you're the only editor).
 
 ### Telescope — the dev server window
-Not an agent role, but the same "window in every deck" pattern: `sail`'s window 8
+Not an agent role, but the same "window in every deck" pattern: `sail`'s window 9
 runs the charter's dev server (`npm run dev` or equivalent, from `charter.md`'s
 "## Dev server" section) against the `integration` branch — crew's merged, reviewed
 work, kept fresh by the Captain's INTEGRATE step. The Admiral views it from the host via

@@ -455,7 +455,7 @@ was never there.
 
 ## 10. Telescoping a charter's dev server (D18)
 
-Every charter's deck has a "telescope" window (`sail`'s window 8) running a dev
+Every charter's deck has a "telescope" window (`sail`'s window 9) running a dev
 server against the `integration` branch — crew's merged, reviewed work, kept
 in sync every time the Captain runs INTEGRATE. Not any one crew berth; not a
 raw exposed port — the dev server only ever needs to bind `localhost` on the

@@ -155,7 +155,7 @@ API billing on this key rather than riding your existing subscription.
 
 ## Shipwright CO (Codex) — no strongbox compartment, by design
 
-The **Shipwright CO** window (`sail`'s window 9, `codex`) is the OpenAI
+The **Shipwright CO** window (`sail`'s window 8, `codex`) is the OpenAI
 counterpart to Shipwright CC above, but deliberately does *not* get its own
 strongbox compartment or API key — per `docs/agentic-engineering-plan.md`
 §4, Codex stays on the Admiral's own ChatGPT/OpenAI subscription via

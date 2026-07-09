@@ -8,14 +8,17 @@
 # window was closed, which tmux treats as closing the session), this
 # rebuilds it from scratch, same as a first-time sail.
 #
-# Window 9 (shipwright CO) was appended after window 8 (telescope) rather
-# than inserted earlier in the array -- inserting would shift every later
-# index on an already-live deck, and sail's gap-fill only checks whether an
-# index exists, not what's supposed to live there, so a shift would silently
-# strand an old window under the new index's name instead of ever creating
-# the new role. Appending is the same shape of change as when telescope
-# itself was added (see HANDOFF.md), and is the only shape that's safe for
-# `sail` to re-run against a deck that predates this window.
+# Shipwright CO first landed at window 9 (appended after telescope, the
+# only shape that's safe for sail's index-only gap-fill to re-run against an
+# already-live deck without shifting anything). The Admiral then asked for
+# it to sit directly after Shipwright CC instead, so windows 8 and 9 swapped
+# meaning: 8 is now shipwright CO, 9 is telescope. On a brand-new sail this
+# array produces that order directly. On a deck that already has both
+# windows from before the swap, gap-fill alone won't reorder them (same
+# reason appending was chosen originally -- it only fills genuinely missing
+# indices) -- fix an existing deck with `tmux swap-window -s 8 -t 9` (or
+# whatever ship-<charter> session), which trades the two windows' positions
+# without touching either running pane/process. See HANDOFF.md §4bs.
 # usage: sail <charter>
 # One tmux session per charter: ship-<charter>, windows 0-9 = roles, 10+ = crew.
 set -euo pipefail
@@ -112,7 +115,7 @@ else
   SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright-cc] claude not found, dropping to a shell\"; exec bash'"
 fi
 
-# window 9 — shipwright CO: same role, Codex instead of Claude Code. Codex
+# window 8 — shipwright CO: same role, Codex instead of Claude Code. Codex
 # has no `--append-system-prompt` equivalent (checked `codex --help` and the
 # shipped binary's own embedded base instructions directly, per this
 # prompt's "ground the design in facts" rule -- no such flag exists); it
@@ -147,7 +150,7 @@ ENGINE_CMD="top"; command -v htop >/dev/null && ENGINE_CMD="htop"
 # and only when the session didn't exist at all yet.
 WINDOW_DIRS=(
   "$DIR"          "$DIR/.ship"    "$DIR/.ship"    "$DIR/.ship"
-  "$DIR"          "$DIR/.ship"    "$DIR"          "$SHIPYARD_DIR"  "$DIR"          "$SHIPYARD_DIR"
+  "$DIR"          "$DIR/.ship"    "$DIR"          "$SHIPYARD_DIR"  "$SHIPYARD_DIR"          "$DIR"
 )
 # Role glyphs are one space away from their label via g()'s own trailing
 # space, except the six "person + ZWJ + role" compound emoji (Bridge, First
@@ -160,8 +163,8 @@ WINDOW_DIRS=(
 # only make the gap more robust against it.
 WINDOW_NAMES=(
   "$(g 🧑‍✈) Bridge"         "$(g 🗺) Chartroom"      "$(g 🧑‍🔬) First Mate"    "$(g 🧑‍🔧) Bosun"
-  "$(g 📋) Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️) Engine Room"      "$(g 🧑‍🏭) Shipwright CC" "$(g 🔭) Telescope"
-  "$(g 🧑‍🏭) Shipwright CO"
+  "$(g 📋) Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️) Engine Room"      "$(g 🧑‍🏭) Shipwright CC" "$(g 🧑‍🏭) Shipwright CO"
+  "$(g 🔭) Telescope"
 )
 WINDOW_CMDS=(
   "$BRIDGE_CMD"
@@ -172,8 +175,8 @@ WINDOW_CMDS=(
   "bash -lc 'watch -t -n 5 purser-totals'"
   "$ENGINE_CMD"
   "$SHIPWRIGHT_CMD"
-  "bash -lc 'exec telescope $NAME'"
   "$SHIPWRIGHT_CO_CMD"
+  "bash -lc 'exec telescope $NAME'"
 )
 
 NEW_SESSION=0

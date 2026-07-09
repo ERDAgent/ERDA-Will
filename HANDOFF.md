@@ -2824,7 +2824,53 @@ just not a live end-to-end conversation. Worth a quick spot-check the next time 
 Admiral logs in for real. Not provisioning-sensitive (no `fitout.sh`/`keel.yaml`
 changes), so no Neptune drill requested for this session.
 
+## 4bs. Shipwright CO moved to sit directly after Shipwright CC (July 9, 2026)
+
+**From: Shipwright CC.** The Admiral confirmed §4br's spot-check himself — logged
+into the real Shipwright CO window via `codex login`, and it correctly understood
+its role (read `AGENTS.md` → `shipwright.md`/`CLAUDE.md` on its own, no prompting
+needed; its first message identified itself as "Shipwright CO" and summarized
+current NEXT TASK state accurately). That closes §4br's one open item — the
+AGENTS.md-loading mechanism now has a real live confirmation, not just the
+shipped-binary evidence.
+
+Then asked for the two shipwright windows to sit adjacent (CC directly followed by
+CO) instead of CC-at-7/telescope-at-8/CO-at-9. Swapped what windows 8 and 9 mean:
+**8 is now Shipwright CO, 9 is telescope.** `ship/bin/sail`'s `WINDOW_DIRS`/
+`WINDOW_NAMES`/`WINDOW_CMDS` arrays and the `SHIPWRIGHT_CO_CMD` comment block were
+reordered to match, so a brand-new `sail` produces this order directly.
+
+For the one already-live deck on this ship (`ship-ERDA-experimental`, the same one
+§4br gap-filled) — sail's index-only gap-fill can't reorder windows that already
+exist, same reason appending (not inserting) was the safe choice originally — so I
+reordered it directly with `tmux swap-window -s ship-ERDA-experimental:8 -t
+ship-ERDA-experimental:9`. This trades the two windows' positions without touching
+either running pane: verified by capturing window 8's pane content immediately
+after and confirming the Admiral's real, already-authenticated Codex session
+(mid-conversation, its own history of "Explored HANDOFF.md" / "Aboard and oriented"
+visible) was still alive and untouched, just now sitting at index 8 instead of 9.
+No process was killed or restarted.
+
+Updated every doc that described the *current* (not historical) window numbering to
+match: `CLAUDE.md` (both the "which Claude are you" section and the vocabulary
+table), `docs/agentic-engineering-plan.md` §4, `docs/system-overview.md`'s
+Shipwrights and Telescope sections, `docs/vm-cheatsheet.md`, `strongbox/README.md`.
+Left §4br's own text and D18 as accurate history of what was true when written —
+same convention as the earlier preview→telescope rename (§4bb/v30) — rather than
+retroactively editing them.
+
+**Not done**: charters other than `ERDA-experimental` don't exist on this ship right
+now, so there was nothing else to reorder; a charter provisioned before this change
+(if one ever existed) would need the same manual `tmux swap-window -s 8 -t 9` (or a
+full session teardown + re-`sail`) to pick up the new order — sail's gap-fill alone
+won't do it, documented directly in `sail`'s own header comment now.
+
 ## 5. NEXT TASK
+
+**Per §4bs (July 9, 2026): Shipwright CO confirmed working for real** (the Admiral's
+own live `codex login` + a real self-identifying first message) **and now sits at
+`sail`'s window 8, directly after Shipwright CC (window 7); telescope moved to
+window 9.** Both shipwright windows are done — no known open items on this feature.
 
 **Per §4br (July 9, 2026): there are now two shipwrights, not one** — Shipwright CC
 (Claude Code, unchanged) and Shipwright CO (Codex, new: `sail`'s window 9,
