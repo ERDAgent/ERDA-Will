@@ -2865,7 +2865,80 @@ now, so there was nothing else to reorder; a charter provisioned before this cha
 full session teardown + re-`sail`) to pick up the new order — sail's gap-fill alone
 won't do it, documented directly in `sail`'s own header comment now.
 
+## 4bt. Two-row tmux status bar: role windows and crew windows no longer share one line (July 9, 2026)
+
+**From: Shipwright CC.** The Admiral asked whether tmux window tabs could stack at
+the bottom instead of running off the right edge as more windows accumulate.
+
+**Grounded in the real `man tmux` (3.4, this ship) before writing anything**: tmux
+has no native "wrap overflowing tabs onto a second row" behavior — a single-row
+window list that doesn't fit just scrolls to keep the current window in view, with
+tabs off either edge simply hidden, not wrapped. What tmux *does* support natively
+is a genuine multi-row status bar: the `status` option accepts `2`-`5` (rows), each
+row driven by its own `status-format[n]`. Built this: **row 0 = role windows (sail's
+fixed 0-9), row 1 = crew windows (10+, spawned/pruned by muster)**. Chose this split
+over an arbitrary/computed line-wrap because it's a real structural fact already
+true of this system — role windows are always exactly indices 0-9, crew always
+10+ — so a per-window `#{window_index}` filter inside tmux's own `#{W:...}` iterator
+is exact and needs no reload hook or width computation as crew come and go.
+
+**Two real mistakes found and fixed only by testing live against tmux itself, not
+by reading the man page harder:**
+1. The doc's own examples for numeric comparison (`#{e|%%:7,3}`, `#{e|*|f|4:...}`)
+   are easy to misread as `#{e<:a,b}` — tried that first, got silently empty output.
+   Empirically confirmed via `tmux display-message -p` one-liners that the real
+   working form is `#{e|<|:a,b}` (operator wrapped in pipes) before using it inside
+   the actual config. The plain `#{<:a,b}` form does a *string* compare, which
+   silently breaks past single digits (`"9" > "10"` lexically) — would have let
+   window 10+ leak onto row 0, or excluded them from row 1, exactly backwards from
+   what was wanted, and wouldn't have errored, just misrendered.
+2. Building the per-window template by hand (bare `#{E:window-status-format}`) would
+   have silently dropped mouse click-to-switch on the tabs — found by diffing
+   against tmux's own real built-in `status-format[0]` (`tmux show-options -g
+   status-format[0]`), which wraps each window in `#[range=window|N]` (documented
+   under "Mark a range for mouse events"). Added that wrapping to both rows so
+   clicking a tab still works on row 1, not just row 0.
+
+**Verified live, repeatedly, against this ship's real attached deck** (there was no
+safer way to check tmux format-string escaping than actually running it): built and
+iterated the two `status-format` strings via `tmux set-option`/`tmux display-message
+-p "#{E:status-format[n]}"` round-trips before ever touching the config file;
+temporarily added dummy windows at index 15/16 to confirm role/crew filtering,
+current-window highlighting, and the activity-flash pipeline (via `#{E:window-status-
+current-format}`/`#{E:window-status-activity-style}`, the same options as before, not
+reimplemented) all still work correctly on row 1, then removed them. Wrote the final
+version into `dotfiles/tmux/ship.tmux.conf`, reloaded via the real `~/.tmux.conf`
+symlink (`tmux source-file`), and caught a real bug during that final check: `tmux
+set-option -t <session> status-format[0]` (unsetting a single array index with `-u`)
+left the session with a broken, empty session-local override that shadowed the
+correct global value instead of cleanly falling through to it — `tmux set-option -u
+-t <session> status-format` (the whole array, no index) was needed to actually clear
+it. Confirmed clean afterward: the live session now genuinely inherits from the
+file, not a stray session-local leftover from testing.
+
+**One real, visible side effect of this testing method, disclosed rather than
+glossed over**: switching windows live to test row 1 (`tmux select-window -t
+:15`, `:8`) briefly changed what the Admiral's attached terminal was showing,
+since this was the real attached session, not a scratch one — there was no
+sandboxed way to test a *status bar* change other than against a real attached
+client. Restored focus to window 7 (this pane) immediately after.
+
+**Not done**: no attempt to also reduce row 0 itself (the 10 role windows) — at this
+ship's current 214-column terminal they fit comfortably on one line even before this
+change; if that ever becomes tight on a narrower terminal, `status-left-length`/
+`status-right-length` truncation is already wired in (referenced via `#{T;=/.../:...}`,
+matching tmux's own default), but the role window list itself has no truncation
+markers (`list=left-marker`/`right-marker`) the way tmux's real default does — left
+out as unneeded complexity given the row 0 count is fixed and small, not something
+this session invented a workaround for.
+
 ## 5. NEXT TASK
+
+**Per §4bt (July 9, 2026): the tmux status bar is now two rows** — role windows
+(0-9) on row 0, crew windows (10+) on row 1, so a growing crew no longer pushes the
+fixed roles off the edge of a single line. Live-verified against this ship's real
+deck, including mouse click-to-switch and the activity/SOS flash on row 1. No known
+open items.
 
 **Per §4bs (July 9, 2026): Shipwright CO confirmed working for real** (the Admiral's
 own live `codex login` + a real self-identifying first message) **and now sits at
