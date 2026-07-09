@@ -131,12 +131,12 @@ clear message explaining why — not a hard failure.
 
 ## ANTHROPIC_API_KEY — creating the shipwright compartment (operator, one time)
 
-Powers the shipwright tmux window (`sail`'s window 7): a real Claude Code
-instance, on the ship, scoped to system-level work on ERDA-Will itself — not
-charter work. Chosen over Claude Code's interactive `/login` (subscription)
-flow specifically so this pane can be provisioned the same unattended way as
-every other credential here, at the cost of pay-per-token API billing on this
-key rather than riding your existing subscription.
+Powers the **Shipwright CC** tmux window (`sail`'s window 7): a real Claude
+Code instance, on the ship, scoped to system-level work on ERDA-Will itself —
+not charter work. Chosen over Claude Code's interactive `/login`
+(subscription) flow specifically so this pane can be provisioned the same
+unattended way as every other credential here, at the cost of pay-per-token
+API billing on this key rather than riding your existing subscription.
 
 1. **Mint an API key** at [console.anthropic.com](https://console.anthropic.com)
    (Settings → API Keys). No fine-grained scoping like GitHub's PATs — it's a
@@ -152,3 +152,25 @@ key rather than riding your existing subscription.
 
 4. Commit `shipwright.env.age`. On the ship: `eval "$(unlock shipwright)" && claude --version`
    should run without a `/login` prompt.
+
+## Shipwright CO (Codex) — no strongbox compartment, by design
+
+The **Shipwright CO** window (`sail`'s window 9, `codex`) is the OpenAI
+counterpart to Shipwright CC above, but deliberately does *not* get its own
+strongbox compartment or API key — per `docs/agentic-engineering-plan.md`
+§4, Codex stays on the Admiral's own ChatGPT/OpenAI subscription via
+`codex login` rather than pay-per-token API billing. That's a one-time
+manual step per ship (this compartment's whole point is to avoid exactly
+that kind of manual step, so don't "fix" this by minting an `OPENAI_API_KEY`
+compartment without checking with the Admiral first — it would change the
+billing model, not just the plumbing):
+
+    codex login                    # opens a browser flow; needs a local browser
+    codex login --device-auth      # headless-friendly: prints a URL + code instead
+
+Run whichever fits from inside the Shipwright CO window itself (it loads
+`unlock shipwright` for `GH_TOKEN` same as CC, so push access is already
+covered — `codex login` only needs to happen once per ship, not per
+charter/deck, since credentials land under `~/.codex`, outside any one
+charter). `sail` prints a reminder in this window if `codex login status`
+comes back logged-out.

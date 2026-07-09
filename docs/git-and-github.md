@@ -15,8 +15,9 @@ still doesn't.
    at provisioning time (plain HTTPS, public repo, no credentials needed for that
    clone). As of the Shipwright/Neptune restructuring (`HANDOFF.md` §4ab), all
    engineering on this repo — design, build, test, commit, push — is done by the
-   **Shipwright**, Claude Code running *on a ship* (`~/shipyard`, its own tmux window),
-   not through the charter/crew system at all but still on-ship, so it inherits that
+   **Shipwright** — Claude Code (**Shipwright CC**) or Codex (**Shipwright CO**)
+   running *on a ship* (`~/shipyard`, each its own tmux window), not through the
+   charter/crew system at all but still on-ship, so it inherits that
    ship's ordinary global git identity (see "Identity" below) — the same one every
    charter/crew commit on that ship uses. Host-side Claude Code ("**Neptune**") never
    edits or commits shipyard source anymore; it's scoped to fresh-ship drills and
@@ -98,9 +99,9 @@ happen to agree: `fitout.sh` sets `git config --global user.name/email` to `ERDA
 / `agentic@ericrose.dev` unconditionally on every ship (see `HANDOFF.md` D13). That
 one setting covers *every* commit made anywhere on that ship — any charter, any crew
 agent, any manual commit you make while SSH'd in as `eric`, **and** the Shipwright's
-own commits to `ERDA-Will` itself, since the Shipwright is just Claude Code running on
-that same ship. There's no per-charter or per-role override; it's one identity for
-the whole ship, shipyard-engineering work included.
+own commits to `ERDA-Will` itself (CC or CO alike), since the Shipwright is just
+Claude Code or Codex running on that same ship. There's no per-charter or per-role
+override; it's one identity for the whole ship, shipyard-engineering work included.
 
 The one place this *doesn't* apply: **Neptune**, host-side Claude Code, which commits
 only to `neptune/reports/**` (never shipyard source) using whatever git identity is

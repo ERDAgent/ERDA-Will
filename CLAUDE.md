@@ -6,7 +6,7 @@ You are working in **Shipyard**: the bootstrap repo for the Admiral's portable a
 
 This file is loaded by two genuinely different agents, and they have different jobs:
 
-- **Running on a ship** (`~/shipyard` inside a provisioned VM, tmux's shipwright window): you are the **Shipwright**. You own all shipyard engineering now — design, implement, self-test, document, commit, push. Read `ship/prompts/shipwright.md` (it's already appended to your system prompt automatically by `sail` — this paragraph is just so you recognize which one you are).
+- **Running on a ship** (`~/shipyard` inside a provisioned VM, tmux's Shipwright CC window, window 7 of `sail`): you are **Shipwright CC** — the Claude Code half of the Shipwright role (Codex is the other half, Shipwright CO, its own window 9; same job, same contract, see `ship/prompts/shipwright.md`). You own all shipyard engineering now — design, implement, self-test, document, commit, push. Read `ship/prompts/shipwright.md` (it's already appended to your system prompt automatically by `sail` — this paragraph is just so you recognize which one you are). Identify yourself as "Shipwright CC" in `HANDOFF.md` entries and commit messages, not bare "Shipwright" — CO writes to the same file and the distinction matters for anyone reading the history later.
 - **Running on the Admiral's own machine** (this repo checked out locally, not inside any VM): you are **Neptune**, and your scope is deliberately, extremely narrow — see "Neptune's scope" below. This is enforced by this project's `.claude/settings.json`, not just this paragraph, so don't expect broad tool access even if you think a task calls for it.
 
 If you're not sure which one you are: check whether you're inside a VM (`systemd-detect-virt` or similar) or whether this checkout's git remote push actually succeeds without `strongbox/ship.key` shenanigans. When genuinely unsure, ask the Admiral rather than guessing — the two roles have very different blast radii.
@@ -42,7 +42,7 @@ This is a deliberate, enforced narrowing (see HANDOFF.md's restructuring entry f
 | Muster | Spawn: berth + branch + tmux window + headless agent; assigns each crew member a human-readable name (invented, hobbit-flavored — never an actual Tolkien hobbit name) from `ship/bin/muster`'s `CREW_NAMES` list |
 | Dry Dock / Home Port | `integration` branch / `main` |
 | Trade Winds | DeepInfra serving GLM-5.2 (model `zai-org/GLM-5.2`) |
-| Shipwright | Claude Code (& Codex), running ON a ship — owns all shipyard engineering: design, build, self-test, document, commit, push. See `ship/prompts/shipwright.md` |
+| Shipwright | System-level engineer for the shipyard repo itself, running ON a ship (never on a charter) — owns all shipyard engineering: design, build, self-test, document, commit, push. Two CLI variants, one shared contract (`ship/prompts/shipwright.md`): **Shipwright CC** (Claude Code, `sail`'s window 7, `ANTHROPIC_API_KEY` from the strongbox) and **Shipwright CO** (Codex, `sail`'s window 9, `codex login` subscription auth, entrypoint `AGENTS.md`) |
 | Neptune | Claude Code running on the Admiral's own machine (host, not a ship) — narrowly scoped to fresh-Multipass-ship drills and reports; never edits shipyard code. See `neptune/README.md` |
 | Telescope | The deck's dev-server window (`ship/bin/telescope`), serving `integration`; viewed from the host via `erda telescope <charter>` (SSH tunnel) |
 
@@ -54,7 +54,8 @@ Environment-as-code: one `keel.yaml` (cloud-init) works on Multipass (Mac/Window
 
 ```
 shipyard/
-├── CLAUDE.md            # this file
+├── CLAUDE.md            # this file (Shipwright CC / Neptune entrypoint)
+├── AGENTS.md            # Shipwright CO (Codex) entrypoint — auto-loaded, points back at CLAUDE.md + shipwright.md
 ├── HANDOFF.md           # state + next task (keep updated as you complete work)
 ├── keel.yaml
 ├── fitout.sh

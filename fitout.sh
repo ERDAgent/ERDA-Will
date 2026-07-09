@@ -246,10 +246,13 @@ EOF
 sudo chmod 644 /etc/profile.d/shipyard.sh
 
 # --- the strongbox: decrypt each compartment if the age key is already on this ship ---
-# Three compartments (D15, extended for the shipwright pane): crew
+# Three compartments (D15, extended for the shipwright panes): crew
 # (keys.env.age), captain (captain.env.age, added with GitHub access), and
 # shipwright (shipwright.env.age, ANTHROPIC_API_KEY) verify independently so a
-# missing/bad compartment never blocks the others from working.
+# missing/bad compartment never blocks the others from working. Shared by
+# both Shipwright CC and Shipwright CO for GH_TOKEN (push credentials);
+# ANTHROPIC_API_KEY only matters to CC — CO authenticates separately via
+# `codex login` (its own subscription, not this compartment, on purpose).
 CREW_BOX="$SHIPYARD_DIR/strongbox/keys.env.age"
 CAPTAIN_BOX="$SHIPYARD_DIR/strongbox/captain.env.age"
 SHIPWRIGHT_BOX="$SHIPYARD_DIR/strongbox/shipwright.env.age"

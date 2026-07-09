@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # sail — open (or reattach) the deck for a charter, filling in any role
 # windows that got closed since the session was created. Safe to re-run any
-# time: each of the 9 role windows (0-8) is checked and (re)created
+# time: each of the 10 role windows (0-9) is checked and (re)created
 # independently, so a window with live work in it (the bridge mid-
 # conversation, a berth mid-review) is never touched -- only a genuinely
 # missing window gets recreated. If the whole session is gone (e.g. the last
 # window was closed, which tmux treats as closing the session), this
 # rebuilds it from scratch, same as a first-time sail.
+#
+# Window 9 (shipwright CO) was appended after window 8 (telescope) rather
+# than inserted earlier in the array -- inserting would shift every later
+# index on an already-live deck, and sail's gap-fill only checks whether an
+# index exists, not what's supposed to live there, so a shift would silently
+# strand an old window under the new index's name instead of ever creating
+# the new role. Appending is the same shape of change as when telescope
+# itself was added (see HANDOFF.md), and is the only shape that's safe for
+# `sail` to re-run against a deck that predates this window.
 # usage: sail <charter>
-# One tmux session per charter: ship-<charter>, windows 0-8 = roles, 9+ = crew.
+# One tmux session per charter: ship-<charter>, windows 0-9 = roles, 10+ = crew.
 set -euo pipefail
 
 FLEET="${FLEET:-$HOME/fleet}"
@@ -77,13 +86,14 @@ else
   CHARTROOM_CMD="watch -t -n 5 'echo == mission ==; cat mission.md; echo; echo == orders ==; ls -1 orders 2>/dev/null; echo; echo == reports ==; ls -1 reports 2>/dev/null'"
 fi
 
-# window 7 — shipwright: system-level Claude Code, scoped to the shipyard
-# repo itself ($SHIPYARD_DIR), never the charter -- this is the one pane
-# that touches erda/ship/bin/fitout.sh etc., per CLAUDE.md's "Shipwrights"
-# role (not part of the charter/crew system at all). Loads shipwright scope
-# (crew + captain + its own ANTHROPIC_API_KEY) so it can both work and push
-# changes back to ERDA-Will. Falls back to a plain shell if claude isn't
-# installed, same pattern as the bridge window's pi fallback.
+# window 7 — shipwright CC: system-level Claude Code, scoped to the shipyard
+# repo itself ($SHIPYARD_DIR), never the charter -- this is one of the two
+# panes that touch erda/ship/bin/fitout.sh etc., per CLAUDE.md's
+# "Shipwrights" role (not part of the charter/crew system at all). Loads
+# shipwright scope (crew + captain + its own ANTHROPIC_API_KEY) so it can
+# both work and push changes back to ERDA-Will. Falls back to a plain shell
+# if claude isn't installed, same pattern as the bridge window's pi
+# fallback.
 #
 # --append-system-prompt takes inline text, not a path (checked `claude
 # --help` directly rather than assuming it works like pi's flag of the same
@@ -96,10 +106,36 @@ fi
 SHIPWRIGHT_PROMPT="$SHIPYARD_DIR/ship/prompts/shipwright.md"
 if command -v claude >/dev/null 2>&1; then
   SHIPWRIGHT_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock shipwright)\"; \
-    echo \"[shipwright] system-level session on ERDA-Will -- not this charter\"; \
+    echo \"[shipwright-cc] system-level session on ERDA-Will -- not this charter\"; \
     exec claude --append-system-prompt \"\$(cat $SHIPWRIGHT_PROMPT)\"'"
 else
-  SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright] claude not found, dropping to a shell\"; exec bash'"
+  SHIPWRIGHT_CMD="bash -lc 'echo \"[shipwright-cc] claude not found, dropping to a shell\"; exec bash'"
+fi
+
+# window 9 — shipwright CO: same role, Codex instead of Claude Code. Codex
+# has no `--append-system-prompt` equivalent (checked `codex --help` and the
+# shipped binary's own embedded base instructions directly, per this
+# prompt's "ground the design in facts" rule -- no such flag exists); it
+# auto-loads AGENTS.md from the cwd up through the repo root into the
+# developer message instead, confirmed the same way. AGENTS.md (repo root)
+# points at shipwright.md itself, so this window just needs the right cwd
+# and a bare `codex` -- no flag-splicing to get the role contract in.
+#
+# Auth is deliberately NOT the strongbox: per
+# docs/agentic-engineering-plan.md §4, Codex stays on the Admiral's own
+# subscription via `codex login`, unlike Claude Code's API-key/D17 choice.
+# `codex login status` exits nonzero when logged out (checked live on this
+# ship) -- surfaced as a one-line reminder rather than left to a confusing
+# failure inside Codex's own TUI. `unlock shipwright` is still loaded for
+# GH_TOKEN (push credentials), same as CC -- ANTHROPIC_API_KEY just goes
+# unused here.
+if command -v codex >/dev/null 2>&1; then
+  SHIPWRIGHT_CO_CMD="bash -lc 'command -v unlock >/dev/null 2>&1 && eval \"\$(unlock shipwright)\"; \
+    echo \"[shipwright-co] system-level session on ERDA-Will -- not this charter\"; \
+    codex login status >/dev/null 2>&1 || echo \"[shipwright-co] not logged in -- run: codex login (or: codex login --device-auth over SSH)\"; \
+    exec codex'"
+else
+  SHIPWRIGHT_CO_CMD="bash -lc 'echo \"[shipwright-co] codex not found, dropping to a shell\"; exec bash'"
 fi
 
 # window 6 — engine-room
@@ -111,20 +147,21 @@ ENGINE_CMD="top"; command -v htop >/dev/null && ENGINE_CMD="htop"
 # and only when the session didn't exist at all yet.
 WINDOW_DIRS=(
   "$DIR"          "$DIR/.ship"    "$DIR/.ship"    "$DIR/.ship"
-  "$DIR"          "$DIR/.ship"    "$DIR"          "$SHIPYARD_DIR"  "$DIR"
+  "$DIR"          "$DIR/.ship"    "$DIR"          "$SHIPYARD_DIR"  "$DIR"          "$SHIPYARD_DIR"
 )
 # Role glyphs are one space away from their label via g()'s own trailing
-# space, except the five "person + ZWJ + role" compound emoji (Bridge, First
-# Mate, Bosun, Purser, Shipwright) -- these are 3-codepoint sequences joined
-# by a zero-width joiner, which not every terminal font renders as one
-# glued glyph the way it does simple single-codepoint emoji (Chartroom,
-# Quartermaster, Telescope, crew's own 👷). An inconsistent render can visibly
-# eat the following space, so those five get one extra literal space as a
-# buffer -- can't fix a font's own ZWJ support from here, only make the gap
-# more robust against it.
+# space, except the six "person + ZWJ + role" compound emoji (Bridge, First
+# Mate, Bosun, Purser, Shipwright CC, Shipwright CO) -- these are 3-codepoint
+# sequences joined by a zero-width joiner, which not every terminal font
+# renders as one glued glyph the way it does simple single-codepoint emoji
+# (Chartroom, Quartermaster, Telescope, crew's own 👷). An inconsistent
+# render can visibly eat the following space, so those six get one extra
+# literal space as a buffer -- can't fix a font's own ZWJ support from here,
+# only make the gap more robust against it.
 WINDOW_NAMES=(
   "$(g 🧑‍✈) Bridge"         "$(g 🗺) Chartroom"      "$(g 🧑‍🔬) First Mate"    "$(g 🧑‍🔧) Bosun"
-  "$(g 📋) Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️) Engine Room"      "$(g 🧑‍🏭) Shipwright" "$(g 🔭) Telescope"
+  "$(g 📋) Quartermaster"    "$(g 🧑‍💼) Purser"       "$(g ⚙️) Engine Room"      "$(g 🧑‍🏭) Shipwright CC" "$(g 🔭) Telescope"
+  "$(g 🧑‍🏭) Shipwright CO"
 )
 WINDOW_CMDS=(
   "$BRIDGE_CMD"
@@ -136,6 +173,7 @@ WINDOW_CMDS=(
   "$ENGINE_CMD"
   "$SHIPWRIGHT_CMD"
   "bash -lc 'exec telescope $NAME'"
+  "$SHIPWRIGHT_CO_CMD"
 )
 
 NEW_SESSION=0

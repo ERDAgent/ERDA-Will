@@ -33,7 +33,7 @@ From a ship
   - `captain charter [name] --local`: creates or continues a github repo.
   - `captain work [charter]`: starts work on a charter.
   - `captain list charters`: lists existing charters and their status.
-  - `captain work`'s deck has a "shipwright" window (Claude Code, cwd `~/shipyard`) for system-level changes to ERDA-Will itself — not the charter.
+  - `captain work`'s deck has two shipwright windows, both cwd `~/shipyard`, for system-level changes to ERDA-Will itself — not the charter: "Shipwright CC" (Claude Code) and "Shipwright CO" (Codex, needs a one-time `codex login` per ship).
   - `captain work`'s deck also has a "telescope" window running the charter's dev server against the integration branch (fill in charter.md's "## Dev server" section: `command` + `port`) -- view it from the host with `erda telescope <charter>`.
 
 From the Captain's `pi` session (bridge window, window 0), once you're chartered and working:

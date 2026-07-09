@@ -2731,7 +2731,106 @@ new ledger columns is safe (purely additive, no behavior change to existing colu
 but touches a live, real, currently-in-use process — left for the Admiral to do
 whenever convenient rather than doing it unilaterally mid-voyage.
 
+## 4br. Second shipwright role: Shipwright CO (Codex) added alongside Shipwright CC (July 9, 2026)
+
+**From: Shipwright CC.** The Admiral asked for a second shipwright role for OpenAI
+Codex, splitting the previously-singular "Shipwright" into **Shipwright CC** (Claude
+Code, unchanged) and **Shipwright CO** (Codex, new). D6/the original plan doc always
+named Codex as a second shipwright and `fitout.sh` has installed it since Phase 0, but
+nothing ever actually gave it a `sail` window or a role contract — this session wires
+it in for real.
+
+**Grounded in facts, not memory, per this prompt's own rule**: Codex has no
+`--append-system-prompt`-equivalent flag — checked `codex --help`, `codex exec --help`,
+and `codex login --help` directly on this ship (none exposes one). Confirmed via
+`strings` on the shipped Rust binary's embedded `base_instructions` that Codex auto-
+loads `AGENTS.md` from the cwd up through the repo root into the developer message
+before the first turn ("The contents of the AGENTS.md file at the root of the repo...
+are included with the developer message and don't need to be re-read") — that's the
+real injection point, not a remembered assumption. Also confirmed live: `codex login
+status` exits 1 when logged out (this ship has no OpenAI credentials configured, so
+this is genuinely logged-out, not a simulated state), and a bare `timeout 10 codex exec
+...` run with no auth hung past its timeout in a way plain `timeout` couldn't kill
+cleanly — noted here as a real gotcha (Codex spawns subprocesses that don't die on
+SIGTERM alone) rather than repeated; avoided further live unauthenticated `codex exec`
+calls after that.
+
+**What changed:**
+- **`AGENTS.md`** (new, repo root) — Shipwright CO's entrypoint, mirroring what
+  `CLAUDE.md` does for CC: identifies the role, points at `ship/prompts/shipwright.md`
+  and `CLAUDE.md` to read in full, and covers the auth difference and CC/CO
+  coexistence.
+- **`ship/prompts/shipwright.md`** — now explicitly a shared contract for both
+  variants (was written CC-only). Added a "working alongside the other shipwright"
+  section: `git pull` before starting, commit/push in small increments, don't assume
+  you're the only editor of this checkout — a genuinely new risk this feature
+  introduces (two agents, one working tree, no file-ownership split).
+- **`ship/bin/sail`** — added a `SHIPWRIGHT_CO_CMD` block (window 9): loads
+  `unlock shipwright` for `GH_TOKEN` same as CC, checks `codex login status` and
+  prints a one-line reminder if logged out, then `exec codex` (bare — AGENTS.md does
+  the rest). Renamed window 7's label `Shipwright` → `Shipwright CC` and added window
+  9 `Shipwright CO`. **Appended after window 8 (telescope) rather than inserted
+  earlier in the array** — inserting would shift every later index, and sail's
+  gap-fill only checks whether an index exists, not what's supposed to live there, so
+  an already-live deck would silently strand its old window under the new index's
+  name instead of ever creating the new role. This matters concretely: this ship has
+  a real live deck (`ship-ERDA-experimental`) that I was, at the time, running inside
+  of (window 7). Appending is the same shape of change as when telescope itself was
+  added historically.
+- **`strongbox/README.md`** — new "Shipwright CO (Codex) — no strongbox compartment,
+  by design" section: explains why CO deliberately has no API-key compartment
+  (subscription auth via `codex login`/`codex login --device-auth`, per the plan's
+  existing §4 choice, not an oversight) and warns future sessions not to "fix" this by
+  minting an `OPENAI_API_KEY` compartment without checking first.
+- **`CLAUDE.md`** — "which Claude are you" section now says "Shipwright CC"
+  specifically (not bare "Shipwright") and cross-references CO; vocabulary table's
+  Shipwright row rewritten to cover both variants; repo layout tree gained the
+  `AGENTS.md` line.
+- **`fitout.sh`** — comment-only: the strongbox-compartment block now notes it's
+  shared by both panes and that `ANTHROPIC_API_KEY` only matters to CC. No functional
+  change — `codex` was already installed and symlinked (Phase 0), nothing new to
+  provision.
+- **Docs swept for accuracy**: `docs/agentic-engineering-plan.md` §4's tool table and
+  auth paragraph, `docs/system-overview.md`'s Shipwrights section, `docs/cheatsheet.md`,
+  `docs/git-and-github.md` (two spots that said "the Shipwright is just Claude Code
+  running on a ship") — all updated to describe both variants rather than reopening
+  or re-deciding anything.
+
+**Verified live, on this ship's own real, currently-attached deck** (not a scratch
+charter — sail's window-array changes needed exactly this kind of test, and creating
+a disposable charter wouldn't have exercised the gap-fill-against-an-existing-session
+path that matters here): `bash -n` and `shellcheck -x` clean on `ship/bin/sail`
+(shellcheck itself wasn't installed on this ship — installed it via `apt-get`, one
+pre-existing unrelated `SC2015` info-level finding on a line I didn't touch, left
+alone). Ran `SHIP_NO_ATTACH=1 sail ERDA-experimental` against the real live
+`ship-ERDA-experimental` session: windows 0–8 (including window 7, the pane I was
+running in) were left completely untouched, exactly one new window 9 was created
+("sail: window 9 (🧑‍🏭 Shipwright CO) was missing -- reopening it"), correctly
+labeled, correct cwd. Captured its pane output: the `[shipwright-co] not logged in`
+reminder printed, then Codex's own real interactive onboarding screen appeared
+("Welcome to Codex... Sign in with ChatGPT / Device Code / API key") — confirming the
+whole chain (unlock → login-status check → exec codex) works end to end. Left that
+window live and logged-out rather than completing OAuth myself, since `codex login`
+needs the Admiral's own OpenAI/ChatGPT account — genuinely his step, not mine to take
+even if I technically could drive the TUI.
+
+**Not verified, and why**: whether Codex actually reads `AGENTS.md`'s *content*
+correctly once real credentials are behind it (i.e., a live conversation where Codex
+demonstrably behaves like Shipwright CO, references the role contract, etc.) — this
+ship has no OpenAI credentials in the strongbox (deliberately, per the auth design
+above) and completing `codex login` isn't mine to do. The AGENTS.md-loading mechanism
+itself is verified from the shipped binary's own embedded instructions (see above),
+just not a live end-to-end conversation. Worth a quick spot-check the next time the
+Admiral logs in for real. Not provisioning-sensitive (no `fitout.sh`/`keel.yaml`
+changes), so no Neptune drill requested for this session.
+
 ## 5. NEXT TASK
+
+**Per §4br (July 9, 2026): there are now two shipwrights, not one** — Shipwright CC
+(Claude Code, unchanged) and Shipwright CO (Codex, new: `sail`'s window 9,
+`AGENTS.md` entrypoint, `codex login` subscription auth). Fully wired and live-tested
+against this ship's own real deck; the one open item is a live spot-check once the
+Admiral actually runs `codex login` for real (not urgent, not blocking).
 
 **Per §4bq (July 8, 2026): the Captain's runaway cost (~$20.53, ~2x crew) is fixed** —
 root-caused via a real ledger audit to auto-compaction never firing once against

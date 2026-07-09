@@ -301,15 +301,30 @@ display change only — reasoning is already generated (and paid for) by `--thin
 high` regardless of whether anything prints it, so there's no added cost or model-side
 work, just a formatter reading pi's own event stream.
 
-### Shipwrights — Claude Code, Codex
+### Shipwrights — Claude Code (CC), Codex (CO)
 System-level repair and support for the ship/scripts themselves (this repo,
 `fitout.sh`, `ship/bin/*`) — not daily project work, and not part of the charter/crew
-system at all. Used for exactly the kind of work that produced this document. Claude
-Code gets its own tmux window (`sail`'s window 7, "shipwright") in every charter's
-deck for reachability — one tmux-switch away no matter which charter you're
-working — but its cwd is always `~/shipyard`, never the charter, and it loads its own
-strongbox compartment (`ANTHROPIC_API_KEY`, see `strongbox/README.md`), not the
-charter's model keys.
+system at all. Used for exactly the kind of work that produced this document. One
+shared role contract (`ship/prompts/shipwright.md`), two CLI variants, each with its
+own tmux window in every charter's deck for reachability — one tmux-switch away no
+matter which charter you're working — but cwd is always `~/shipyard`, never the
+charter, for both:
+
+- **Shipwright CC** (`sail`'s window 7, Claude Code): loads its own strongbox
+  compartment (`ANTHROPIC_API_KEY`, see `strongbox/README.md`), not the charter's
+  model keys — chosen over `/login` so it can be provisioned unattended. The role
+  contract reaches it via `claude --append-system-prompt "$(cat shipwright.md)"`.
+- **Shipwright CO** (`sail`'s window 9, Codex): stays on the Admiral's own
+  OpenAI/ChatGPT subscription via `codex login` instead — a one-time manual step per
+  ship, deliberately not strongbox-provisioned (see `strongbox/README.md`). Codex has
+  no system-prompt flag; it auto-loads `AGENTS.md` from the repo root into its
+  developer message, and that file points it at `ship/prompts/shipwright.md`.
+
+Both windows load the shipwright strongbox compartment for `GH_TOKEN` (push
+credentials) regardless of which LLM provider they're actually talking to. Nothing
+stops both windows being open at once against the same checkout — `shipwright.md`
+has a "working alongside the other shipwright" section covering that (pull before
+starting, commit/push in small increments, don't assume you're the only editor).
 
 ### Telescope — the dev server window
 Not an agent role, but the same "window in every deck" pattern: `sail`'s window 8
