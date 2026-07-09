@@ -1,0 +1,89 @@
+{
+  "deepinfra": {
+    "label": "GLM-5.2 (Trade Winds / DeepInfra via pi)",
+    "binary": "pi",
+    "delegate": false,
+    "prompt_mode": "flag",
+    "prompt_addendum": null,
+    "auth": { "type": "strongbox" },
+    "rate_limit_patterns": [],
+    "auto_switch_to": null,
+    "launch": {
+      "captain": {
+        "setup": "MODEL=$(pick-model 2>&2 || echo zai-org/GLM-5.2); ",
+        "cmd": "pi --provider deepinfra --model \"$MODEL\" --thinking high --append-system-prompt {{PROMPT_FILE}}"
+      },
+      "crew": {
+        "setup": "MODEL=$(pick-model 2>&2 || echo zai-org/GLM-5.2); ",
+        "cmd": "pi --mode json --provider deepinfra --model \"$MODEL\" --thinking high --append-system-prompt {{PROMPT_FILE}}",
+        "monitor_pipe": " | pi-monitor"
+      },
+      "first-mate": {
+        "setup": "",
+        "cmd": "pi --no-tools --provider deepinfra --model $(pick-model 2>/dev/null || echo zai-org/GLM-5.2) --thinking high --append-system-prompt {{PROMPT_FILE}} -p"
+      },
+      "quartermaster": {
+        "setup": "",
+        "cmd": "pi --no-tools --provider deepinfra --model $(pick-model 2>/dev/null || echo zai-org/GLM-5.2) --thinking high --append-system-prompt {{PROMPT_FILE}} -p"
+      }
+    }
+  },
+  "claude": {
+    "label": "Claude Code (Anthropic subscription via setup-token, or API key)",
+    "binary": "claude",
+    "delegate": true,
+    "prompt_mode": "flag",
+    "prompt_addendum": "ship/prompts/delegate-claude.md",
+    "auth": { "type": "claude-code", "prefer_env": "CLAUDE_CODE_OAUTH_TOKEN", "fallback_env": "ANTHROPIC_API_KEY" },
+    "rate_limit_patterns": ["usage limit reached", "rate limited", "credit balance too low", "overloaded"],
+    "auto_switch_to": "deepinfra",
+    "launch": {
+      "captain": {
+        "setup": "",
+        "cmd": "claude --append-system-prompt \"$(cat {{PROMPT_FILE}})\""
+      },
+      "crew": {
+        "setup": "",
+        "cmd": "claude -p --permission-mode bypassPermissions --append-system-prompt \"$(cat {{PROMPT_FILE}})\"",
+        "monitor_pipe": ""
+      },
+      "first-mate": {
+        "setup": "",
+        "cmd": "claude -p --tools \"\" --append-system-prompt \"$(cat {{PROMPT_FILE}})\""
+      },
+      "quartermaster": {
+        "setup": "",
+        "cmd": "claude -p --tools \"\" --append-system-prompt \"$(cat {{PROMPT_FILE}})\""
+      }
+    }
+  },
+  "codex": {
+    "label": "Codex (OpenAI/ChatGPT subscription)",
+    "binary": "codex",
+    "delegate": true,
+    "prompt_mode": "agents_md",
+    "prompt_addendum": "ship/prompts/delegate-codex.md",
+    "auth": { "type": "subscription-login", "check": "codex login status" },
+    "rate_limit_patterns": ["429", "rate limit", "too many requests"],
+    "auto_switch_to": "deepinfra",
+    "launch": {
+      "captain": {
+        "setup": "",
+        "cmd": "codex"
+      },
+      "crew": {
+        "setup": "",
+        "cmd": "codex exec --dangerously-bypass-approvals-and-sandbox",
+        "monitor_pipe": ""
+      },
+      "first-mate": {
+        "setup": "",
+        "cmd": "codex exec --sandbox read-only --skip-git-repo-check -C {{PROMPT_DIR}}"
+      },
+      "quartermaster": {
+        "setup": "",
+        "cmd": "codex exec --sandbox read-only --skip-git-repo-check -C {{PROMPT_DIR}}"
+      }
+    }
+  }
+}

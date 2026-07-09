@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# delegate-codex — spawn one crew task using Codex's own headless `codex
+# exec` directly, instead of muster's tmux+pi-monitor scaffolding. Still
+# uses `berth` + `roster-note` -- the same primitives muster itself uses --
+# so Quartermaster/Bosun/Purser/Chartroom/Telescope see this task exactly
+# like any muster-spawned one: same worktree layout off the real .hold.git,
+# same roster.json/events.log shape.
+#
+# usage: delegate-codex [--redo] [--feedback <file>] <charter> <task-id> <order-file>
+#
+# Meant to be run as a plain shell command from inside a Codex-backed
+# Captain's own session (see ship/prompts/delegate-codex.md, appended to
+# captain.md when captain's backend is `codex`). Codex auth lives under
+# ~/.codex (subscription login, not a strongbox key), so it doesn't matter
+# which shell invokes this -- `codex login status` either passes or it
+# doesn't, same everywhere on this ship.
+#
+# No tmux window: this runs synchronously in the foreground and returns
+# when the crew agent finishes (or fails) -- there is no live-rendering
+# monitor for this path in v1 (see docs/backend-verification-notes.md).
+set -euo pipefail
+
+REDO=0
+FEEDBACK_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --redo) REDO=1; shift ;;
+    --feedback) FEEDBACK_FILE="${2:?--feedback requires a file path}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) break ;;
+  esac
+done
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
+
+FLEET="${FLEET:-$HOME/fleet}"
+USAGE="usage: delegate-codex [--redo] [--feedback <file>] <charter> <task-id> <order-file>"
+NAME="${1:?$USAGE}"
+TASK="${2:?$USAGE}"
+ORDER="${3:?$USAGE}"
+DIR="$FLEET/$NAME"
+BUS="$DIR/.ship"
+CREW_PROMPT="$SHIPYARD_DIR/ship/prompts/crew.md"
+
+codex login status >/dev/null 2>&1 || echo "delegate-codex: not logged in -- run: codex login (or: codex login --device-auth over SSH)" >&2
+
+BERTH_ARGS=("$NAME" "$TASK" "$ORDER")
+[[ "$REDO" -eq 1 ]] && BERTH_ARGS+=(--redo)
+[[ -n "$FEEDBACK_FILE" ]] && BERTH_ARGS+=(--feedback "$FEEDBACK_FILE")
+eval "$("$SHIPYARD_DIR/ship/bin/berth" create "${BERTH_ARGS[@]}")"
+# BERTH, BRANCH now set by berth's own eval-able output contract.
+
+# Codex has no --append-system-prompt equivalent -- crew.md's contract goes
+# in via AGENTS.md in the berth's own cwd instead (see
+# docs/backend-verification-notes.md).
+cp "$CREW_PROMPT" "$BERTH/AGENTS.md"
+
+CREWNAME="codex-$TASK"
+"$SHIPYARD_DIR/ship/bin/roster-note" register "$NAME" "$TASK" --name "$CREWNAME" --branch "$BRANCH" --window "-"
+printf '%s\t%s\t%s\n' "$(date -Is)" "delegate-codex" "$TASK $BRANCH" >> "$BUS/log/events.log"
+
+AGENT_CMD="$(backend_render "$(backend_field codex '.launch.crew.cmd')" "BUS_DIR=$BUS")"
+
+export SHIP_ROLE=crew SHIP_CHARTER="$NAME" SHIP_NAME="$CREWNAME" SHIP_TASK="$TASK"
+echo "[delegate-codex/$TASK] running: $AGENT_CMD (branch: $BRANCH)"
+set +e
+# stdin closed (< /dev/null): the order text goes in as a positional
+# argument, not via stdin -- codex exec appends piped stdin as an extra
+# <stdin> block when both are present and otherwise blocks waiting for EOF,
+# which hung for real on this Bash tool's own open (non-EOF) stdin during
+# self-test.
+( cd "$BERTH" && eval "$AGENT_CMD \"\$(cat .order.md)\"" ) < /dev/null
+RC=$?
+set -e
+
+# shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
+STATUS=done
+[[ $RC -ne 0 ]] && STATUS=failed
+# shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
+if [[ "$STATUS" == done ]] && [[ -f "$BUS/reports/$TASK.report.md" ]] \
+   && head -n1 "$BUS/reports/$TASK.report.md" | grep -qEi '^Status:[[:space:]]*SOS[[:space:]]*$'; then
+  STATUS=sos
+fi
+"$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "$STATUS"
+printf '%s\t%s\t%s\n' "$(date -Is)" "crew-$STATUS" "$TASK rc=$RC" >> "$BUS/log/events.log"
+echo "[$CREWNAME/$TASK] $STATUS (rc=$RC) — report expected in .ship/reports/$TASK.report.md"

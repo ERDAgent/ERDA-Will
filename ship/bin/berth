@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# berth — create (or clean up) a crew worktree for one task, off a charter's
+# hold. Extracted from ship/bin/muster's own worktree-setup block so any
+# spawn path (muster's own runner, or a delegate-claude/delegate-codex
+# capsule) produces the exact same git-worktree layout regardless of which
+# backend ends up running the agent -- this is what keeps
+# Quartermaster/Bosun/Purser/Chartroom/Telescope backend-agnostic: they only
+# ever read .hold.git, roster.json, events.log, and .ship/reports/*, all
+# identical either way.
+# usage: berth create <charter> <task-id> <order-file> [--redo] [--feedback <file>]
+# Prints `BERTH=<path>` and `BRANCH=<name>` to stdout, meant to be consumed
+# via `eval "$(berth create ...)"`.
+set -euo pipefail
+
+CMD="${1:?usage: berth create <charter> <task-id> <order-file> [--redo] [--feedback <file>]}"
+shift
+[[ "$CMD" == "create" ]] || { echo "berth: unknown subcommand '$CMD' (only 'create')" >&2; exit 1; }
+
+REDO=0
+FEEDBACK_FILE=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --redo) REDO=1; shift ;;
+    --feedback) FEEDBACK_FILE="${2:?--feedback requires a file path}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+
+FLEET="${FLEET:-$HOME/fleet}"
+USAGE="usage: berth create <charter> <task-id> <order-file> [--redo] [--feedback <file>]"
+NAME="${ARGS[0]:?$USAGE}"
+TASK="${ARGS[1]:?$USAGE}"
+ORDER="${ARGS[2]:?$USAGE}"
+
+DIR="$FLEET/$NAME"
+HOLD="$DIR/.hold.git"
+BERTH="$DIR/berths/$TASK"
+BUS="$DIR/.ship"
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ "$TASK" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid task id: '$TASK' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ -d "$HOLD" ]] || { echo "no hold for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
+[[ -f "$ORDER" ]] || { echo "order file not found: $ORDER" >&2; exit 1; }
+
+# slug from order filename: T-014-booking-dates.md -> booking-dates
+BASE="$(basename "$ORDER" .md)"
+SLUG="${BASE#"$TASK"-}"; [[ "$SLUG" == "$BASE" ]] && SLUG="task"
+BRANCH="crew/$TASK-$SLUG"
+
+# A plain `berth create` refuses an occupied berth or an existing branch
+# outright -- --redo clears both instead (crew.md's documented reject-and-
+# redo loop: "respawn a FRESH crew agent, same order, feedback appended").
+if [[ -e "$BERTH" ]]; then
+  if [[ "$REDO" -eq 1 ]]; then
+    echo "berth --redo: removing existing berth $BERTH" >&2
+    git -C "$HOLD" worktree remove --force "$BERTH" 2>/dev/null || rm -rf "$BERTH"
+  else
+    echo "berth already occupied: $BERTH (use --redo to replace it)" >&2
+    exit 1
+  fi
+fi
+if git -C "$HOLD" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  if [[ "$REDO" -eq 1 ]]; then
+    echo "berth --redo: dropping existing branch $BRANCH" >&2
+    git -C "$HOLD" branch -D "$BRANCH" >/dev/null
+  else
+    echo "branch already exists: $BRANCH (use --redo to replace it)" >&2
+    exit 1
+  fi
+fi
+
+# --redo with no explicit --feedback: default to the Quartermaster's own
+# REJECT review, if one exists for this exact task.
+if [[ "$REDO" -eq 1 && -z "$FEEDBACK_FILE" && -f "$BUS/reviews/$TASK.review.md" ]]; then
+  FEEDBACK_FILE="$BUS/reviews/$TASK.review.md"
+fi
+if [[ -n "$FEEDBACK_FILE" ]]; then
+  [[ -f "$FEEDBACK_FILE" ]] || { echo "feedback file not found: $FEEDBACK_FILE" >&2; exit 1; }
+  printf '\n## Feedback (redo)\n%s\n' "$(cat "$FEEDBACK_FILE")" >> "$ORDER"
+fi
+
+# Cut from `integration`, not `main` -- `main` only advances at the final
+# INTEGRATE step. Same existence check quartermaster/telescope already use.
+BASE_REF="main"
+git -C "$HOLD" show-ref --verify --quiet refs/heads/integration && BASE_REF="integration"
+git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" "$BASE_REF" >/dev/null
+
+# Hardlink-copy (not a live symlink) node_modules from the integration
+# worktree if it has one -- cheap, but still an independent tree per berth.
+if [[ -d "$DIR/berths/integration/node_modules" ]]; then
+  cp -al "$DIR/berths/integration/node_modules" "$BERTH/node_modules" 2>/dev/null || true
+fi
+
+cp "$ORDER" "$BERTH/.order.md"
+printf '\n## Report path\nWrite your report to exactly this absolute path: %s/reports/%s.report.md\n' \
+  "$BUS" "$TASK" >> "$BERTH/.order.md"
+[[ -f "$DIR/charter.md" ]] && cp "$DIR/charter.md" "$BERTH/.charter.md"
+# berth scaffolding must never be committed, even via `git add -A`. Also
+# excludes AGENTS.md -- a delegate-codex capsule writes crew.md's content
+# there (Codex has no --append-system-prompt equivalent; see
+# docs/backend-verification-notes.md), same scaffolding-not-crew-content
+# treatment as .order.md/.charter.md.
+EXCL="$(git -C "$BERTH" rev-parse --git-path info/exclude)"
+grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n.crew-run.sh\nAGENTS.md\n.agent-output.log\n' >> "$EXCL"
+
+printf 'BERTH=%q\n' "$BERTH"
+printf 'BRANCH=%q\n' "$BRANCH"

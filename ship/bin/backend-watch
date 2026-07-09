@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# backend-watch — lazy background watcher for the interactive Captain's
+# rate-limit signals. Started once from sail's bridge-window wrapper, only
+# when the active captain backend has real rate_limit_patterns configured
+# (empty for deepinfra -- DeepInfra-level fallback is pick-model's job, not
+# this feature's). Polls for the *newest* matching on-disk session-log file
+# and greps it -- not a fixed path, since neither Claude Code nor Codex
+# expose their session filename in advance (each picks its own session
+# id/timestamp internally; confirmed both write real, independent-of-the-
+# TUI-screen on-disk logs -- see docs/backend-verification-notes.md, no
+# script-captured-pty fallback needed for either). On a match:
+#   1. flips .ship/backend.json's `captain` field to the registry's
+#      auto_switch_to (takes effect on the NEXT restart only -- decision 2,
+#      see HANDOFF.md, rules out a mid-conversation hot-swap)
+#   2. logs the event
+#   3. renames the tmux window and posts a display-message notice
+# It never kills or restarts the live pane -- that would discard an
+# in-progress conversation without the Admiral's consent.
+#
+# usage: backend-watch <charter> captain
+set -euo pipefail
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
+
+FLEET="${FLEET:-$HOME/fleet}"
+USAGE="usage: backend-watch <charter> captain"
+NAME="${1:?$USAGE}"
+ROLE="${2:?$USAGE}"
+DIR="$FLEET/$NAME"
+SES="ship-$NAME"
+
+[[ "$ROLE" == "captain" ]] || { echo "backend-watch: only 'captain' is supported today (crew detection lives inline in .crew-run.sh)" >&2; exit 1; }
+
+BACKEND="$(backend_get "$DIR" "$ROLE")"
+PATTERNS_JOINED="$(backend_field "$BACKEND" '.rate_limit_patterns | join("|")')"
+AUTO_SWITCH_TO="$(backend_field "$BACKEND" '.auto_switch_to // ""')"
+
+# No-op entirely when this backend has nothing to watch for -- true for
+# deepinfra always.
+[[ -n "$PATTERNS_JOINED" ]] || exit 0
+
+# Backend-specific session-log location. Directory-glob, not a fixed file,
+# for the reason above; computed here (not sail) so all backend-specific
+# log-path knowledge lives in one place.
+case "$BACKEND" in
+  claude)
+    ESCAPED_CWD="$(printf '%s' "$DIR" | tr '/' '-')"
+    LOG_DIR="$HOME/.claude/projects/$ESCAPED_CWD"
+    LOG_GLOB="*.jsonl"
+    ;;
+  codex)
+    LOG_DIR="$HOME/.codex/sessions/$(date +%Y/%m/%d)"
+    LOG_GLOB="rollout-*.jsonl"
+    ;;
+  *)
+    echo "backend-watch: no known session-log location for backend '$BACKEND'" >&2
+    exit 0
+    ;;
+esac
+
+newest_log() {
+  # `|| true` is load-bearing, not decorative: this script runs under
+  # `pipefail`, and `ls` on a not-yet-existing directory (the real, common
+  # case -- the target backend's session-log dir doesn't exist until its
+  # first real turn) exits non-zero; under pipefail that becomes the
+  # pipeline's own exit status, which -- as a plain command substitution
+  # assignment at the call site -- would trip this script's `set -e` and
+  # silently kill the whole watcher on its very first poll. Confirmed live:
+  # this exact failure killed a real backend-watch run before it ever
+  # reached the point where a matching pattern could have been detected.
+  # shellcheck disable=SC2012  # ls -t is simpler and sufficient here; these directories only ever hold small session-log files, not adversarial input
+  # shellcheck disable=SC2086  # intentionally unquoted: $LOG_GLOB is a literal glob pattern (e.g. "*.jsonl") meant to expand against $LOG_DIR's contents
+  ls -t "$LOG_DIR"/$LOG_GLOB 2>/dev/null | head -1 || true
+}
+
+# Poll rather than tail -F: the target file doesn't exist at watcher-start
+# time (the Captain's own process hasn't written its first line yet) and
+# may be superseded by a newer session file if the bridge is restarted
+# under this same watcher's lifetime -- a plain poll-and-grep-the-newest
+# loop handles both without inotify or rotation-tracking complexity.
+while :; do
+  sleep 10
+  # Bridge window gone -- nothing left to watch for.
+  tmux has-session -t "=$SES" 2>/dev/null || exit 0
+  LOG="$(newest_log)"
+  [[ -n "$LOG" && -f "$LOG" ]] || continue
+  if grep -qiE "$PATTERNS_JOINED" "$LOG" 2>/dev/null; then
+    CURRENT="$(backend_get "$DIR" "$ROLE")"
+    # Already switched (e.g. a previous poll already caught this, or the
+    # Admiral switched manually) -- don't re-log/re-notify every 10s for
+    # the same still-matching log file.
+    [[ "$CURRENT" == "$BACKEND" ]] || continue
+    printf '%s\t%s\t%s\n' "$(date -Is)" "rate-limit-detected" "$ROLE backend=$CURRENT" >> "$DIR/.ship/log/events.log"
+    if [[ -n "$AUTO_SWITCH_TO" ]]; then
+      "$SHIPYARD_DIR/ship/bin/backend" "$NAME" "$ROLE" "$AUTO_SWITCH_TO" >/dev/null
+    fi
+    tmux rename-window -t "$SES:0" "⚠ Bridge (rate-limited — restart to switch)" 2>/dev/null || true
+    tmux display-message -t "$SES:0" "backend-watch: $ROLE rate-limited, switched to $AUTO_SWITCH_TO for next restart" 2>/dev/null || true
+    exit 0
+  fi
+done

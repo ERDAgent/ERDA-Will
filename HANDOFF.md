@@ -2932,7 +2932,151 @@ markers (`list=left-marker`/`right-marker`) the way tmux's real default does —
 out as unneeded complexity given the row 0 count is fixed and small, not something
 this session invented a workaround for.
 
+## 4bu. Multi-backend switching: Claude Code / Codex / GLM-5.2 per ship role (July 9, 2026)
+
+**From: Shipwright CC.** The Admiral wants to make the most of his Anthropic and
+OpenAI subscriptions, not just DeepInfra — switch which backend powers each ship
+role manually, or automatically when a subscription nears its usage limit. This is
+a genuine architecture change (planned in full via plan mode, then built), not an
+incremental fix — see the plan file's Context section for the design reasoning;
+summarized here is what actually got built and verified.
+
+**Design, in one paragraph**: `ship/backends.json` (new) registers three backends
+(`deepinfra`/pi — unchanged default, `claude`, `codex`) with per-role launch
+commands, auth requirements, and rate-limit signal patterns. `.ship/backend.json`
+(new, per-charter) tracks which backend is active per role, defaulting to
+`deepinfra` everywhere so an untouched charter behaves byte-for-byte as before this
+feature existed. `ship/bin/berth` and `ship/bin/roster-note` (new, extracted
+verbatim from `muster`'s own worktree-creation and roster-append logic) are the two
+backend-agnostic primitives every spawn path uses — this is what keeps Bosun/
+Quartermaster/Purser/Chartroom/Telescope unaware backends exist at all: they only
+ever read `.hold.git`, `roster.json`, `events.log`, `.ship/reports/*`, identical
+regardless of which backend produced them. `ship/bin/backend` (new CLI) shows/sets
+the active backend per role. `ship/bin/delegate-claude`/`delegate-codex` (new) let
+a Claude/Codex-backed Captain spawn crew directly via that vendor's own headless
+mode instead of `muster`'s tmux+pi-monitor scaffolding (the Admiral's explicit
+choice over forcing everything through `muster` uniformly) — `muster` itself stays
+fully functional and now backend-aware, so it remains available as a manual
+fallback for any backend. Reactive-only auto-switch (no proactive quota polling —
+neither subscription type exposes remaining quota ahead of time): crew's
+`.crew-run.sh` runner tees output and greps for rate-limit patterns after each run;
+`ship/bin/backend-watch` (new) does the same for the interactive Captain by polling
+its on-disk session log. Switching is next-spawn-only by design — a running window
+keeps its current backend until restarted.
+
+**Grounded in real, live-checked facts before writing registry entries**, per this
+project's own standing discipline — the web research done during planning was
+partially wrong on specifics and is explicitly superseded by
+`docs/backend-verification-notes.md`. Confirmed live on this ship: `claude --help`
+really does have `--bg`/`-w`/`--append-system-prompt`/`--output-format
+stream-json`/`--permission-mode`; `claude setup-token` mints a real, genuinely
+subscription-backed `CLAUDE_CODE_OAUTH_TOKEN` (confirmed "inference-only" by
+grepping the shipped binary's own strings) — preferred over `ANTHROPIC_API_KEY` for
+exactly the reason this feature exists (riding the subscription, not paying per
+token); `codex exec --json`/`--output-schema`/`-C`/`-c` are real and mature; Codex
+has no dedicated system-prompt flag (AGENTS.md-in-cwd is the mechanism, same as
+Shipwright CO already uses); real rate-limit signal text for both backends was
+extracted directly from their shipped binaries' own embedded strings, not guessed;
+both backends write real, independent-of-the-TUI on-disk session logs
+(`~/.claude/projects/<escaped-cwd>/<session-id>.jsonl`,
+`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`) — confirmed by inspecting this very
+Shipwright session's own transcript file — so `backend-watch` polls real files, no
+`script`-captured-pty fallback needed for either.
+
+**Real bugs found only by live-testing, not by reading the code harder** (five,
+each fixed and re-verified before moving on):
+1. Codex's bundled bubblewrap sandbox can't create a network namespace inside this
+   ship's own nested VM (`bwrap: loopback: Failed RTM_NEWADDR: Operation not
+   permitted`) whenever `codex exec` needs to write files — asked the Admiral
+   before choosing a fix rather than deciding unilaterally to disable a
+   security control; he confirmed `--dangerously-bypass-approvals-and-sandbox` for
+   crew's codex invocation specifically, matching the trust level already accepted
+   for `claude`'s crew invocation (`--permission-mode bypassPermissions`) and for
+   today's pi-backed crew (no OS sandboxing at all) — crew's real trust boundary is
+   its own isolated git worktree berth, gated by Quartermaster afterward, not
+   per-action policing during the run. Confirmed `--sandbox read-only` (First
+   Mate/Quartermaster's review commands) is unaffected — the bug is
+   write-mode-specific.
+2. Codex's `[agents]`/Subagents config claimed by the earlier web research wasn't
+   found in this installed version's real `--help` output — didn't matter in the
+   end, since `delegate-codex`'s design (worktree isolation via `berth`, independent
+   of any vendor-native subagent feature) never depended on it.
+3. A registry template referenced a `{{PROMPT_DIR}}` placeholder for Codex's
+   quartermaster/first-mate commands that nothing actually supplied yet (caught
+   mid-session, after an API error interrupted a response and prompted a
+   double-check) — Codex has no `--append-system-prompt` equivalent for these two
+   roles either, fixed by extending the same AGENTS.md-in-a-throwaway-tempdir
+   mechanism `delegate-codex` already uses for crew.
+4. `muster`'s generated crew-runner referenced `\$AGENT_CMD` (escaped, deferred to
+   the runner's own runtime) where it needed unescaped `$AGENT_CMD` (expanded now,
+   by `muster` itself, matching the original hardcoded line) — the escaped version
+   produced a runner that failed immediately on an undefined variable under the
+   runner's own `set -u`, before the actual agent command ever ran. Found via a
+   live rate-limit-detection self-test using a stub backend registered through
+   `SHIP_BACKENDS_FILE` (never touching the real, committed registry).
+5. That same detection block also unconditionally referenced `$BACKEND` in its log
+   line, but `BACKEND` is only ever set in the registry-resolution branch — under
+   `SHIP_AGENT` override, muster's own `set -u` aborted mid-*generation* (before
+   ever writing the runner file) the first time a crew task was mustered with an
+   override configured. Fixed by binding `BACKEND="override"` in that branch.
+
+**Verified live end-to-end, repeatedly, against disposable scratch charters (never
+touching the pre-existing `ERDA-experimental` charter)**: fresh `charter`/`sail`
+regression confirms `.ship/backend.json` auto-creates with all-`deepinfra`
+defaults and the deck behaves byte-for-byte as before for an untouched charter;
+`sail`'s Bridge window genuinely launches a real `claude` and a real `codex`
+session (including real trust prompts) when switched, with the right auth setup
+and, for Codex, a real generated charter-scoped `AGENTS.md`; `delegate-claude` and
+`delegate-codex` each produced a real, correctly-placed worktree/branch and a real
+crew report via genuine `claude -p`/`codex exec` calls (not stubs); Quartermaster
+reviewed and merged both delegate-produced branches with **zero changes to its own
+code path** — the load-bearing proof that dashboards stay backend-agnostic; a real
+codex-backed First Mate produced genuine, on-contract critique output via the new
+AGENTS.md-in-tempdir mechanism; the full rate-limit-detection → auto-switch chain
+was live-verified on both the crew path (a stub backend registered via
+`SHIP_BACKENDS_FILE`) and the Captain path (a real Claude Code session, with a
+rate-limit-pattern line manually appended to its real, live on-disk transcript,
+correctly detected by `backend-watch`'s poll within one cycle) — in both cases
+`.ship/backend.json` flipped, `events.log` recorded `rate-limit-detected` then
+`backend-switch`, and (Captain path) the tmux window renamed itself with a warning
+without touching the live pane. Every touched/new script is shellcheck-clean and
+`bash -n`-clean; `ship/backends.json` is valid JSON.
+
+**Not done / explicitly deferred** (see the plan file and
+`docs/backend-verification-notes.md` for the reasoning): a cross-provider unified
+cost ledger (Claude/Codex spend stays coarse — Purser's ledger remains
+DeepInfra-only); mid-conversation hot-swap for any role; a muster-driven (not
+delegated) Claude-backed crew agent — deliberately not wired, since it would need
+`ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN` in crew's own strongbox scope, which
+this session didn't grant without a separate explicit Admiral decision (crew scope
+today has neither key — only the `captain` compartment does, per
+`strongbox/README.md`'s new "Backend-switching" section); a full `fitout.sh`
+idempotent re-run on this already-provisioned ship (the one change there — adding
+six new command names to the existing, already-idempotent symlink loop — was
+verified by confirming every new script exists and is executable at the exact
+paths that loop references, not by re-running the whole script, to avoid
+unnecessary system-level side effects on a real ship). **No Neptune drill
+requested**: nothing here touches `fitout.sh`'s cloud-init ordering or first-boot
+behavior, only `ship/bin` runtime logic, prompts, and JSON config on an
+already-provisioned ship.
+
 ## 5. NEXT TASK
+
+**Per §4bu (July 9, 2026): multi-backend switching (DeepInfra/GLM-5.2, Claude Code,
+Codex) per ship role is now built and live-verified end-to-end.** `ship/bin/backend`
+shows/sets the active backend per role/charter; Captain/Crew/First Mate/
+Quartermaster all resolve their launch command from `ship/backends.json` +
+`.ship/backend.json`, defaulting to today's DeepInfra behavior unchanged. Genuinely
+new/open items, not just polish: (1) the Admiral hasn't yet run `claude setup-token`
+or added a key to `captain.env.age` for real on any charter — the whole feature is
+code-complete and drilled with the Shipwright's own already-present
+`ANTHROPIC_API_KEY`/`codex login`, but a charter Captain riding the Admiral's actual
+Claude subscription is still to be confirmed by him; (2) a muster-driven
+(non-delegated) Claude-backed crew agent is deliberately not wired — needs a
+separate explicit decision to extend crew's strongbox scope; (3) Purser's cost
+ledger stays DeepInfra-only — Claude/Codex spend has no unified tracking yet. See
+§4bu for the full design, the five real bugs found/fixed while building it, and
+exactly what was and wasn't live-verified.
 
 **Per §4bt (July 9, 2026): the tmux status bar is now two rows** — role windows
 (0-9) on row 0, crew windows (10+) on row 1, so a growing crew no longer pushes the

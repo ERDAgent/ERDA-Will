@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# delegate-claude — spawn one crew task using Claude Code's own headless
+# mode directly, instead of muster's tmux+pi-monitor scaffolding. Still uses
+# `berth` + `roster-note` -- the same primitives muster itself uses -- so
+# Quartermaster/Bosun/Purser/Chartroom/Telescope see this task exactly like
+# any muster-spawned one: same worktree layout off the real .hold.git, same
+# roster.json/events.log shape.
+#
+# usage: delegate-claude [--redo] [--feedback <file>] <charter> <task-id> <order-file>
+#
+# Meant to be run as a plain shell command from inside a Claude-backed
+# Captain's own session (see ship/prompts/delegate-claude.md, appended to
+# captain.md when captain's backend is `claude`) -- it inherits whatever
+# CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY the caller's own environment
+# already has (from that Captain's own `unlock captain`), rather than
+# re-unlocking itself. Run by hand outside that context, `eval "$(unlock
+# captain)"` first.
+#
+# No tmux window: this runs synchronously in the foreground and returns
+# when the crew agent finishes (or fails) -- there is no live-rendering
+# monitor for this path in v1 (see docs/backend-verification-notes.md).
+set -euo pipefail
+
+REDO=0
+FEEDBACK_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --redo) REDO=1; shift ;;
+    --feedback) FEEDBACK_FILE="${2:?--feedback requires a file path}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) break ;;
+  esac
+done
+
+SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
+
+FLEET="${FLEET:-$HOME/fleet}"
+USAGE="usage: delegate-claude [--redo] [--feedback <file>] <charter> <task-id> <order-file>"
+NAME="${1:?$USAGE}"
+TASK="${2:?$USAGE}"
+ORDER="${3:?$USAGE}"
+DIR="$FLEET/$NAME"
+BUS="$DIR/.ship"
+CREW_PROMPT="$SHIPYARD_DIR/ship/prompts/crew.md"
+
+PREFER="$(backend_field claude '.auth.prefer_env')"
+FALLBACK="$(backend_field claude '.auth.fallback_env')"
+if [[ -z "${!PREFER:-}" && -z "${!FALLBACK:-}" ]]; then
+  echo "delegate-claude: neither \$$PREFER nor \$$FALLBACK is set in this shell" >&2
+  echo "  run: eval \"\$(unlock captain)\" first (or run this from inside a claude-backed Captain session, which already has)" >&2
+fi
+
+BERTH_ARGS=("$NAME" "$TASK" "$ORDER")
+[[ "$REDO" -eq 1 ]] && BERTH_ARGS+=(--redo)
+[[ -n "$FEEDBACK_FILE" ]] && BERTH_ARGS+=(--feedback "$FEEDBACK_FILE")
+eval "$("$SHIPYARD_DIR/ship/bin/berth" create "${BERTH_ARGS[@]}")"
+# BERTH, BRANCH now set by berth's own eval-able output contract.
+
+CREWNAME="claude-$TASK"
+"$SHIPYARD_DIR/ship/bin/roster-note" register "$NAME" "$TASK" --name "$CREWNAME" --branch "$BRANCH" --window "-"
+printf '%s\t%s\t%s\n' "$(date -Is)" "delegate-claude" "$TASK $BRANCH" >> "$BUS/log/events.log"
+
+AGENT_CMD="$(backend_render "$(backend_field claude '.launch.crew.cmd')" "PROMPT_FILE=$CREW_PROMPT")"
+
+export SHIP_ROLE=crew SHIP_CHARTER="$NAME" SHIP_NAME="$CREWNAME" SHIP_TASK="$TASK"
+echo "[delegate-claude/$TASK] running: $AGENT_CMD (branch: $BRANCH)"
+set +e
+# stdin closed (< /dev/null): the order text goes in via --append-system-
+# prompt/the trailing positional prompt, not stdin -- claude -p treats a
+# non-tty stdin as additional piped input to consume, which can hang
+# waiting for EOF the same way codex exec did during self-test.
+( cd "$BERTH" && eval "$AGENT_CMD \"\$(cat .order.md)\"" ) < /dev/null
+RC=$?
+set -e
+
+# shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
+STATUS=done
+[[ $RC -ne 0 ]] && STATUS=failed
+# shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
+if [[ "$STATUS" == done ]] && [[ -f "$BUS/reports/$TASK.report.md" ]] \
+   && head -n1 "$BUS/reports/$TASK.report.md" | grep -qEi '^Status:[[:space:]]*SOS[[:space:]]*$'; then
+  STATUS=sos
+fi
+"$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "$STATUS"
+printf '%s\t%s\t%s\n' "$(date -Is)" "crew-$STATUS" "$TASK rc=$RC" >> "$BUS/log/events.log"
+echo "[$CREWNAME/$TASK] $STATUS (rc=$RC) — report expected in .ship/reports/$TASK.report.md"

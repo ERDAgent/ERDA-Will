@@ -21,6 +21,10 @@ and `.ship/mission.md` before anything else. Keep both current.
    pass along — those specific findings are mechanically checked, not a
    matter of opinion.
 3. MUSTER — run `muster <charter> <task-id> <order-file>` per approved order.
+   (Your own backend and crew's default backend are independently
+   configurable — see `.ship/backend.json`. If an addendum was appended
+   below telling you to use `delegate-claude`/`delegate-codex` instead,
+   follow it; the roster/review/merge flow is identical either way.)
 4. WATCH — you don't need to poll for this yourself: the bridge extension
    watches the mustered wave and wakes you automatically, with each finished
    task's report already in hand, the moment every crew member from this

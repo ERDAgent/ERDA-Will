@@ -18,6 +18,8 @@
 set -euo pipefail
 
 SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
 FLEET="${FLEET:-$HOME/fleet}"
 NAME="${1:?usage: first-mate <charter>}"
 
@@ -145,16 +147,31 @@ if [[ "${#FINDINGS[@]}" -gt 0 ]]; then
   FINDINGS_TEXT="$(printf -- '- %s\n' "${FINDINGS[@]}")"
 fi
 
-# --- LLM judgment: headless, --no-tools, same pattern as quartermaster ---
+# --- LLM judgment: headless, --no-tools, same pattern as quartermaster.
+# Backend-aware like muster/sail/quartermaster: reads .ship/backend.json's
+# `first-mate` entry unless overridden. ---
+FM_PROMPT_DIR=""
 if [[ -n "${SHIP_FIRSTMATE_AGENT:-}" ]]; then
   CRITIQUE_AGENT="$SHIP_FIRSTMATE_AGENT"
+  # shellcheck disable=SC2016  # single-quoted on purpose: this is a printf format string, not meant to expand here
+  FM_AUTH_SETUP='command -v unlock >/dev/null 2>&1 && eval "$(unlock)"'
 else
-  MODEL="$(pick-model 2>/dev/null || echo zai-org/GLM-5.2)"
-  CRITIQUE_AGENT="pi --no-tools --provider deepinfra --model $MODEL --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/first-mate.md -p"
+  FM_BACKEND="$(backend_get "$DIR" first-mate)"
+  FM_AUTH_SETUP="$(backend_auth_setup "$FM_BACKEND" first-mate)"
+  if [[ "$(backend_field "$FM_BACKEND" '.prompt_mode')" == "agents_md" ]]; then
+    # Codex has no --append-system-prompt equivalent -- same AGENTS.md-in-
+    # cwd mechanism delegate-codex uses for crew, just in a throwaway temp
+    # dir instead of a berth.
+    FM_PROMPT_DIR="$(mktemp -d)"
+    cp "$SHIPYARD_DIR/ship/prompts/first-mate.md" "$FM_PROMPT_DIR/AGENTS.md"
+    CRITIQUE_AGENT="$(backend_render "$(backend_field "$FM_BACKEND" '.launch["first-mate"].cmd')" "PROMPT_DIR=$FM_PROMPT_DIR")"
+  else
+    CRITIQUE_AGENT="$(backend_render "$(backend_field "$FM_BACKEND" '.launch["first-mate"].cmd')" "PROMPT_FILE=$SHIPYARD_DIR/ship/prompts/first-mate.md")"
+  fi
 fi
 
 CTXFILE="$(mktemp)"
-trap 'rm -f "$PAIRS" "$CTXFILE"' EXIT
+trap 'rm -f "$PAIRS" "$CTXFILE"; [[ -n "$FM_PROMPT_DIR" ]] && rm -rf "$FM_PROMPT_DIR"' EXIT
 {
   echo "# Mission"
   if [[ -f "$MISSION" ]]; then cat "$MISSION"; else echo "(no mission.md found)"; fi
@@ -173,7 +190,7 @@ trap 'rm -f "$PAIRS" "$CTXFILE"' EXIT
 } > "$CTXFILE"
 
 export SHIP_ROLE=first-mate SHIP_CHARTER="$NAME" SHIP_NAME=first-mate SHIP_TASK=-
-command -v unlock >/dev/null 2>&1 && eval "$(unlock)"
+eval "$FM_AUTH_SETUP"
 
 CRITIQUE_OUT="$($CRITIQUE_AGENT "Give your critique of this mission's decomposition, per your role contract." < "$CTXFILE" 2>/tmp/first-mate-"$NAME".log || true)"
 

@@ -45,6 +45,8 @@ This is a deliberate, enforced narrowing (see HANDOFF.md's restructuring entry f
 | Shipwright | System-level engineer for the shipyard repo itself, running ON a ship (never on a charter) — owns all shipyard engineering: design, build, self-test, document, commit, push. Two CLI variants, one shared contract (`ship/prompts/shipwright.md`): **Shipwright CC** (Claude Code, `sail`'s window 7, `ANTHROPIC_API_KEY` from the strongbox) and **Shipwright CO** (Codex, `sail`'s window 8, directly after CC, `codex login` subscription auth, entrypoint `AGENTS.md`) |
 | Neptune | Claude Code running on the Admiral's own machine (host, not a ship) — narrowly scoped to fresh-Multipass-ship drills and reports; never edits shipyard code. See `neptune/README.md` |
 | Telescope | The deck's dev-server window (`ship/bin/telescope`), serving `integration`; viewed from the host via `erda telescope <charter>` (SSH tunnel) |
+| Backend | Which AI vendor/model powers a ship role for one charter — `deepinfra` (GLM-5.2 via pi, default), `claude` (Claude Code), or `codex` (Codex). Registered in `ship/backends.json`, active choice per role in each charter's `.ship/backend.json`; switch with `ship/bin/backend`. Switching is next-spawn-only, manual or reactive-auto (on a detected rate-limit signal) |
+| Delegate / Delegation | When a role's backend is `claude`/`codex`, spawning crew via that vendor's own headless mode directly (`ship/bin/delegate-claude`/`delegate-codex`) instead of `muster`'s tmux+pi-monitor scaffolding — still uses `berth`/`roster-note`, so Quartermaster/Bosun/Purser/Chartroom/Telescope stay unaware which path spawned a task |
 
 ## Architecture in one paragraph
 
@@ -66,8 +68,9 @@ shipyard/
 ├── dotfiles/tmux/       # ship.tmux.conf + deck-layout.svg (reference image)
 ├── strongbox/           # keys.env.age — NEVER commit plaintext keys
 ├── ship/
-│   ├── bin/             # charter, sail, muster, unlock (bash) — deployed onto the ship
-│   ├── prompts/         # captain.md, crew.md, shipwright.md, officer prompts
+│   ├── backends.json    # backend registry (deepinfra/claude/codex): launch commands, auth, rate-limit patterns
+│   ├── bin/             # charter, sail, muster, unlock, backend, berth, roster-note, delegate-* (bash) — deployed onto the ship
+│   ├── prompts/         # captain.md, crew.md, shipwright.md, officer prompts, delegate-claude.md/delegate-codex.md addenda
 │   └── plugin/          # pi extension (TypeScript)
 ├── neptune/             # Shipwright <-> Neptune drill requests/reports (see neptune/README.md)
 └── docs/                # plan + diagrams

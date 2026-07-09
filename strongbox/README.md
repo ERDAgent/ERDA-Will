@@ -80,14 +80,21 @@ files are committed and pushed) to match the new key.
 | File | Scope | Contents | Who loads it |
 |---|---|---|---|
 | `keys.env.age` | crew | Model keys only (`DEEPINFRA_API_KEY`) | Every agent context: `eval "$(unlock)"` — muster's crew windows do this |
-| `captain.env.age` | captain | Push/publish credentials (`GH_TOKEN`) | Bridge + integration only: `eval "$(unlock captain)"` — sail's bridge window does this automatically, and `charter` does too (quietly, before its gh-auth check) so a bare `captain charter` works from any shell once `ship.key` is deployed |
+| `captain.env.age` | captain | Push/publish credentials (`GH_TOKEN`), plus (optional — see below) `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` for a Claude-backed Captain | Bridge + integration only: `eval "$(unlock captain)"` — sail's bridge window does this automatically, and `charter` does too (quietly, before its gh-auth check) so a bare `captain charter` works from any shell once `ship.key` is deployed |
 | `shipwright.env.age` | shipwright | System-level Claude Code credential (`ANTHROPIC_API_KEY`) | Shipwright window only: `eval "$(unlock shipwright)"` — sail's shipwright window does this automatically. Superset of captain scope (also gets `GH_TOKEN`), since this pane pushes system-level changes to ERDA-Will itself |
 
 Crew agents must never hold push credentials — "crew never push" is enforced
 by this split, not just by crew.md's prose. Never move GH_TOKEN into
-keys.env.age "for convenience." Likewise, `ANTHROPIC_API_KEY` stays in
-shipwright.env.age only — it has nothing to do with charter work, and crew/
-captain never need it.
+keys.env.age "for convenience." Model/inference keys (`DEEPINFRA_API_KEY`,
+and now optionally `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` for a
+Claude-backed Captain) are a different axis than push credentials — see
+"Backend-switching" below for why the latter now *can* live in
+`captain.env.age` too, deliberately narrower than crew scope: only a
+Claude-backed charter Captain and `delegate-claude` (which inherits that
+Captain's own environment) get it in v1 — crew's own `keys.env.age` is
+untouched, so a Claude-backed *crew* task via `muster` directly still has no
+key and fails loudly rather than silently, until a separate explicit
+decision extends crew scope too.
 
 ## GH_TOKEN — creating the captain compartment (operator, one time)
 
@@ -174,3 +181,46 @@ covered — `codex login` only needs to happen once per ship, not per
 charter/deck, since credentials land under `~/.codex`, outside any one
 charter). `sail` prints a reminder in this window if `codex login status`
 comes back logged-out.
+
+This same one-time `codex login` also covers any **charter** Captain/crew
+task whose backend is set to `codex` (see "Backend-switching" below) — auth
+lives under `~/.codex`, not the strongbox, so it doesn't matter which role
+or charter is asking.
+
+## Backend-switching (`ship/backends.json` / `.ship/backend.json`) — Claude auth for a charter Captain (operator, one time, optional)
+
+Lets the Admiral pick which backend (DeepInfra/GLM-5.2, Claude Code, or
+Codex) powers a charter's Captain/Crew/First Mate/Quartermaster roles — see
+`ship/bin/backend` and `docs/backend-verification-notes.md`. Codex needs
+nothing beyond the `codex login` above. **Claude needs a key in the
+`captain` compartment** (a Claude-backed Captain, and `delegate-claude`
+which inherits that Captain's own already-`unlock captain`'d environment,
+both read from here — crew's own `keys.env.age` is deliberately untouched,
+see the note above the compartment table).
+
+Two options, prefer the first:
+
+1. **`CLAUDE_CODE_OAUTH_TOKEN` (preferred — rides your Claude subscription,
+   not pay-per-token)**: run `claude setup-token` (opens an interactive
+   OAuth flow; confirmed via the shipped binary's own strings that this
+   token is deliberately "limited to inference-only," which is exactly the
+   headless-crew-work use case here), then encrypt whatever it gives you
+   the same way as `GH_TOKEN` above:
+
+       bash -c 'read -rs -p "CLAUDE_CODE_OAUTH_TOKEN: " T; echo; printf "CLAUDE_CODE_OAUTH_TOKEN=%s\n" "$T" \
+         | age -r "$(grep -o "age1.*" ship.key)" -o captain.env.age -'
+
+   (If `captain.env.age` already exists with `GH_TOKEN` in it, decrypt it
+   first, append the new line, then re-encrypt — same caution as any
+   multi-value compartment: verify the merged plaintext has *both* values
+   before overwriting the committed file.)
+
+2. **`ANTHROPIC_API_KEY` (fallback — pay-per-token, same key type Shipwright
+   CC already uses)**: same steps as the shipwright compartment section
+   above, just written into `captain.env.age` instead of
+   `shipwright.env.age`.
+
+`backend_auth_setup` (in `ship/bin/backend-lib.sh`) tries
+`CLAUDE_CODE_OAUTH_TOKEN` first, falls back to `ANTHROPIC_API_KEY`, and
+prints which one it's using — verify with: `backend <charter> captain
+claude` then restart the bridge window and watch its startup line.

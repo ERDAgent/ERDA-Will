@@ -15,6 +15,12 @@
 # redo or manual inspection sees the accumulated history. With --redo and no
 # explicit --feedback, defaults to `.ship/reviews/<task-id>.review.md` if one
 # exists -- the exact file the Quartermaster's own REJECT already wrote.
+#
+# Backend-aware (see ship/backends.json + .ship/backend.json): the crew
+# agent's command is resolved from whichever backend is active for the
+# `crew` role on this charter (default: deepinfra/pi, unchanged from before
+# this feature existed). SHIP_AGENT still overrides everything -- an
+# explicit override means "run exactly this," same as always.
 set -euo pipefail
 
 REDO=0
@@ -33,43 +39,10 @@ done
 # /usr/local/bin symlink fitout.sh sets up (readlink -f, not just
 # dirname "${BASH_SOURCE[0]}", which would resolve to the symlink itself)
 SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
 
 FLEET="${FLEET:-$HOME/fleet}"
-# Crew default per the plan's model routing policy: GLM-5.2 High via the
-# Trade Winds (DeepInfra) -- see ship/pi/models.json. --append-system-prompt
-# wires in the crew role contract (commit, write a report, SOS conditions) --
-# without it pi only ever sees the order text, not what it's supposed to do
-# with it. Override for tests or the relief vessel: SHIP_AGENT="opencode run",
-# or escalate a stuck task with SHIP_AGENT="pi -p --provider deepinfra --model
-# zai-org/GLM-5.2 --thinking xhigh --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md"
-#
-# The model itself is resolved by `pick-model` at the crew window's actual
-# run time (inside .crew-run.sh below, once unlock has loaded
-# DEEPINFRA_API_KEY), not hardcoded here -- health-checks
-# ship/models-priority.txt against a real DeepInfra call and falls through
-# to the next entry if the top-priority model isn't responding. The `\$`
-# escaping is deliberate: this text is embedded literally into the generated
-# .crew-run.sh heredoc below and must stay unexpanded until that script
-# actually runs. Skipped entirely if SHIP_AGENT is set -- an explicit
-# override means "run exactly this," including forgoing --mode json/pi-monitor
-# below (a stub agent's own plain-text output wouldn't be valid NDJSON, so
-# piping it through a JSON formatter would just silently swallow it).
-if [[ -n "${SHIP_AGENT:-}" ]]; then
-  AGENT_CMD="$SHIP_AGENT"
-  MONITOR_PIPE=""
-else
-  AGENT_CMD="MODEL=\$(pick-model 2>&2 || echo zai-org/GLM-5.2); pi --mode json --provider deepinfra --model \"\$MODEL\" --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/crew.md"
-  # --mode json (instead of -p) + pi-monitor is what actually makes a crew
-  # window show anything while the agent works -- -p prints nothing until
-  # the whole task is done, so the window used to sit blank for the entire
-  # run. Reasoning/tool-call content is already generated (and paid for)
-  # either way; this only changes what gets displayed, not what's requested
-  # from the model, so it's free. MONITOR_PIPE's value is spliced into the
-  # .crew-run.sh heredoc below the same way AGENT_CMD is -- literal text in
-  # the generated script, not a runtime variable, so the `|` really does
-  # become a pipe when that script runs.
-  MONITOR_PIPE=" | pi-monitor"
-fi
 
 USAGE="usage: muster [--redo] [--feedback <file>] <charter> <task-id> <order-file>"
 NAME="${1:?$USAGE}"
@@ -78,60 +51,82 @@ ORDER="${3:?$USAGE}"
 
 DIR="$FLEET/$NAME"
 SES="ship-$NAME"
-HOLD="$DIR/.hold.git"
-BERTH="$DIR/berths/$TASK"
 BUS="$DIR/.ship"
 
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
   echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
   exit 1
 }
-[[ "$TASK" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
-  echo "invalid task id: '$TASK' (letters, digits, - and _ only)" >&2
-  exit 1
-}
-[[ -d "$HOLD" ]] || { echo "no hold for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
-[[ -f "$ORDER" ]] || { echo "order file not found: $ORDER" >&2; exit 1; }
 tmux has-session -t "=$SES" 2>/dev/null || { echo "deck not open — run: sail $NAME" >&2; exit 1; }
 
-# slug from order filename: T-014-booking-dates.md -> booking-dates
-BASE="$(basename "$ORDER" .md)"
-SLUG="${BASE#"$TASK"-}"; [[ "$SLUG" == "$BASE" ]] && SLUG="task"
-BRANCH="crew/$TASK-$SLUG"
+# --- berth: worktree + branch (shared primitive, also used by delegate-claude/delegate-codex) ---
+BERTH_ARGS=("$NAME" "$TASK" "$ORDER")
+[[ "$REDO" -eq 1 ]] && BERTH_ARGS+=(--redo)
+[[ -n "$FEEDBACK_FILE" ]] && BERTH_ARGS+=(--feedback "$FEEDBACK_FILE")
+eval "$("$SHIPYARD_DIR/ship/bin/berth" create "${BERTH_ARGS[@]}")"
+# BERTH, BRANCH now set by berth's own `eval "$(...)"` output contract.
 
-# A plain muster refuses an occupied berth or an existing branch outright --
-# --redo clears both instead, the cleanup crew.md's documented reject-and-
-# redo loop always needed but never actually got (found live: this was
-# manual `git worktree remove --force` + `git branch -D` every time before
-# this flag existed).
-if [[ -e "$BERTH" ]]; then
-  if [[ "$REDO" -eq 1 ]]; then
-    echo "muster --redo: removing existing berth $BERTH" >&2
-    git -C "$HOLD" worktree remove --force "$BERTH" 2>/dev/null || rm -rf "$BERTH"
-  else
-    echo "berth already occupied: $BERTH (use --redo to replace it)" >&2
-    exit 1
-  fi
+# Crew default per the plan's model routing policy: GLM-5.2 High via the
+# Trade Winds (DeepInfra) -- see ship/pi/models.json. Resolved from
+# ship/backends.json + .ship/backend.json's `crew` entry unless SHIP_AGENT
+# overrides everything (an explicit override means "run exactly this,"
+# including forgoing --mode json/pi-monitor below -- a stub agent's own
+# plain-text output wouldn't be valid NDJSON, so piping it through a JSON
+# formatter would just silently swallow it).
+CREW_PROMPT="$SHIPYARD_DIR/ship/prompts/crew.md"
+# RATE_PATTERNS_JOINED/AUTO_SWITCH_TO drive the reactive auto-switch below --
+# empty for the override case and for deepinfra (DeepInfra-level fallback is
+# already pick-model's job, not this feature's) so detection is a no-op
+# there, same as before this feature existed.
+RATE_PATTERNS_JOINED=""
+AUTO_SWITCH_TO=""
+if [[ -n "${SHIP_AGENT:-}" ]]; then
+  AGENT_CMD="$SHIP_AGENT"
+  AGENT_SETUP=""
+  MONITOR_PIPE=""
+  # bound (even if unused -- RATE_PATTERNS_JOINED stays empty for an
+  # override, so the detection block below never really needs this) so the
+  # heredoc's own generation-time $BACKEND reference doesn't trip this
+  # script's own `set -u`.
+  BACKEND="override"
+  # unconditional regardless of override, matching pre-registry behavior --
+  # a stub/test agent may not need DEEPINFRA_API_KEY, but loading crew scope
+  # is a harmless no-op when it's not needed and required when it is.
+  # shellcheck disable=SC2016  # single-quoted on purpose: stays literal until spliced into .crew-run.sh and run there
+  AUTH_SETUP='command -v unlock >/dev/null 2>&1 && eval "$(unlock)"'
+  PROMPT_MODE="flag"
+else
+  BACKEND="$(backend_get "$DIR" crew)"
+  AGENT_SETUP="$(backend_field "$BACKEND" '.launch.crew.setup')"
+  AGENT_CMD="$(backend_render "$(backend_field "$BACKEND" '.launch.crew.cmd')" "PROMPT_FILE=$CREW_PROMPT" "BUS_DIR=$BUS")"
+  MONITOR_PIPE="$(backend_field "$BACKEND" '.launch.crew.monitor_pipe // ""')"
+  AUTH_SETUP="$(backend_auth_setup "$BACKEND" crew)"
+  PROMPT_MODE="$(backend_field "$BACKEND" '.prompt_mode')"
+  RATE_PATTERNS_JOINED="$(backend_field "$BACKEND" '.rate_limit_patterns | join("|")')"
+  AUTO_SWITCH_TO="$(backend_field "$BACKEND" '.auto_switch_to // ""')"
 fi
-if git -C "$HOLD" show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  if [[ "$REDO" -eq 1 ]]; then
-    echo "muster --redo: dropping existing branch $BRANCH" >&2
-    git -C "$HOLD" branch -D "$BRANCH" >/dev/null
-  else
-    echo "branch already exists: $BRANCH (use --redo to replace it)" >&2
-    exit 1
-  fi
+AGENT_LOG="$BERTH/.agent-output.log"
+# SHIP_AGENT means "run exactly this" -- no wrapping, tee included, so an
+# override's stdout/stderr behavior stays pristine. Otherwise: a monitor
+# pipe (pi-monitor's NDJSON parser) must receive pi's stdout untouched --
+# interleaving stderr via 2>&1 upstream of it could corrupt the NDJSON
+# stream -- so the tee-for-detection wrapping only applies when there's no
+# monitor pipe (claude/codex today). deepinfra's RATE_PATTERNS_JOINED is
+# empty anyway, so this never loses real detection coverage.
+if [[ -n "${SHIP_AGENT:-}" ]]; then
+  INVOKE_LINE="$AGENT_CMD \"\$(cat .order.md)\""
+elif [[ -n "$MONITOR_PIPE" ]]; then
+  INVOKE_LINE="$AGENT_CMD \"\$(cat .order.md)\"$MONITOR_PIPE"
+else
+  INVOKE_LINE="$AGENT_CMD \"\$(cat .order.md)\" 2>&1 | tee \"$AGENT_LOG\""
 fi
 
-# --redo with no explicit --feedback: default to the Quartermaster's own
-# REJECT review, if one exists for this exact task -- the real, common case
-# (redo right after a reject) needs nothing extra typed.
-if [[ "$REDO" -eq 1 && -z "$FEEDBACK_FILE" && -f "$BUS/reviews/$TASK.review.md" ]]; then
-  FEEDBACK_FILE="$BUS/reviews/$TASK.review.md"
-fi
-if [[ -n "$FEEDBACK_FILE" ]]; then
-  [[ -f "$FEEDBACK_FILE" ]] || { echo "feedback file not found: $FEEDBACK_FILE" >&2; exit 1; }
-  printf '\n## Feedback (redo)\n%s\n' "$(cat "$FEEDBACK_FILE")" >> "$ORDER"
+# Codex has no --append-system-prompt equivalent -- crew.md's contract goes
+# in via AGENTS.md in the berth's own cwd instead (see
+# docs/backend-verification-notes.md). Harmless/unused for any other
+# backend's prompt_mode ("flag").
+if [[ "$PROMPT_MODE" == "agents_md" ]]; then
+  cp "$CREW_PROMPT" "$BERTH/AGENTS.md"
 fi
 
 # --- crew name: a human-readable callsign, not just a task ID ---
@@ -159,50 +154,6 @@ done < <(printf '%s\n' "${CREW_NAMES[@]}" | shuf)
 
 log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
 
-# --- berth + branch ---
-# Cut from `integration`, not `main` -- `main` only advances at the final
-# INTEGRATE step, so on any multi-wave voyage every berth after wave 1 used
-# to start without wave 1's own merged work (no package.json, no src/, stale
-# by however much has already landed on `integration`). `integration` is the
-# already-reviewed *build* boundary; `main` is the *publish* boundary --
-# conflating them cost real crew turns on a real voyage (found via the
-# Captain's own voyage-debrief.md, confirmed against this exact line before
-# fixing it). Same existence check ship/bin/quartermaster and
-# ship/bin/telescope already use for the same reason: `integration` doesn't
-# exist until the first `/review` creates it, so fall back to `main` until
-# then.
-BASE_REF="main"
-git -C "$HOLD" show-ref --verify --quiet refs/heads/integration && BASE_REF="integration"
-git -C "$HOLD" worktree add "$BERTH" -b "$BRANCH" "$BASE_REF" >/dev/null
-
-# A fresh worktree has no node_modules even when the project needs one --
-# every crew discovered this independently on the same real voyage and
-# improvised differently (symlink, hardlink-copy, npm install), burning
-# turns each time. Hardlink-copy (not a live symlink) from the integration
-# worktree's own node_modules if it has one: cheap (shared inodes, no real
-# duplication) but still gives each berth an independent directory tree, so
-# one crew's own `npm install` can't mutate a sibling's concurrently-running
-# berth the way a shared symlink would. No-op for non-Node charters or
-# before `integration` has any installed deps yet.
-if [[ -d "$DIR/berths/integration/node_modules" ]]; then
-  cp -al "$DIR/berths/integration/node_modules" "$BERTH/node_modules" 2>/dev/null || true
-fi
-
-cp "$ORDER" "$BERTH/.order.md"
-# crew.md says "write .ship/reports/<TASK-ID>.report.md" without saying
-# relative to what -- the agent's cwd is the berth, and a real run wrote a
-# stray .ship/ *inside* the berth instead of the charter's actual bus.
-# Make the path unambiguous per-order instead of trusting relative-path
-# inference (which also breaks if the berths/charter nesting ever changes).
-printf '\n## Report path\nWrite your report to exactly this absolute path: %s/reports/%s.report.md\n' \
-  "$BUS" "$TASK" >> "$BERTH/.order.md"
-[[ -f "$DIR/charter.md" ]] && cp "$DIR/charter.md" "$BERTH/.charter.md"
-# berth scaffolding must never be committed, even via `git add -A`.
-# info/exclude is shared across all worktrees of the hold, so guard against
-# appending these lines again on every muster.
-EXCL="$(git -C "$BERTH" rev-parse --git-path info/exclude)"
-grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n.crew-run.sh\n' >> "$EXCL"
-
 # Real tmux window name -- computed here (not down by the tmux new-window
 # call below) so roster.json's own "window" field can store it exactly.
 # Found and fixed a real bug while wiring this: roster.json used to store
@@ -215,22 +166,7 @@ grep -qxF '.crew-run.sh' "$EXCL" 2>/dev/null || printf '.order.md\n.charter.md\n
 # already-glyph-decorated name here fixes it for both settings.
 WIN="$CREWNAME"; [[ "${SHIP_GLYPHS:-1}" == "1" ]] && WIN="👷 $WIN"
 
-# --- roster entry ---
-# Drop any existing entry for this task before appending the new one -- a
-# rejected attempt re-mustered against the same task ID (crew.md's prescribed
-# "fresh agent, same order" redo loop) would otherwise leave the old, now-
-# meaningless entry sitting in the roster forever. Worse: the completion-time
-# status update below matches by task ID alone, so with two entries sharing
-# one task ID it would silently mark BOTH done/failed regardless of which one
-# actually ran -- found by actually exercising the redo loop for real, not by
-# reading the script.
-(
-  flock 9
-  TMPJ="$(mktemp)"
-  jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$WIN" --arg n "$CREWNAME" --arg s "$(date -Is)" \
-     '[.[] | select(.task != $t)] + [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
-     "$BUS/roster.json" > "$TMPJ" && mv "$TMPJ" "$BUS/roster.json"
-) 9>"$BUS/.roster.lock"
+"$SHIPYARD_DIR/ship/bin/roster-note" register "$NAME" "$TASK" --name "$CREWNAME" --branch "$BRANCH" --window "$WIN"
 log "muster" "$TASK $BRANCH"
 
 # --- crew window: run agent, then report status and hold the pane for inspection ---
@@ -242,10 +178,11 @@ cd "$BERTH" || exit 1
 # Context for cost-proxy's ledger attribution (see ship/pi/models.json's
 # X-Ship-* headers) -- must be exported before unlock/pi run, not after.
 export SHIP_ROLE=crew SHIP_CHARTER="$NAME" SHIP_NAME="$CREWNAME" SHIP_TASK="$TASK"
-# load the strongbox if a key is present; unlock itself degrades gracefully
-# (prints a stderr note, sets nothing) when the strongbox or key is missing,
-# so this is a no-op for stub agents that don't need DEEPINFRA_API_KEY.
-command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
+# load whatever this backend's auth needs; degrades gracefully (prints a
+# stderr note, sets nothing) when the strongbox/key/login is missing, so
+# this is a no-op for stub agents that don't need real credentials.
+$AUTH_SETUP
+$AGENT_SETUP
 # AGENT_CMD is spliced below as raw shell source (not a quoted string) so
 # operators can override SHIP_AGENT with a command that itself needs internal
 # quoting (e.g. a multi-statement stub, or a flag value with spaces). That
@@ -256,7 +193,7 @@ command -v unlock >/dev/null 2>&1 && eval "\$(unlock)"
 # reconstructs the exact original string at runtime for display only; the
 # real invocation below is unaffected.
 printf '[%s/%s] agent: %s · branch: %s\n' "$CREWNAME" "$TASK" $(printf '%q' "$AGENT_CMD") "$BRANCH"
-$AGENT_CMD "\$(cat .order.md)"$MONITOR_PIPE
+$INVOKE_LINE
 RC=\$?
 # shellcheck disable=SC1010  # false positive: "done" here is a literal status value, not the keyword
 STATUS=done
@@ -271,13 +208,18 @@ if [[ "\$STATUS" == done ]] && [[ -f "$BUS/reports/$TASK.report.md" ]] && \
    head -n1 "$BUS/reports/$TASK.report.md" | grep -qEi '^Status:[[:space:]]*SOS[[:space:]]*\$'; then
   STATUS=sos
 fi
-(
-  flock 9
-  TMPJ="\$(mktemp)"
-  jq --arg t "$TASK" --arg s "\$STATUS" \
-     '(.[] | select(.task==\$t) | .status) = \$s' \
-     "$BUS/roster.json" > "\$TMPJ" && mv "\$TMPJ" "$BUS/roster.json"
-) 9>"$BUS/.roster.lock"
+# Reactive auto-switch: only reachable when this backend has real patterns
+# configured (empty for deepinfra/override -- see muster's own comment on
+# RATE_PATTERNS_JOINED). Next-spawn-only by design: this flips
+# .ship/backend.json's \`crew\` entry for the *next* muster/delegate call --
+# it never touches the task that just ran.
+if [[ -n "$RATE_PATTERNS_JOINED" ]] && [[ -f "$AGENT_LOG" ]] && grep -qiE "$RATE_PATTERNS_JOINED" "$AGENT_LOG"; then
+  printf '%s\t%s\t%s\n' "\$(date -Is)" "rate-limit-detected" "$TASK backend=$BACKEND" >> "$BUS/log/events.log"
+  if [[ -n "$AUTO_SWITCH_TO" ]]; then
+    "$SHIPYARD_DIR/ship/bin/backend" "$NAME" crew "$AUTO_SWITCH_TO" >/dev/null
+  fi
+fi
+"$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "\$STATUS"
 printf '%s\t%s\t%s\n' "\$(date -Is)" "crew-\$STATUS" "$TASK rc=\$RC" >> "$BUS/log/events.log"
 echo; echo "[$CREWNAME/$TASK] \$STATUS (rc=\$RC) — report expected in .ship/reports/$TASK.report.md"
 # Window closes on its own from here (no read -r/keypress wait) -- tmux's

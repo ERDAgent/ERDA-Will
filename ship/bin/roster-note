@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# roster-note — register/update roster.json for one task. Extracted from
+# ship/bin/muster's own roster-append block and ship/bin/quartermaster's
+# set_status/set_salvage helpers, so any spawn path (muster's own runner,
+# quartermaster, or a delegate-claude/delegate-codex capsule) mutates
+# roster.json with the exact same flock+jq+mktemp+mv idiom -- Bosun/Purser/
+# Chartroom/Telescope only ever read roster.json, so this is what keeps them
+# backend-agnostic. events.log line formatting is deliberately NOT handled
+# here (each caller's event name/detail text differs -- "muster"/
+# "delegate-claude" on register, "quartermaster-reject" vs. "crew-failed" on
+# completion -- inlining a one-line printf per caller is simpler and more
+# faithful than forcing one shape on all of them).
+# usage: roster-note register <charter> <task> --name <name> --branch <branch> [--window <label>]
+#        roster-note status   <charter> <task> <status>
+#        roster-note salvage  <charter> <task> <sha>
+set -euo pipefail
+
+FLEET="${FLEET:-$HOME/fleet}"
+CMD="${1:?usage: roster-note <register|status|salvage> <charter> <task> ...}"
+NAME="${2:?usage: roster-note $CMD <charter> <task> ...}"
+TASK="${3:?usage: roster-note $CMD <charter> <task> ...}"
+shift 3
+
+[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+[[ "$TASK" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+  echo "invalid task id: '$TASK' (letters, digits, - and _ only)" >&2
+  exit 1
+}
+
+DIR="$FLEET/$NAME"
+BUS="$DIR/.ship"
+ROSTER="$BUS/roster.json"
+[[ -f "$ROSTER" ]] || { echo "no roster for charter '$NAME' — run: charter $NAME" >&2; exit 1; }
+
+case "$CMD" in
+  register)
+    CREWNAME="" BRANCH="" WIN="-"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --name) CREWNAME="$2"; shift 2 ;;
+        --branch) BRANCH="$2"; shift 2 ;;
+        --window) WIN="$2"; shift 2 ;;
+        *) echo "unknown flag: $1" >&2; exit 1 ;;
+      esac
+    done
+    [[ -n "$CREWNAME" && -n "$BRANCH" ]] || { echo "roster-note register: --name and --branch are required" >&2; exit 1; }
+    # Drop any existing entry for this task before appending the new one --
+    # same reasoning as muster's original block: a redo re-mustered against
+    # the same task ID must not leave two roster rows sharing one task ID.
+    (
+      flock 9
+      TMPJ="$(mktemp)"
+      jq --arg t "$TASK" --arg b "$BRANCH" --arg w "$WIN" --arg n "$CREWNAME" --arg s "$(date -Is)" \
+         '[.[] | select(.task != $t)] + [{task:$t, name:$n, branch:$b, window:$w, started:$s, status:"working"}]' \
+         "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
+    ) 9>"$BUS/.roster.lock"
+    ;;
+  status)
+    STATUS="${1:?usage: roster-note status <charter> <task> <status>}"
+    (
+      flock 9
+      TMPJ="$(mktemp)"
+      jq --arg t "$TASK" --arg s "$STATUS" \
+         '(.[] | select(.task==$t) | .status) = $s' \
+         "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
+    ) 9>"$BUS/.roster.lock"
+    ;;
+  salvage)
+    SHA="${1:?usage: roster-note salvage <charter> <task> <sha>}"
+    (
+      flock 9
+      TMPJ="$(mktemp)"
+      jq --arg t "$TASK" --arg sha "$SHA" \
+         '(.[] | select(.task==$t) | .salvageSha) = $sha' \
+         "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
+    ) 9>"$BUS/.roster.lock"
+    ;;
+  *)
+    echo "roster-note: unknown subcommand '$CMD' (register|status|salvage)" >&2
+    exit 1
+    ;;
+esac

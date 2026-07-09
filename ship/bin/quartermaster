@@ -19,6 +19,8 @@
 set -euo pipefail
 
 SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=ship/bin/backend-lib.sh
+source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
 FLEET="${FLEET:-$HOME/fleet}"
 
 NAME="${1:?usage: quartermaster <charter> <task-id>}"
@@ -84,27 +86,11 @@ mkdir -p "$BUS/reviews"
 REVIEW="$BUS/reviews/$TASK.review.md"
 log() { printf '%s\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$BUS/log/events.log"; }
 
-set_status() {
-  local s="$1"
-  (
-    flock 9
-    TMPJ="$(mktemp)"
-    jq --arg t "$TASK" --arg s "$s" \
-       '(.[] | select(.task==$t) | .status) = $s' \
-       "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
-  ) 9>"$BUS/.roster.lock"
-}
-
-set_salvage() {
-  local sha="$1"
-  (
-    flock 9
-    TMPJ="$(mktemp)"
-    jq --arg t "$TASK" --arg sha "$sha" \
-       '(.[] | select(.task==$t) | .salvageSha) = $sha' \
-       "$ROSTER" > "$TMPJ" && mv "$TMPJ" "$ROSTER"
-  ) 9>"$BUS/.roster.lock"
-}
+# set_status/set_salvage extracted into ship/bin/roster-note (shared with
+# muster's own roster-append and any delegate-claude/delegate-codex capsule)
+# -- same flock+jq+mktemp+mv idiom either way, one copy instead of three.
+set_status() { "$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "$1"; }
+set_salvage() { "$SHIPYARD_DIR/ship/bin/roster-note" salvage "$NAME" "$TASK" "$1"; }
 
 # The diff that actually matters is what the crew introduced since they
 # forked from main -- not integration's post-merge diff, which would also
@@ -250,17 +236,32 @@ fi
 
 # --- LLM judgment: headless, --no-tools (pure text in/out — every fact it
 # needs is already gathered above), same pick-model/SHIP_*_AGENT override
-# pattern as muster and sail's bridge. ---
+# pattern as muster and sail's bridge. Backend-aware like muster/sail: reads
+# .ship/backend.json's `quartermaster` entry unless overridden. ---
+QM_PROMPT_DIR=""
 if [[ -n "${SHIP_QUARTERMASTER_AGENT:-}" ]]; then
   REVIEW_AGENT="$SHIP_QUARTERMASTER_AGENT"
+  # shellcheck disable=SC2016  # single-quoted on purpose: this is a printf format string, not meant to expand here
+  QM_AUTH_SETUP='command -v unlock >/dev/null 2>&1 && eval "$(unlock)"'
 else
-  MODEL="$(pick-model 2>/dev/null || echo zai-org/GLM-5.2)"
-  REVIEW_AGENT="pi --no-tools --provider deepinfra --model $MODEL --thinking high --append-system-prompt $SHIPYARD_DIR/ship/prompts/quartermaster.md -p"
+  QM_BACKEND="$(backend_get "$DIR" quartermaster)"
+  QM_AUTH_SETUP="$(backend_auth_setup "$QM_BACKEND" quartermaster)"
+  if [[ "$(backend_field "$QM_BACKEND" '.prompt_mode')" == "agents_md" ]]; then
+    # Codex has no --append-system-prompt equivalent -- same AGENTS.md-in-
+    # cwd mechanism delegate-codex uses for crew, just in a throwaway temp
+    # dir instead of a berth, since quartermaster isn't tied to any one
+    # crew task's worktree.
+    QM_PROMPT_DIR="$(mktemp -d)"
+    cp "$SHIPYARD_DIR/ship/prompts/quartermaster.md" "$QM_PROMPT_DIR/AGENTS.md"
+    REVIEW_AGENT="$(backend_render "$(backend_field "$QM_BACKEND" '.launch.quartermaster.cmd')" "PROMPT_DIR=$QM_PROMPT_DIR")"
+  else
+    REVIEW_AGENT="$(backend_render "$(backend_field "$QM_BACKEND" '.launch.quartermaster.cmd')" "PROMPT_FILE=$SHIPYARD_DIR/ship/prompts/quartermaster.md")"
+  fi
 fi
 
 CTXFILE="$(mktemp)"
 REVIEW_LOG="$(mktemp)"
-trap 'rm -f "$CTXFILE" "$REVIEW_LOG"' EXIT
+trap 'rm -f "$CTXFILE" "$REVIEW_LOG"; [[ -n "$QM_PROMPT_DIR" ]] && rm -rf "$QM_PROMPT_DIR"' EXIT
 {
   echo "# Work order"
   cat "$ORDER"
@@ -278,7 +279,7 @@ trap 'rm -f "$CTXFILE" "$REVIEW_LOG"' EXIT
 } > "$CTXFILE"
 
 export SHIP_ROLE=quartermaster SHIP_CHARTER="$NAME" SHIP_NAME=quartermaster SHIP_TASK="$TASK"
-command -v unlock >/dev/null 2>&1 && eval "$(unlock)"
+eval "$QM_AUTH_SETUP"
 
 VERDICT_OUT="$($REVIEW_AGENT "Decide APPROVE or REJECT for this crew work order, per your role contract." < "$CTXFILE" 2>"$REVIEW_LOG" || true)"
 
