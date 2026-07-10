@@ -406,6 +406,37 @@ cmd_doctor() {
       else
         echo "doctor: GH_TOKEN OK"
       fi
+
+      # Backend-switching (see ship/backends.json / docs/backend-switching-guide.md)
+      # can put CLAUDE_CODE_OAUTH_TOKEN and/or ANTHROPIC_API_KEY in this same
+      # file, independent of GH_TOKEN above -- optional, not having either yet
+      # is a legitimate "still on deepinfra/codex" state, not a failure.
+      local claude_oauth claude_apikey
+      claude_oauth="$(printf '%s\n' "$captain_plain" | sed -n 's/^CLAUDE_CODE_OAUTH_TOKEN=//p')"
+      claude_apikey="$(printf '%s\n' "$captain_plain" | sed -n 's/^ANTHROPIC_API_KEY=//p')"
+      if [[ -n "$claude_oauth" ]]; then
+        # Live-tested directly against api.anthropic.com/v1/models while building
+        # this check: a bogus ANTHROPIC_API_KEY gets a real 401 there, but that
+        # endpoint has no confirmed relationship to CLAUDE_CODE_OAUTH_TOKEN's own
+        # auth flow -- and `claude --version`/`claude auth status` were both
+        # live-tested and confirmed to report success even for a bogus or absent
+        # credential, so neither substitutes for a real check. Presence is
+        # reported honestly instead of guessing at an unverified probe.
+        echo "doctor: captain.env.age has CLAUDE_CODE_OAUTH_TOKEN (present -- not live-verifiable via a direct API probe; a charter Captain's first real turn under backend=claude will surface an auth failure immediately if it's bad)"
+      elif [[ -n "$claude_apikey" ]]; then
+        if ! command -v curl >/dev/null 2>&1; then
+          echo "doctor: 'curl' isn't installed -- can't live-check captain.env.age's ANTHROPIC_API_KEY, only that it decrypts" >&2
+        else
+          local cc_code
+          cc_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "x-api-key: $claude_apikey" -H "anthropic-version: 2023-06-01" https://api.anthropic.com/v1/models || echo 000)"
+          if [[ "$cc_code" != "200" ]]; then
+            echo "doctor: captain.env.age's ANTHROPIC_API_KEY decrypts fine but Anthropic rejected it (HTTP $cc_code) -- mint a new key, see strongbox/README.md's Backend-switching section" >&2
+            ok=0
+          else
+            echo "doctor: captain.env.age's ANTHROPIC_API_KEY OK (charter Captain can use backend=claude)"
+          fi
+        fi
+      fi
     fi
   fi
 

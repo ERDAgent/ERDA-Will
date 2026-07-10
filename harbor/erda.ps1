@@ -546,6 +546,33 @@ function Invoke-Doctor {
           Write-Host "doctor: GH_TOKEN OK"
         }
       }
+
+      # Backend-switching (see ship/backends.json / docs/backend-switching-guide.md)
+      # can put CLAUDE_CODE_OAUTH_TOKEN and/or ANTHROPIC_API_KEY in this same
+      # file, independent of GH_TOKEN above -- optional, not having either yet
+      # is a legitimate "still on deepinfra/codex" state, not a failure.
+      $ClaudeOauthMatch = $CaptainPlain | Select-String '^CLAUDE_CODE_OAUTH_TOKEN=(.*)$'
+      $ClaudeOauth = if ($ClaudeOauthMatch) { $ClaudeOauthMatch.Matches[0].Groups[1].Value } else { $null }
+      $ClaudeApiKeyMatch = $CaptainPlain | Select-String '^ANTHROPIC_API_KEY=(.*)$'
+      $ClaudeApiKey = if ($ClaudeApiKeyMatch) { $ClaudeApiKeyMatch.Matches[0].Groups[1].Value } else { $null }
+      if ($ClaudeOauth) {
+        # Live-tested directly against api.anthropic.com/v1/models while building
+        # this check: a bogus ANTHROPIC_API_KEY gets a real 401 there, but that
+        # endpoint has no confirmed relationship to CLAUDE_CODE_OAUTH_TOKEN's own
+        # auth flow -- and `claude --version`/`claude auth status` were both
+        # live-tested and confirmed to report success even for a bogus or absent
+        # credential, so neither substitutes for a real check. Presence is
+        # reported honestly instead of guessing at an unverified probe.
+        Write-Host "doctor: captain.env.age has CLAUDE_CODE_OAUTH_TOKEN (present -- not live-verifiable via a direct API probe; a charter Captain's first real turn under backend=claude will surface an auth failure immediately if it's bad)"
+      } elseif ($ClaudeApiKey) {
+        $Code = Test-KeyLive "https://api.anthropic.com/v1/models" @{ "x-api-key" = $ClaudeApiKey; "anthropic-version" = "2023-06-01" }
+        if ($Code -ne 200) {
+          Write-Warning "doctor: captain.env.age's ANTHROPIC_API_KEY decrypts fine but Anthropic rejected it (HTTP $Code) -- mint a new key, see strongbox/README.md's Backend-switching section"
+          $Ok = $false
+        } else {
+          Write-Host "doctor: captain.env.age's ANTHROPIC_API_KEY OK (charter Captain can use backend=claude)"
+        }
+      }
     }
   }
 

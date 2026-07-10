@@ -117,3 +117,101 @@ backend_auth_setup() {
       ;;
   esac
 }
+
+# backend_check_auth: live readiness check for one backend, run ON the ship
+# (unlike erda doctor, which is host-side and can't see codex login state).
+# Prints one status line, returns 0 (ready) / 1 (not ready). Dispatches on
+# auth.type same as backend_auth_setup above, but actually verifies instead
+# of just checking presence -- except where live verification isn't a real
+# thing to check: CLAUDE_CODE_OAUTH_TOKEN has no confirmed public-API probe
+# endpoint (live-tested directly against api.anthropic.com/v1/models during
+# this feature's build -- a bogus ANTHROPIC_API_KEY correctly gets a live
+# 401 there, but that endpoint has no documented relationship to the OAuth
+# token's own auth flow, and `claude auth status`/`claude --version` were
+# both live-tested and confirmed to report success even for a bogus/absent
+# credential, so neither is a substitute). Presence is reported honestly as
+# "not live-verifiable" rather than a guessed-at check that could silently
+# rubber-stamp a bad token.
+backend_check_auth() {
+  local name="$1" auth_type
+  backend_exists "$name" || { echo "  ??    $name: not a registered backend"; return 1; }
+  auth_type="$(backend_field "$name" '.auth.type')"
+  case "$auth_type" in
+    strongbox)              _backend_check_auth_strongbox "$name" ;;
+    claude-code)             _backend_check_auth_claude_code "$name" ;;
+    subscription-login)      _backend_check_auth_subscription_login "$name" ;;
+    *) echo "  ??    $name: unknown auth type '$auth_type'"; return 1 ;;
+  esac
+}
+
+_backend_check_auth_strongbox() {
+  local name="$1" result
+  command -v unlock >/dev/null 2>&1 || { echo "  FAIL  $name: 'unlock' not found on PATH"; return 1; }
+  result="$(
+    eval "$(unlock crew 2>/dev/null)" 2>/dev/null
+    if [[ -z "${DEEPINFRA_API_KEY:-}" ]]; then
+      echo "MISSING"
+    else
+      curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -H "Authorization: Bearer $DEEPINFRA_API_KEY" \
+        https://api.deepinfra.com/v1/openai/models 2>/dev/null || echo 000
+    fi
+  )"
+  case "$result" in
+    MISSING)
+      echo "  FAIL  $name: DEEPINFRA_API_KEY not found in the strongbox (host-side: erda strongbox init)"
+      return 1 ;;
+    200)
+      echo "  OK    $name: DEEPINFRA_API_KEY live"
+      return 0 ;;
+    *)
+      echo "  FAIL  $name: DeepInfra rejected the key (HTTP $result) -- mint a new one, see strongbox/README.md"
+      return 1 ;;
+  esac
+}
+
+_backend_check_auth_claude_code() {
+  local name="$1" prefer fallback result
+  prefer="$(backend_field "$name" '.auth.prefer_env')"
+  fallback="$(backend_field "$name" '.auth.fallback_env')"
+  command -v unlock >/dev/null 2>&1 || { echo "  FAIL  $name: 'unlock' not found on PATH"; return 1; }
+  result="$(
+    eval "$(unlock captain 2>/dev/null)" 2>/dev/null
+    pv="${!prefer:-}"; fv="${!fallback:-}"
+    if [[ -n "$pv" ]]; then
+      echo "PREFER"
+    elif [[ -n "$fv" ]]; then
+      curl -s -o /dev/null -w 'FALLBACK:%{http_code}' --max-time 10 \
+        -H "x-api-key: $fv" -H "anthropic-version: 2023-06-01" \
+        https://api.anthropic.com/v1/models 2>/dev/null || echo "FALLBACK:000"
+    else
+      echo "MISSING"
+    fi
+  )"
+  case "$result" in
+    MISSING)
+      echo "  FAIL  $name: no $prefer or $fallback in captain.env.age (see docs/backend-switching-guide.md)"
+      return 1 ;;
+    PREFER)
+      echo "  ~OK   $name: $prefer present -- not live-verifiable (no confirmed probe endpoint for this token type); a real Bridge/crew turn will surface an auth failure immediately if it's bad"
+      return 0 ;;
+    FALLBACK:200)
+      echo "  OK    $name: $fallback live"
+      return 0 ;;
+    FALLBACK:*)
+      echo "  FAIL  $name: $fallback decrypts but Anthropic rejected it (HTTP ${result#FALLBACK:})"
+      return 1 ;;
+  esac
+}
+
+_backend_check_auth_subscription_login() {
+  local name="$1" check status
+  check="$(backend_field "$name" '.auth.check')"
+  if status="$(eval "$check" 2>/dev/null)"; then
+    echo "  OK    $name: ${status:-logged in}"
+    return 0
+  else
+    echo "  FAIL  $name: not logged in -- run: codex login (or: codex login --device-auth over SSH)"
+    return 1
+  fi
+}

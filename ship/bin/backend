@@ -25,6 +25,42 @@ if [[ "${1:-}" == "--list" ]]; then
   exit 0
 fi
 
+# doctor: live auth-readiness check, run ON the ship (complements host-side
+# `erda doctor`, which can't see codex login state or reach this ship at
+# all). Charter arg is optional and only adds a per-role report -- the
+# backends themselves aren't per-charter, so `backend doctor` alone already
+# tells you everything about what's usable right now.
+if [[ "${1:-}" == "doctor" ]]; then
+  shift
+  echo "backend doctor: checking auth for each registered backend..."
+  ALL_OK=1
+  while IFS= read -r b; do
+    backend_check_auth "$b" || ALL_OK=0
+  done < <(backend_names)
+  if [[ -n "${1:-}" ]]; then
+    CNAME="$1"
+    CDIR="$FLEET/$CNAME"
+    if [[ -d "$CDIR/.ship" ]]; then
+      echo
+      echo "charter '$CNAME' -- active backend per role:"
+      for r in "${ROLES[@]}"; do
+        cb="$(backend_get "$CDIR" "$r")"
+        printf '  %-14s %s\n' "$r" "$cb"
+      done
+    else
+      echo "backend doctor: no such charter: $CNAME (skipping per-role report)" >&2
+      ALL_OK=0
+    fi
+  fi
+  echo
+  if [[ "$ALL_OK" -eq 1 ]]; then
+    echo "backend doctor: all checks passed"
+    exit 0
+  else
+    exit 1
+  fi
+fi
+
 NAME="${1:?$USAGE}"
 DIR="$FLEET/$NAME"
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
@@ -66,6 +102,14 @@ OLD="$(jq -r --arg r "$ROLE" '.[$r] // "deepinfra"' "$STATE")"
 ) 9>"$DIR/.ship/.backend.lock"
 printf '%s\t%s\t%s\n' "$(date -Is)" "backend-switch" "$ROLE $OLD -> $NEWBACKEND" >> "$DIR/.ship/log/events.log"
 echo "backend: $NAME/$ROLE now $NEWBACKEND (was $OLD)"
+
+# Auto-check the new backend's auth right here rather than waiting for it to
+# fail at spawn time -- catches "switched to claude but never ran claude
+# setup-token" immediately. Non-blocking on purpose: the switch already
+# happened (auth may get fixed after the fact, or a network blip shouldn't
+# undo a deliberate switch), this is a warning, not a gate.
+echo "backend: verifying $NEWBACKEND auth..."
+backend_check_auth "$NEWBACKEND" || echo "backend: switched anyway -- fix the above before the next $ROLE spawn/restart, or it'll fail there instead" >&2
 
 # Switching is next-spawn-only -- a live window keeps running its current
 # backend until restarted, since decision 2 (see HANDOFF.md) rules out a

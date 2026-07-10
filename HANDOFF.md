@@ -3060,7 +3060,105 @@ requested**: nothing here touches `fitout.sh`'s cloud-init ordering or first-boo
 behavior, only `ship/bin` runtime logic, prompts, and JSON config on an
 already-provisioned ship.
 
+## 4bv. Backend-switching guide + doctor automation (July 9, 2026)
+
+**From: Shipwright CC.** The Admiral chartered a ship, boarded, and asked how
+to actually use the multi-backend feature from §4bu — a real signal that the
+feature was code-complete but not yet *usable* without reading source. Two
+deliverables: a plain-language guide, and — per his explicit ask — as much
+automation into the doctor commands as possible so the Admiral never has to
+hand-verify a credential.
+
+**Ground-truthed three assumptions before writing any check, per this
+project's standing discipline, all live-tested on this real ship:**
+1. `strongbox/README.md` claimed `claude --version` (with `ANTHROPIC_API_KEY`
+   set) is a valid way to confirm Claude Code auth is working. **False** —
+   confirmed live: `claude --version` exits 0 and prints a version with no
+   key at all, or with a deliberately bogus one. It never touches the
+   network. Fixed the doc to point at `claude auth status` (confirms
+   *presence*/which source) plus `backend doctor`/`erda doctor` (confirm
+   *liveness*) instead.
+2. `claude auth status` itself: live-tested with a bogus `ANTHROPIC_API_KEY`
+   and a bogus `CLAUDE_CODE_OAUTH_TOKEN` — both report `"loggedIn": true`
+   unconditionally. It's a local config-presence report, not a liveness
+   check either. Confirmed this before building anything on top of it.
+3. Whether `CLAUDE_CODE_OAUTH_TOKEN` can be live-verified the same way
+   `ANTHROPIC_API_KEY` already is (a plain `curl` to
+   `api.anthropic.com/v1/models` with `x-api-key`) — live-tested: a bogus
+   `ANTHROPIC_API_KEY` gets a real `401` there (so that endpoint *is* a valid
+   liveness probe for a plain API key), but there's no confirmed
+   relationship between that endpoint and the OAuth token's own auth flow —
+   already flagged as an open question in `docs/backend-verification-notes.md`
+   from the original spike, now with a real negative-control test behind it,
+   not just a flag. Decision: report `CLAUDE_CODE_OAUTH_TOKEN` presence
+   honestly as "not live-verifiable" rather than wiring a guessed-at check
+   that could rubber-stamp a bad token as `OK`. `ANTHROPIC_API_KEY` (fallback
+   auth for the `claude` backend) gets the real live check.
+
+**Built:**
+- `backend_check_auth` (new, `ship/bin/backend-lib.sh`) — dispatches on the
+  registry's `auth.type` same as the existing `backend_auth_setup`, but
+  actually verifies instead of just checking presence: DeepInfra and
+  Anthropic-API-key paths hit their real APIs; Codex path runs `codex login
+  status` (already a real local check, confirmed working); Claude-OAuth path
+  reports presence only, honestly labeled, per the finding above.
+- `backend doctor [charter]` (new subcommand on `ship/bin/backend`) —
+  ship-side, checks all three registered backends' auth readiness on demand;
+  with a charter name, also shows each role's active backend. Complements
+  `erda doctor`, which is host-side and can't see Codex's `~/.codex` login
+  state at all.
+- `backend <charter> <role> <name>` now auto-runs the same live check
+  immediately after switching (non-blocking — the switch already happened,
+  this is a warning so a bad switch is caught before the next spawn instead
+  of at it).
+- `erda doctor` (both `harbor/erda.sh` and `harbor/erda.ps1`, kept in parity)
+  now also checks `captain.env.age` for `CLAUDE_CODE_OAUTH_TOKEN`/
+  `ANTHROPIC_API_KEY` — previously it only checked that file's `GH_TOKEN`,
+  silently blind to the Claude credentials §4bu's own feature can put in the
+  same file.
+- `docs/backend-switching-guide.md` (new) — plain-language, copy-paste-able
+  walkthrough: check readiness, one-time setup per backend, how to actually
+  switch + restart, how auto-fallback works, where to look when something's
+  wrong. `strongbox/README.md`'s "Backend-switching" section now points here
+  and documents the doctor automation instead of only manual verify steps.
+
+**Verified live, on this real ship, not just read-through:** `shellcheck`
+clean on both touched bash files; ran `backend --list`/`backend doctor`/
+`backend doctor <charter>` against a disposable scratch charter
+(`shipwright-doctor-test`, created via `charter --local` and deleted after —
+never touched the pre-existing `ERDA-experimental` charter), confirming real
+output for all three backends (DeepInfra `OK` via a real DeepInfra call,
+Codex `OK` via real `codex login status`, Claude `FAIL` — accurately, since
+this ship's `captain.env.age` currently only has `GH_TOKEN`); ran the
+switch-then-restart-note flow for `captain`→`claude`→`deepinfra` and
+`crew`→`codex`, confirming the auto-check fires and the right restart/no-
+restart-needed note prints per role; tested `erda doctor`'s new
+captain-compartment Claude checks against a fully isolated throwaway
+strongbox (own `age-keygen`, own encrypted files, in the scratchpad
+directory — never touched the real `strongbox/ship.key`) covering all three
+real branches: bogus `ANTHROPIC_API_KEY` → live `401` reported correctly,
+`CLAUDE_CODE_OAUTH_TOKEN` present → presence-only note (no false liveness
+claim). `erda.ps1`'s mirror edit was hand-verified line-by-line against the
+bash version (no `pwsh` on this Ubuntu ship to execute it) — same limitation
+as every prior `erda.ps1` change in this project's history.
+
+**Not done / not needed:** no Neptune drill requested — nothing here touches
+`fitout.sh` or first-boot ordering, only `ship/bin` runtime logic and
+docs on an already-provisioned ship. The Admiral still hasn't run `claude
+setup-token` for real on any charter (unchanged open item from §4bu) — this
+session's `backend doctor` output already reflects that honestly (`FAIL:
+claude`) rather than masking it.
+
 ## 5. NEXT TASK
+
+**Per §4bv (July 9, 2026): the multi-backend feature from §4bu now has a
+plain-language guide (`docs/backend-switching-guide.md`) and the doctor
+commands (`backend doctor`, `erda doctor`) do real, live auth verification
+instead of requiring hand-checking.** No known open items on this specific
+piece. The one still-open item inherited from §4bu: the Admiral hasn't yet
+run `claude setup-token` for real on any charter — `backend doctor` will
+keep reporting `FAIL: claude` honestly until that happens, which is now the
+easiest possible way to notice it's still pending.
 
 **Per §4bu (July 9, 2026): multi-backend switching (DeepInfra/GLM-5.2, Claude Code,
 Codex) per ship role is now built and live-verified end-to-end.** `ship/bin/backend`

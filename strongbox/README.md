@@ -157,8 +157,13 @@ API billing on this key rather than riding your existing subscription.
 
        age -d -i ship.key shipwright.env.age | wc -c    # must be > 10
 
-4. Commit `shipwright.env.age`. On the ship: `eval "$(unlock shipwright)" && claude --version`
-   should run without a `/login` prompt.
+4. Commit `shipwright.env.age`. On the ship: `eval "$(unlock shipwright)" && claude auth status`
+   should report `"apiKeySource": "ANTHROPIC_API_KEY"`. (`claude --version` is
+   **not** a valid check here — live-tested during the backend-switching
+   build: it exits 0 and prints a version even with no key at all, or a
+   deliberately bogus one, so it can't tell a working key from a broken one.
+   For an actual liveness check, use `erda doctor`/`backend doctor` — see
+   "Backend-switching" below — which hit `api.anthropic.com` directly.)
 
 ## Shipwright CO (Codex) — no strongbox compartment, by design
 
@@ -224,3 +229,13 @@ Two options, prefer the first:
 `CLAUDE_CODE_OAUTH_TOKEN` first, falls back to `ANTHROPIC_API_KEY`, and
 prints which one it's using — verify with: `backend <charter> captain
 claude` then restart the bridge window and watch its startup line.
+
+**Don't hand-verify any of this** — `backend <charter> <role> <name>`
+auto-runs a live check on the new backend immediately after switching, and
+`backend doctor [charter]` (ship-side) runs the same checks for all three
+backends on demand, any time. `erda doctor` (host-side) covers the strongbox
+half of the same picture — whether `captain.env.age`'s
+`CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` decrypts and (for the API key)
+is actually accepted by Anthropic — but can't see `codex login` state, which
+only `backend doctor` can. See `docs/backend-switching-guide.md` for the
+full walkthrough with copy-paste commands.
