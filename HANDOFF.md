@@ -3149,6 +3149,14 @@ setup-token` for real on any charter (unchanged open item from §4bu) — this
 session's `backend doctor` output already reflects that honestly (`FAIL:
 claude`) rather than masking it.
 
+**Same-session follow-up:** the Admiral immediately asked how to set all
+four roles at once rather than one at a time. Added `backend <charter> all
+<name>` — sets every role in a single call, runs the auth check once
+(same backend → same auth, no point repeating it four times), and prints
+each role's restart/next-invocation note. `backend <charter> <role>
+<name>` for a single role is unchanged. Live-tested against another
+disposable scratch charter (created and deleted). Guide updated to match.
+
 ## 5. NEXT TASK
 
 **Per §4bv (July 9, 2026): the multi-backend feature from §4bu now has a
