@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # backend — show/set which backend (deepinfra/claude/codex) powers a ship role
-# usage: backend --list                          list registered backends
-#        backend <charter>                       show all roles' active backend
-#        backend <charter> <role>                 show one role's active backend
-#        backend <charter> <role> <backend-name>  set it (validated against the registry)
+# usage: backend --list                            list registered backends
+#        backend doctor [charter]                  live auth-readiness check
+#        backend <charter>                         show all roles' active backend
+#        backend <charter> <role>                  show one role's active backend
+#        backend <charter> <role> <backend-name>   set it (validated against the registry)
+#        backend <charter> all <backend-name>      set every role at once
 #
 # Switching takes effect on next spawn only (a running Bridge/crew window
 # keeps running on its current backend until restarted) -- see
@@ -79,13 +81,24 @@ if [[ -z "$ROLE" ]]; then
   exit 0
 fi
 
-case " ${ROLES[*]} " in
-  *" $ROLE "*) ;;
-  *) echo "unknown role: '$ROLE' (known: ${ROLES[*]})" >&2; exit 1 ;;
-esac
+# "all" applies the same operation to every role in one call -- the common
+# case is "put this whole charter on claude", not one role at a time.
+if [[ "$ROLE" == "all" ]]; then
+  ROLE_LIST=("${ROLES[@]}")
+else
+  case " ${ROLES[*]} " in
+    *" $ROLE "*) ;;
+    *) echo "unknown role: '$ROLE' (known: ${ROLES[*]}, or: all)" >&2; exit 1 ;;
+  esac
+  ROLE_LIST=("$ROLE")
+fi
 
 if [[ -z "$NEWBACKEND" ]]; then
-  jq -r --arg r "$ROLE" '.[$r] // "deepinfra"' "$STATE"
+  if [[ "$ROLE" == "all" ]]; then
+    jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$STATE" | column -t -s $'\t'
+  else
+    jq -r --arg r "$ROLE" '.[$r] // "deepinfra"' "$STATE"
+  fi
   exit 0
 fi
 
@@ -94,32 +107,39 @@ backend_exists "$NEWBACKEND" || {
   exit 1
 }
 
-OLD="$(jq -r --arg r "$ROLE" '.[$r] // "deepinfra"' "$STATE")"
-(
-  flock 9
-  TMPJ="$(mktemp)"
-  jq --arg r "$ROLE" --arg b "$NEWBACKEND" '.[$r] = $b' "$STATE" > "$TMPJ" && mv "$TMPJ" "$STATE"
-) 9>"$DIR/.ship/.backend.lock"
-printf '%s\t%s\t%s\n' "$(date -Is)" "backend-switch" "$ROLE $OLD -> $NEWBACKEND" >> "$DIR/.ship/log/events.log"
-echo "backend: $NAME/$ROLE now $NEWBACKEND (was $OLD)"
+CAPTAIN_OLD=""
+for R in "${ROLE_LIST[@]}"; do
+  OLD="$(jq -r --arg r "$R" '.[$r] // "deepinfra"' "$STATE")"
+  (
+    flock 9
+    TMPJ="$(mktemp)"
+    jq --arg r "$R" --arg b "$NEWBACKEND" '.[$r] = $b' "$STATE" > "$TMPJ" && mv "$TMPJ" "$STATE"
+  ) 9>"$DIR/.ship/.backend.lock"
+  printf '%s\t%s\t%s\n' "$(date -Is)" "backend-switch" "$R $OLD -> $NEWBACKEND" >> "$DIR/.ship/log/events.log"
+  echo "backend: $NAME/$R now $NEWBACKEND (was $OLD)"
+  [[ "$R" == "captain" ]] && CAPTAIN_OLD="$OLD"
+done
 
 # Auto-check the new backend's auth right here rather than waiting for it to
 # fail at spawn time -- catches "switched to claude but never ran claude
-# setup-token" immediately. Non-blocking on purpose: the switch already
-# happened (auth may get fixed after the fact, or a network blip shouldn't
-# undo a deliberate switch), this is a warning, not a gate.
+# setup-token" immediately. One check regardless of how many roles just
+# switched (same backend, same auth). Non-blocking on purpose: the switch
+# already happened (auth may get fixed after the fact, or a network blip
+# shouldn't undo a deliberate switch), this is a warning, not a gate.
 echo "backend: verifying $NEWBACKEND auth..."
-backend_check_auth "$NEWBACKEND" || echo "backend: switched anyway -- fix the above before the next $ROLE spawn/restart, or it'll fail there instead" >&2
+backend_check_auth "$NEWBACKEND" || echo "backend: switched anyway -- fix the above before the next spawn/restart of the affected role(s), or it'll fail there instead" >&2
 
 # Switching is next-spawn-only -- a live window keeps running its current
 # backend until restarted, since decision 2 (see HANDOFF.md) rules out a
 # mid-conversation hot-swap/context transplant.
-case "$ROLE" in
-  captain)
-    echo "note: the Bridge window (0) is running under '$OLD' until restarted:"
-    echo "  tmux kill-window -t ship-$NAME:0 && sail $NAME"
-    ;;
-  *)
-    echo "note: takes effect on the next $ROLE invocation -- nothing currently running changes"
-    ;;
-esac
+for R in "${ROLE_LIST[@]}"; do
+  case "$R" in
+    captain)
+      echo "note: the Bridge window (0) is running under '$CAPTAIN_OLD' until restarted:"
+      echo "  tmux kill-window -t ship-$NAME:0 && sail $NAME"
+      ;;
+    *)
+      echo "note: takes effect on the next $R invocation -- nothing currently running changes"
+      ;;
+  esac
+done

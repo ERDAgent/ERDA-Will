@@ -142,6 +142,16 @@ crew codex`, etc.) — no window to restart, it just takes effect the next
 time that role is spawned (next `muster`, next First Mate/Quartermaster
 invocation).
 
+**Want to put the whole charter on one backend?** Use `all` instead of a
+role name:
+
+```
+backend my-charter all claude
+```
+
+This sets all four roles in one call, runs the auth check once, and prints
+every role's restart/next-invocation note.
+
 ## Checking current state without changing anything
 
 ```
