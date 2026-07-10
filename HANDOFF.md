@@ -3157,6 +3157,38 @@ each role's restart/next-invocation note. `backend <charter> <role>
 <name>` for a single role is unchanged. Live-tested against another
 disposable scratch charter (created and deleted). Guide updated to match.
 
+## 4bw. Chartroom Trade Winds section + clarified model analogy (July 10, 2026)
+
+**From: Shipwright CO.** The Admiral asked for one at-a-glance Chartroom source of
+truth for the models powering each ship role, and clarified that a "Trade Wind" is
+the selected model/agent backend itself — not a special synonym for GLM-5.2.
+
+Built a new **Trade Winds** section at the top of Chartroom's live dashboard. It
+reads the charter's `.ship/backend.json` on every refresh and resolves each of the
+four switchable roles (Captain, Crew, First Mate, Quartermaster) through
+`ship/backends.json`, so manual and reactive backend switches appear without a
+second source of state. Missing role entries retain the system's established
+`deepinfra` default. The registry labels now describe what the ship can truthfully
+know: the exact pinned GLM-5.2 model for DeepInfra, and the CLI-selected default
+model for Claude Code/Codex (rather than inventing a version those CLIs do not pin).
+
+Corrected the analogy throughout the active system documentation and identifiers:
+`CLAUDE.md` now defines a Trade Wind generically and distinguishes it from the
+backend's implementation/config name; the backend-switching guide names Chartroom
+as the live source of truth; the system overview and engineering plan use GLM-5.2
+via DeepInfra as the *default* Trade Wind; the architecture diagram no longer calls
+DeepInfra itself "The Trade Winds"; and GLM-5.2's pi display name no longer embeds
+the phrase as though it belonged only to that model.
+
+Verified: Chartroom TypeScript passes strict `tsc --noEmit` using the current
+TypeScript compiler with `moduleResolution=bundler` (the checked-in config's
+deprecated `node` alias otherwise stops TypeScript 6 before compilation); both JSON
+registries pass `jq`; `muster` passes `bash -n`; and `git diff --check` is clean.
+The installed Fresh binary cannot start without a TTY in this command harness
+(`Failed to enable raw mode`), so the new panel was not interactively rendered;
+the change uses the same already-live-verified dashboard API and file/process calls
+as §4bg and introduces no provisioning-sensitive behavior. No Neptune drill needed.
+
 ## 5. NEXT TASK
 
 **Per §4bv (July 9, 2026): the multi-backend feature from §4bu now has a

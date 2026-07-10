@@ -68,7 +68,7 @@ flowchart TB
     QM -->|"review gate"| INT
 
     subgraph MODEL["Layer 3 — Model backend"]
-        DI["The Trade Winds — DeepInfra<br/>OpenAI-compatible API"]
+        DI["DeepInfra<br/>OpenAI-compatible API"]
         GLM["GLM-5.2<br/>1M ctx · thinking High/Max<br/>~$1.4 in / $4.4 out per M<br/>cached in ~$0.26/M"]
         DI --- GLM
     end

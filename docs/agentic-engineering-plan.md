@@ -44,7 +44,7 @@ Every component gets a name from the world it lives in. The metaphor isn't decor
 | **The Fleet Board** | `tmux choose-session` — every active charter's deck at a glance |
 | **The Engine Room** | htop / logs / cost tally window |
 | **Shipwrights** | Claude Code & Codex — they repair the ship, they don't sail her |
-| **The Trade Winds** | DeepInfra serving GLM-5.2 — what actually propels the voyage |
+| **Trade Wind** | The model/agent backend powering a role — GLM-5.2 via DeepInfra by default, with Claude Code and Codex as selectable winds |
 | **The Strongbox** | age-encrypted secrets |
 | **A Harbor** | Any host machine (Mac, Windows box, OVHcloud) |
 | **The Hold** | The bare git repo all worktrees hang off |
@@ -140,9 +140,9 @@ What lives in `shipyard/scuttlebutt/`: `config.json` (JSONC), a ship theme, and 
 | **pi** | `npm i -g --ignore-scripts @earendil-works/pi-coding-agent` | **The orchestration host** — the ship's command structure runs here |
 | **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | The relief vessel: rigged, provisioned, ready to take over if pi ever becomes a liability |
 
-Shipwrights repair the ship; they don't sail her. Both variants get their own live `sail` window in every charter's deck (`~/shipyard` cwd, never the charter) — Shipwright CC at window 7, Shipwright CO at window 8 directly after it (telescope moved to window 9 to make room, per the Admiral's request to keep the two shipwrights adjacent). Auth model differs by design: Shipwright CC uses `ANTHROPIC_API_KEY` from the Strongbox's shipwright compartment — chosen over the `/login` subscription flow so it can be provisioned unattended like every other credential here, at the cost of pay-per-token billing on that key. Shipwright CO stays on your existing OpenAI/ChatGPT subscription via `codex login` (or `codex login --device-auth` over SSH) instead — a one-time manual step per ship, not strongbox-provisioned, on purpose (see `strongbox/README.md`'s "Shipwright CO" section). Both load the shipwright strongbox compartment for `GH_TOKEN` (push credentials), so `ANTHROPIC_API_KEY` sits unused in CO's environment. pi and OpenCode are pointed at the Trade Winds (DeepInfra) via their own API key from the Strongbox. Codex has no `--append-system-prompt`-equivalent flag (confirmed against the CLI's own `--help` and its shipped binary's embedded base instructions, not assumed); it auto-loads `AGENTS.md` from the cwd up to the repo root into its developer message instead, so the repo's root `AGENTS.md` is CO's entrypoint, mirroring how `CLAUDE.md` + `ship/prompts/shipwright.md` work for CC.
+Shipwrights repair the ship; they don't sail her. Both variants get their own live `sail` window in every charter's deck (`~/shipyard` cwd, never the charter) — Shipwright CC at window 7, Shipwright CO at window 8 directly after it (telescope moved to window 9 to make room, per the Admiral's request to keep the two shipwrights adjacent). Auth model differs by design: Shipwright CC uses `ANTHROPIC_API_KEY` from the Strongbox's shipwright compartment — chosen over the `/login` subscription flow so it can be provisioned unattended like every other credential here, at the cost of pay-per-token billing on that key. Shipwright CO stays on your existing OpenAI/ChatGPT subscription via `codex login` (or `codex login --device-auth` over SSH) instead — a one-time manual step per ship, not strongbox-provisioned, on purpose (see `strongbox/README.md`'s "Shipwright CO" section). Both load the shipwright strongbox compartment for `GH_TOKEN` (push credentials), so `ANTHROPIC_API_KEY` sits unused in CO's environment. pi and OpenCode are pointed at the default Trade Wind (GLM-5.2 via DeepInfra) through their own API key from the Strongbox. Codex has no `--append-system-prompt`-equivalent flag (confirmed against the CLI's own `--help` and its shipped binary's embedded base instructions, not assumed); it auto-loads `AGENTS.md` from the cwd up to the repo root into its developer message instead, so the repo's root `AGENTS.md` is CO's entrypoint, mirroring how `CLAUDE.md` + `ship/prompts/shipwright.md` work for CC.
 
-## 5. Layer 3 — The Trade Winds: GLM-5.2 via DeepInfra
+## 5. Layer 3 — Trade Winds (model backends); default: GLM-5.2 via DeepInfra
 
 Current facts (verified June 2026): GLM-5.2 is Z.ai's open-weight (MIT) MoE model, 753B total / 40B active, **1M-token context**, ~128K max output, thinking levels High/Max only. It's the top open-weights model on the Artificial Analysis Intelligence Index (51) and leads open models on Terminal-Bench 2.1 (~78–81) and SWE-bench — genuinely strong for agentic coding. DeepInfra serves it at roughly **$0.95–1.40/M input, $3.00–4.40/M output**, with cached input around **$0.21–0.26/M** — and DeepInfra is consistently the cheapest blended-price provider for the GLM family.
 
@@ -281,7 +281,7 @@ One exception to keep in your pocket: if a client engagement ever demands hard i
 **One captain per project, or one captain across projects?** One Captain per charter, strictly — and really one Captain per *voyage* (mission). Four reasons, in descending order of importance:
 
 1. **Context purity.** A Captain's judgment depends on its context holding one repo's map, one mission, one set of conventions. Two projects in one session means both get reasoned about worse.
-2. **Cache economics.** The Trade Winds discount (~5x on cached input) comes from stable repeated prefixes. `charter.md` + role prompt + repo map form a per-charter stable prefix; interleaving projects shreds it.
+2. **Cache economics.** The default Trade Wind's DeepInfra discount (~5x on cached input) comes from stable repeated prefixes. `charter.md` + role prompt + repo map form a per-charter stable prefix; interleaving projects shreds it.
 3. **Cost & blame attribution.** A per-charter `.ship/` gives the Purser clean per-client numbers — which matters the day agent-assisted work shows up on a Royal Guest invoice.
 4. **Blast radius.** A Captain that can only see one hold can only merge into one hold.
 
@@ -340,7 +340,7 @@ Honest comparison for *your* stated goal (build the orchestration yourself):
 | Philosophy | Batteries included, provider-agnostic (75+ providers) | Minimal harness, token-efficient system prompt, "adapt pi to your workflow" |
 | Risk | You fight built-in orchestration when yours differs | You build more from scratch |
 
-**Decision (made):** **pi is the orchestration host; OpenCode is the relief vessel.** pi's RPC mode + extension API + explicit "spawn instances via tmux" philosophy is almost a description of this design, and its minimal system prompt stretches GLM-5.2's cache discount further. OpenCode stays installed, configured against the same Trade Winds provider, and gets exercised occasionally (run one mission through `opencode-orchestrator` or `oh-my-opencode` early to steal ideas about what a mature mission loop handles — stagnation escalation, review gates, session pooling). Studying `badlogic/pi-skills`' `subagent` skill is the fastest on-ramp for the pi extension.
+**Decision (made):** **pi is the orchestration host; OpenCode is the relief vessel.** pi's RPC mode + extension API + explicit "spawn instances via tmux" philosophy is almost a description of this design, and its minimal system prompt stretches GLM-5.2's cache discount further. OpenCode stays installed, configured against the same default Trade Wind provider, and gets exercised occasionally (run one mission through `opencode-orchestrator` or `oh-my-opencode` early to steal ideas about what a mature mission loop handles — stagnation escalation, review gates, session pooling). Studying `badlogic/pi-skills`' `subagent` skill is the fastest on-ramp for the pi extension.
 
 The anti-lock-in discipline that makes the relief vessel real rather than theoretical: **all orchestration state lives in `.ship/` files and plain git, never inside pi's session format.** The pi extension is a thin adapter over `muster`, the roster, and the order/report contract — so porting to OpenCode means rewriting one adapter, not the system. Test the escape hatch once a quarter: run a small mission with the OpenCode adapter and confirm the fleet still sails.
 
@@ -352,7 +352,7 @@ The anti-lock-in discipline that makes the relief vessel real rather than theore
 
 **Phase 1 — Three harbors (½ day).** Same bootstrap on the Mac and on an OVHcloud Public Cloud instance. Fix arch-specific issues (ARM64 binaries on Apple Silicon). Deliverable: `multipass launch … && ssh` works identically everywhere.
 
-**Phase 2 — Catch the trade winds (½ day).** DeepInfra provider configured in pi (primary) and OpenCode (relief). Smoke tests: single-shot code task each; confirm cache hits appear in DeepInfra's usage dashboard; record baseline cost per task.
+**Phase 2 — Catch the first trade wind (½ day).** DeepInfra provider configured in pi (primary) and OpenCode (relief). Smoke tests: single-shot code task each; confirm cache hits appear in DeepInfra's usage dashboard; record baseline cost per task.
 
 **Phase 3 — Manual drills (1–2 days).** *No plugin yet.* You are the Captain. By hand: write two work orders, `muster` two crew agents (headless pi/opencode in worktrees, tmux windows), review, merge. This teaches you the failure modes the plugin must handle — worth more than any design doc.
 

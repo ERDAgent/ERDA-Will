@@ -16,7 +16,7 @@
       "models": [
         {
           "id": "zai-org/GLM-5.2",
-          "name": "GLM-5.2 (Trade Winds)",
+          "name": "GLM-5.2",
           "reasoning": true,
           "contextWindow": 1000000,
           "maxTokens": 131000,

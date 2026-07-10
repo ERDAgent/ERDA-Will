@@ -348,7 +348,11 @@ member's report, or prompts otherwise, then runs `tmux select-window` for real v
 `spawnProcess`. On top of the commands, it registers a live section with Fresh's
 bundled `dashboard` plugin, so `roster.json`'s status and any SOS reports are visible
 at a glance without running a command at all — the "watching `.ship/` live" half of
-the vocabulary entry, not just request/response.
+the vocabulary entry, not just request/response. The dashboard begins with a
+**Trade Winds** section that reads `.ship/backend.json` and the ship's backend
+registry to show which model/agent backend currently powers Captain, Crew, First
+Mate, and Quartermaster. "Trade Wind" means that selected model/backend; it is not
+a synonym for GLM-5.2, which is simply the default wind via DeepInfra.
 
 ## How they interact: the mission lifecycle
 

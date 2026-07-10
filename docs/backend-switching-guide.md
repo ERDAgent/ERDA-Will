@@ -1,12 +1,20 @@
 # Switching backends: a plain-language guide
 
-You have three ways to power any ship role (Captain, Crew, First Mate,
-Quartermaster): **DeepInfra/GLM-5.2** (the default, "Trade Winds"), **Claude
+Each model/agent backend powering a role is that role's **Trade Wind**. You
+have three available Trade Winds for any ship role (Captain, Crew, First Mate,
+Quartermaster): **DeepInfra/GLM-5.2** (the default), **Claude
 Code** (your Anthropic subscription or an API key), or **Codex** (your
 ChatGPT/OpenAI subscription). This is per-charter, per-role, and switchable
 any time. This guide is the short version — see `strongbox/README.md`'s
 "Backend-switching" section and `ship/backends.json`/`ship/bin/backend` for
 the full mechanism.
+
+The Chartroom dashboard's **Trade Winds** section shows the current setting
+for every role in that charter. Treat it as the at-a-glance source of truth;
+GLM-5.2 is one Trade Wind, not a synonym for the analogy itself. Claude Code
+and Codex choose their model through their respective CLI defaults, so the
+section says "default model" rather than claiming a model version the ship
+does not explicitly pin.
 
 ## The one thing to know before anything else
 

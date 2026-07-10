@@ -67,7 +67,7 @@ eval "$("$SHIPYARD_DIR/ship/bin/berth" create "${BERTH_ARGS[@]}")"
 # BERTH, BRANCH now set by berth's own `eval "$(...)"` output contract.
 
 # Crew default per the plan's model routing policy: GLM-5.2 High via the
-# Trade Winds (DeepInfra) -- see ship/pi/models.json. Resolved from
+# default Trade Wind, DeepInfra/GLM-5.2 -- see ship/pi/models.json. Resolved from
 # ship/backends.json + .ship/backend.json's `crew` entry unless SHIP_AGENT
 # overrides everything (an explicit override means "run exactly this,"
 # including forgoing --mode json/pi-monitor below -- a stub agent's own

@@ -191,8 +191,53 @@ interface ChartroomDashboardApi {
 	setAutoOpen(enabled: boolean): void;
 }
 
+const tradeWindRoles = ["captain", "crew", "first-mate", "quartermaster"];
+
+interface BackendState {
+	[role: string]: string;
+}
+
+interface BackendRegistry {
+	[name: string]: { label?: string };
+}
+
+async function chartroomTradeWinds(ctx: ChartroomDashboardCtx): Promise<void> {
+	let state: BackendState = {};
+	try {
+		state = JSON.parse(editor.readFile("backend.json") || "{}") as BackendState;
+	} catch {
+		ctx.error("Trade Winds: backend.json is invalid");
+		return;
+	}
+
+	const registryResult = await editor.spawnProcess(
+		"bash",
+		["-lc", "cat \"$HOME/shipyard/ship/backends.json\""],
+		editor.getCwd(),
+	);
+	let registry: BackendRegistry = {};
+	try {
+		registry = JSON.parse(registryResult.stdout || "{}") as BackendRegistry;
+	} catch {
+		ctx.error("Trade Winds: backend registry unavailable");
+		return;
+	}
+
+	ctx.text("Trade Winds", { bold: true, color: "accent" });
+	ctx.newline();
+	for (const role of tradeWindRoles) {
+		const backend = state[role] || "deepinfra";
+		const wind = registry[backend]?.label || backend;
+		ctx.text(`${role}: `, { color: "value" });
+		ctx.text(wind);
+		ctx.newline();
+	}
+}
+
 async function chartroom_dashboard(ctx: ChartroomDashboardCtx): Promise<void> {
 	const roster = chartroomRoster();
+	await chartroomTradeWinds(ctx);
+	ctx.newline();
 	if (!editor.fileExists("mission.md") && roster.length === 0) {
 		ctx.text("no active voyage", { color: "muted" });
 		ctx.newline();

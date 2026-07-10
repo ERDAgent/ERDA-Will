@@ -1,6 +1,6 @@
 {
   "deepinfra": {
-    "label": "GLM-5.2 (Trade Winds / DeepInfra via pi)",
+    "label": "GLM-5.2 via DeepInfra (pi)",
     "binary": "pi",
     "delegate": false,
     "prompt_mode": "flag",
@@ -29,7 +29,7 @@
     }
   },
   "claude": {
-    "label": "Claude Code (Anthropic subscription via setup-token, or API key)",
+    "label": "Claude Code default model (Anthropic subscription or API key)",
     "binary": "claude",
     "delegate": true,
     "prompt_mode": "flag",
@@ -58,7 +58,7 @@
     }
   },
   "codex": {
-    "label": "Codex (OpenAI/ChatGPT subscription)",
+    "label": "Codex default model (OpenAI/ChatGPT subscription)",
     "binary": "codex",
     "delegate": true,
     "prompt_mode": "agents_md",
