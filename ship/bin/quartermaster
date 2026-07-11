@@ -352,7 +352,19 @@ REVIEW_LOG="$(mktemp)"
 export SHIP_ROLE=quartermaster SHIP_CHARTER="$NAME" SHIP_NAME=quartermaster SHIP_TASK="$TASK"
 eval "$QM_AUTH_SETUP"
 
-VERDICT_OUT="$($REVIEW_AGENT "Decide APPROVE or REJECT for this crew work order, per your role contract." < "$CTXFILE" 2>"$REVIEW_LOG" || true)"
+# REVIEW_AGENT is a literal, unevaluated command string (backend_render's own
+# "deliberate-literal-until-runtime" convention: {{PROMPT_FILE}} is
+# substituted, but embedded $(...) like `--append-system-prompt "$(cat
+# ...)"` is left as literal text). Running it as `$REVIEW_AGENT ...` here
+# would only word-split on whitespace -- it does NOT re-invoke the shell
+# parser, so that $(cat ...) would be passed to the reviewer as garbled
+# literal characters instead of the actual prompt file contents, and the
+# reviewer would never receive its role contract (this was a real, confirmed
+# bug: the reviewer would go looking for tools instead of emitting a
+# VERDICT line, every time). `eval` re-parses the whole string as shell
+# syntax so the substitution actually runs, same pattern delegate-claude
+# already uses for its own literal AGENT_CMD.
+VERDICT_OUT="$(eval "$REVIEW_AGENT \"Decide APPROVE or REJECT for this crew work order, per your role contract.\"" < "$CTXFILE" 2>"$REVIEW_LOG" || true)"
 
 FIRST_LINE="$(printf '%s\n' "$VERDICT_OUT" | grep -m1 -E '^VERDICT:' || true)"
 FEEDBACK="$(printf '%s\n' "$VERDICT_OUT" | sed -n '/^VERDICT:/,$p' | tail -n +2)"

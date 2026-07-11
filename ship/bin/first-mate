@@ -192,7 +192,12 @@ trap 'rm -f "$PAIRS" "$CTXFILE"; [[ -n "$FM_PROMPT_DIR" ]] && rm -rf "$FM_PROMPT
 export SHIP_ROLE=first-mate SHIP_CHARTER="$NAME" SHIP_NAME=first-mate SHIP_TASK=-
 eval "$FM_AUTH_SETUP"
 
-CRITIQUE_OUT="$($CRITIQUE_AGENT "Give your critique of this mission's decomposition, per your role contract." < "$CTXFILE" 2>/tmp/first-mate-"$NAME".log || true)"
+# CRITIQUE_AGENT is a literal, unevaluated command string (see the matching
+# comment in ship/bin/quartermaster) -- word-splitting it directly would
+# leave its embedded `--append-system-prompt "$(cat ...)"` unevaluated, so
+# the critique agent never receives its role contract. `eval` re-parses the
+# whole string as shell syntax so the substitution actually runs.
+CRITIQUE_OUT="$(eval "$CRITIQUE_AGENT \"Give your critique of this mission's decomposition, per your role contract.\"" < "$CTXFILE" 2>/tmp/first-mate-"$NAME".log || true)"
 
 FIRST_LINE="$(printf '%s\n' "$CRITIQUE_OUT" | grep -m1 -E '^STATUS:' || true)"
 case "$FIRST_LINE" in
