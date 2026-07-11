@@ -3281,7 +3281,73 @@ all five still represented. `bash -n` clean on the full script; no
 nothing touching `fitout.sh` or first-boot ordering. The Captain can now
 rerun Quartermaster for T-001 again.
 
+## 4bz. Quartermaster diffed against the wrong base for every task after a mission's first (July 11, 2026)
+
+**From: Shipwright CC.** §4by fixed the lockfile-crowding bug, but the
+Captain reported Quartermaster *still* couldn't review T-001 correctly —
+now flagging a real-looking but misattributed "contract gap"
+(`setCollectionRenderer` rejecting replacement, tests only covering
+base+decorators). The Captain's own diagnosis named the fix directly:
+"deploy the integration-fork/base-aware version."
+
+**Root cause, confirmed by reading `ship/bin/berth` (which actually creates
+crew branches, not `quartermaster` or `muster`):** `berth` cuts every crew
+branch from `integration` once that branch exists, falling back to `main`
+only for a mission's very first task — its own comment even says "same
+existence check quartermaster/telescope already use," on the assumption
+this script already did that check. It didn't: `quartermaster` hardcoded
+`main` as the diff base in all three of its `git diff` invocations (the
+`--stat` overview, the `--name-only` file list, and the per-file diff).
+For every task after a mission's first, this meant the "diff" handed to
+the reviewer wasn't just that task's own changes — it was that task's
+changes *plus every already-merged sibling task's changes*, because the
+merge-base of `main` and a branch cut from `integration` sits all the way
+back before any task in the mission was merged. The reviewer was judging
+old, already-approved code as if it were new in the current task — exactly
+what produced the misattributed contract-gap finding.
+
+**Fix:** compute `BASE_REF` with the identical existence check `berth`
+already uses (`git show-ref --verify --quiet refs/heads/integration`),
+falling back to `main` only when `integration` doesn't exist yet, and use
+`$BASE_REF` instead of the hardcoded `main` in all three diff
+invocations plus the CTXFILE heading text shown to the reviewer.
+
+**Verified live, not just read-through:** first reproduced the exact
+misattribution mechanism in a scratch repo — a `crew/T-000` branch merged
+into `integration`, then `crew/T-001` cut from `integration` (matching
+`berth`'s real behavior) with one new file; confirmed the *old*
+`main...branch` diff showed both T-000's and T-001's files while the
+*correct* `integration...branch` diff showed only T-001's own file.
+Confirmed the fallback path separately (no `integration` branch yet →
+`BASE_REF` resolves to `main`, matching a mission's first task). Then ran
+the **real, unmodified production binaries** end to end against a
+throwaway scratch charter (`shipwright-qm-fork-test`, created via
+`charter --local`, fully deleted afterward — the two real charters,
+`VirtualMarketSpace` and `WebMarks`, were never touched): real `berth
+create` for a T-000 scaffolding task, real `quartermaster` (with
+`SHIP_QUARTERMASTER_AGENT` pointed at a stub reviewer script so no real
+backend credentials/cost were needed) approving and merging it into a
+real `integration` branch, then real `berth create` for T-001 cut from
+that `integration`, and a final real `quartermaster` run whose captured
+CTXFILE confirmed both the corrected heading ("vs. its fork point from
+integration") and that only T-001's own line-of-diff appeared — T-000's
+scaffolding file was correctly absent. `bash -n` clean; no `shellcheck`
+binary on this ship (same standing limitation as §4bx/§4by).
+
+**Not done:** no Neptune drill requested — same reasoning as §4bx/§4by,
+pure `ship/bin` runtime git-plumbing logic on an already-provisioned ship,
+nothing touching `fitout.sh` or first-boot ordering. The Captain can
+rerun Quartermaster for T-001 again.
+
 ## 5. NEXT TASK
+
+**Per §4bz (July 11, 2026): Quartermaster now diffs a crew branch against
+its real fork point** (`integration` once it exists, `main` only for a
+mission's first task) **instead of always assuming `main`** — every task
+after a mission's first was previously reviewed against a diff polluted
+with every already-merged sibling task's changes. The Captain should
+rerun `quartermaster` for T-001 again — no other known open items on this
+specific fix.
 
 **Per §4by (July 10, 2026): Quartermaster's diff preparation no longer lets
 a single lockfile's regenerated content crowd out the real application/test

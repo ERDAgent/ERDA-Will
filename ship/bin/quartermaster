@@ -93,11 +93,23 @@ set_status() { "$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "$1";
 set_salvage() { "$SHIPYARD_DIR/ship/bin/roster-note" salvage "$NAME" "$TASK" "$1"; }
 
 # The diff that actually matters is what the crew introduced since they
-# forked from main -- not integration's post-merge diff, which would also
-# include whatever earlier orders this mission already merged. Computed
+# forked -- but "forked from main" was a false assumption: `berth` (which
+# actually creates crew branches) cuts from `integration` once it exists,
+# not `main` -- see its own "Cut from integration, not main" comment, which
+# already says "same existence check quartermaster/telescope already use"
+# on the assumption this script did this. It didn't: every task reviewed
+# after the mission's first therefore diffed against `main`, dragging in
+# every already-merged sibling task's changes as if they were new in this
+# task, polluting the reviewer's diff (and, worse, its verdict) with old,
+# already-approved code it had no reason to re-litigate. Same existence
+# check as `berth`/`telescope`, so the diff's base always matches the
+# branch's real fork point regardless of how far integration has advanced
+# since (three-dot diff's merge-base still finds it either way). Computed
 # up front, directly on the bare hold, independent of the merge attempt
-# below (three-dot: changes on $BRANCH since it diverged from main).
-#
+# below.
+BASE_REF="main"
+git -C "$HOLD" show-ref --verify --quiet refs/heads/integration && BASE_REF="integration"
+
 # Real voyage (T-001): a regenerated package-lock.json dominated the diff,
 # and the old single 300 KB cap-from-byte-zero spent its whole budget on
 # the lockfile, leaving zero bytes for the actual application/test/UI
@@ -127,12 +139,12 @@ trap 'rm -f "$DIFF_TMP" "${CTXFILE:-}" "${REVIEW_LOG:-}"; [[ -n "${QM_PROMPT_DIR
 
 {
   echo "## Overall stat (git diff --stat -- every touched file, never truncated)"
-  git -C "$HOLD" diff --stat "main...$BRANCH" 2>/dev/null || true
+  git -C "$HOLD" diff --stat "$BASE_REF...$BRANCH" 2>/dev/null || true
   echo
 
   # -z/-d '' round-trip: filenames survive spaces/unicode without git's
   # quoting getting in the way of the later `-- "$f"` lookups below.
-  mapfile -d '' -t CHANGED_FILES < <(git -C "$HOLD" diff --name-only -z "main...$BRANCH" 2>/dev/null || true)
+  mapfile -d '' -t CHANGED_FILES < <(git -C "$HOLD" diff --name-only -z "$BASE_REF...$BRANCH" 2>/dev/null || true)
   total=0
   for f in "${CHANGED_FILES[@]}"; do
     [[ -n "$f" ]] || continue
@@ -147,7 +159,7 @@ trap 'rm -f "$DIFF_TMP" "${CTXFILE:-}" "${REVIEW_LOG:-}"; [[ -n "${QM_PROMPT_DIR
       echo "[remaining changed files omitted -- combined non-lockfile diff budget of $TOTAL_DIFF_CAP bytes reached; see stat above for the full file list]"
       break
     fi
-    filediff="$(git -C "$HOLD" diff "main...$BRANCH" -- "$f" 2>/dev/null | head -c "$PER_FILE_DIFF_CAP")"
+    filediff="$(git -C "$HOLD" diff "$BASE_REF...$BRANCH" -- "$f" 2>/dev/null | head -c "$PER_FILE_DIFF_CAP")"
     [[ ${#filediff} -eq $PER_FILE_DIFF_CAP ]] && filediff="$filediff
 [...diff for $f truncated at $PER_FILE_DIFF_CAP bytes...]"
     printf '%s\n\n' "$filediff"
@@ -324,7 +336,7 @@ REVIEW_LOG="$(mktemp)"
   echo "# Crew report"
   cat "$REPORT"
   echo
-  echo "# Diff (branch $BRANCH vs. its fork point from main)"
+  echo "# Diff (branch $BRANCH vs. its fork point from $BASE_REF)"
   echo "Full content for source/config/test files; known lockfiles (package-lock.json"
   echo "etc.) are summarized as filename + new blob hash instead of full content --"
   echo "that's intentional, not missing evidence. The stat block up top lists every"
