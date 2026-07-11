@@ -94,9 +94,13 @@ while :; do
     [[ "$CURRENT" == "$BACKEND" ]] || continue
     printf '%s\t%s\t%s\n' "$(date -Is)" "rate-limit-detected" "$ROLE backend=$CURRENT" >> "$DIR/.ship/log/events.log"
     if [[ -n "$AUTO_SWITCH_TO" ]]; then
-      "$SHIPYARD_DIR/ship/bin/backend" "$NAME" "$ROLE" "$AUTO_SWITCH_TO" >/dev/null
+      "$SHIPYARD_DIR/ship/bin/ship" "$NAME" "$ROLE" "$AUTO_SWITCH_TO" >/dev/null
     fi
-    tmux rename-window -t "$SES:0" "⚠ Bridge (rate-limited — restart to switch)" 2>/dev/null || true
+    # Window name is left alone on purpose -- the display-message notice
+    # below already tells the Admiral the same thing without permanently
+    # relabeling the Bridge window (which used to say "(rate-limited —
+    # restart to switch)" until it was restarted, sometimes long after the
+    # switch already happened).
     tmux display-message -t "$SES:0" "backend-watch: $ROLE rate-limited, switched to $AUTO_SWITCH_TO for next restart" 2>/dev/null || true
     exit 0
   fi

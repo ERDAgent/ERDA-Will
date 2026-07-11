@@ -216,7 +216,7 @@ fi
 if [[ -n "$RATE_PATTERNS_JOINED" ]] && [[ -f "$AGENT_LOG" ]] && grep -qiE "$RATE_PATTERNS_JOINED" "$AGENT_LOG"; then
   printf '%s\t%s\t%s\n' "\$(date -Is)" "rate-limit-detected" "$TASK backend=$BACKEND" >> "$BUS/log/events.log"
   if [[ -n "$AUTO_SWITCH_TO" ]]; then
-    "$SHIPYARD_DIR/ship/bin/backend" "$NAME" crew "$AUTO_SWITCH_TO" >/dev/null
+    "$SHIPYARD_DIR/ship/bin/ship" "$NAME" crew "$AUTO_SWITCH_TO" >/dev/null
   fi
 fi
 "$SHIPYARD_DIR/ship/bin/roster-note" status "$NAME" "$TASK" "\$STATUS"

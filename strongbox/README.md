@@ -162,7 +162,7 @@ API billing on this key rather than riding your existing subscription.
    **not** a valid check here — live-tested during the backend-switching
    build: it exits 0 and prints a version even with no key at all, or a
    deliberately bogus one, so it can't tell a working key from a broken one.
-   For an actual liveness check, use `erda doctor`/`backend doctor` — see
+   For an actual liveness check, use `erda doctor`/`ship doctor` — see
    "Backend-switching" below — which hit `api.anthropic.com` directly.)
 
 ## Shipwright CO (Codex) — no strongbox compartment, by design
@@ -196,7 +196,7 @@ or charter is asking.
 
 Lets the Admiral pick which backend (DeepInfra/GLM-5.2, Claude Code, or
 Codex) powers a charter's Captain/Crew/First Mate/Quartermaster roles — see
-`ship/bin/backend` and `docs/backend-verification-notes.md`. Codex needs
+`ship/bin/ship` and `docs/backend-verification-notes.md`. Codex needs
 nothing beyond the `codex login` above. **Claude needs a key in the
 `captain` compartment** (a Claude-backed Captain, and `delegate-claude`
 which inherits that Captain's own already-`unlock captain`'d environment,
@@ -227,15 +227,15 @@ Two options, prefer the first:
 
 `backend_auth_setup` (in `ship/bin/backend-lib.sh`) tries
 `CLAUDE_CODE_OAUTH_TOKEN` first, falls back to `ANTHROPIC_API_KEY`, and
-prints which one it's using — verify with: `backend <charter> captain
+prints which one it's using — verify with: `ship <charter> captain
 claude` then restart the bridge window and watch its startup line.
 
-**Don't hand-verify any of this** — `backend <charter> <role> <name>`
+**Don't hand-verify any of this** — `ship <charter> <role> <name>`
 auto-runs a live check on the new backend immediately after switching, and
-`backend doctor [charter]` (ship-side) runs the same checks for all three
+`ship doctor [charter]` (ship-side) runs the same checks for all three
 backends on demand, any time. `erda doctor` (host-side) covers the strongbox
 half of the same picture — whether `captain.env.age`'s
 `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` decrypts and (for the API key)
 is actually accepted by Anthropic — but can't see `codex login` state, which
-only `backend doctor` can. See `docs/backend-switching-guide.md` for the
+only `ship doctor` can. See `docs/backend-switching-guide.md` for the
 full walkthrough with copy-paste commands.

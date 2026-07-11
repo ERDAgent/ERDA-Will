@@ -3339,7 +3339,104 @@ pure `ship/bin` runtime git-plumbing logic on an already-provisioned ship,
 nothing touching `fitout.sh` or first-boot ordering. The Captain can
 rerun Quartermaster for T-001 again.
 
+## 4ca. CLI cleanup batch: `backend` renamed to `ship`, fleet-wide `erda … all`, `captain down`/`restart`, rate-limit window-rename dropped (July 11, 2026)
+
+**From: Shipwright CC.** The Admiral asked for a batch of CLI ergonomics
+fixes in one session:
+
+1. **Bridge window no longer gets permanently relabeled on a rate-limit
+   detection.** `backend-watch` used to `tmux rename-window` the Bridge to
+   `⚠ Bridge (rate-limited — restart to switch)`, which stuck around
+   indefinitely (sometimes long after the switch had already happened and
+   the window had been restarted under the new backend, since nothing ever
+   renamed it back). The `tmux display-message` notice already told the
+   Admiral the same thing at the moment it mattered, so the rename is gone;
+   the notice stays.
+
+2. **`erda` gained a fleet-wide `all` target** for the six ops that only
+   ever took one ship name: `erda sail all`, `suspend all`, `sink all`,
+   `anchor all`, `force-anchor all`, `resail all`. New `all_ship_names()` (from
+   `multipass list --format csv`) + `run_fleetwide()` helpers in
+   `harbor/erda.sh`; single-ship behavior for all six is completely
+   unchanged (`all` is just another ship name until matched specifically).
+   `sink all` asks for one typed `all` confirmation (listing every ship
+   first) instead of confirming per-ship, and still honors `-y`/`--force`.
+
+3. **New `captain down <name>` / `captain restart <name>`** — take down a
+   running charter's tmux deck (`tmux kill-session -t ship-<name>`) or take
+   it down and immediately re-`sail` it. `down` on an already-down deck is a
+   clean failure (`no running deck for '<name>'`), not a crash.
+
+4. **`ship/bin/backend` renamed to `ship/bin/ship`** — the CLI command the
+   Admiral types is now `ship <charter> <role> <backend-name>` /
+   `ship doctor` / `ship --list`, matching `erda`/`captain`'s bare-noun
+   naming instead of the more implementation-y `backend`. Deliberately
+   *not* renamed: the underlying concept/registry (`ship/backends.json`,
+   `.ship/backend.json`, `backend_get`/`backend_field`/`backend_check_auth`/etc.
+   in `backend-lib.sh`, the `backend-switch` event-log tag) — those are
+   still correctly called "backend," only this one entrypoint script's own
+   name changed. Updated every caller (`ship/bin/muster`,
+   `ship/bin/backend-watch`, `fitout.sh`'s `/usr/local/bin` symlink loop)
+   and every doc that showed the old CLI invocation
+   (`docs/backend-switching-guide.md`, `strongbox/README.md`, `CLAUDE.md`'s
+   vocabulary table, a comment in `ship/bin/charter`). `git mv` used, so
+   history follows the file.
+
+5. **All three CLIs (`erda`, `captain`, `ship`) now print their full
+   command list when typed bare** (or `-h`/`--help`), not just a one-line
+   usage stub. `erda` and `captain` already did this via a `usage()`
+   function; `ship` didn't (previously `backend` with no charter name would
+   just hit `${1:?...}` and print a single terse usage line — and that line
+   never even mentioned `doctor` or `all`) — it now has the same `usage()`
+   pattern as the other two, checked for `$# -eq 0` before anything else
+   runs.
+
+**Verified live, not just read-through, on this ship:** `shellcheck` isn't
+provisioned by `fitout.sh` (a standing gap noted in §4bx/§4by/§4bz) — worth
+adding to `fitout.sh` at some point, but for this session `sudo apt-get
+install -y shellcheck` got a real one on this already-provisioned ship
+(0.9.0, arm64) and all touched scripts came back clean (only pre-existing
+`SC1091` info notices on `source backend-lib.sh`, unrelated to this diff).
+Beyond static checks: chartered a throwaway scratch charter
+(`shipwright-cli-test`, `charter --local`, deleted afterward — the two real
+charters, `VirtualMarketSpace` and `WebMarks`, were never touched) and ran
+the real, unmodified production binaries — `ship <charter>`,
+`ship <charter> <role>`, `ship --list` against it; a real `sail` to bring
+its deck up, confirmed the Bridge window's name has no rate-limit text
+baked in; real `captain down` on both a not-yet-running and a running deck;
+real `captain restart` from both a down and an already-up deck, confirming
+the tmux session actually cycled and came back with all ten role windows.
+`erda`'s fleet-wide `all` commands can't be live-tested from *this* ship —
+`multipass` is host-only tooling and isn't installed here — so those were
+exercised against a small stub `multipass` script standing in for the real
+binary (fake `list --format csv` output, logging what each subcommand was
+called with): confirmed `sail all`/`force-anchor all` iterate every listed
+ship in order, a plain single-ship call (`resail alpha`) is completely
+unaffected, `sink all` correctly demands a typed `all` (cancels on any
+other input, proceeds with `-y`), and an empty fleet (`list` returns just
+the header) prints a clean "no ships found" and exits 0 rather than
+looping zero times silently or erroring.
+
+**Not done:** no Neptune drill requested — nothing here touches
+`fitout.sh`'s provisioning *ordering* or first-boot behavior (the one-line
+symlink-list change swaps `backend`→`ship`, same mechanism, already
+exercised live via a manual `ln -sfn` + a real `ship` invocation on this
+ship). `erda`'s new `all` commands are stub-tested only, per above — real
+verification needs the Admiral's own machine with Multipass installed and,
+ideally, more than one ship registered.
+
 ## 5. NEXT TASK
+
+**Per §4ca (July 11, 2026): CLI cleanup batch is done and self-tested on
+this ship** (rate-limit window-rename removed, `erda … all` fleet-wide ops,
+`captain down`/`restart`, `backend`→`ship` rename, full command listings on
+bare invocation) — **but `erda`'s new `all` commands were only exercised
+against a stub `multipass`**, since this ship has no real Multipass
+install. If a Neptune drill is ever run against a harbor machine with more
+than one registered ship, `erda sail all`/`suspend all`/`anchor all`/
+`force-anchor all`/`resail all`/`sink all` would be worth a real pass — no
+drill request filed yet since none of this touches `fitout.sh` ordering or
+first-boot behavior, so it wasn't required before landing.
 
 **Per §4bz (July 11, 2026): Quartermaster now diffs a crew branch against
 its real fork point** (`integration` once it exists, `main` only for a

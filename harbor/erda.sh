@@ -18,16 +18,18 @@
 #   telescope <charter> [ship] [port]        SSH-tunnel to a charter's dev server
 #                                             (integration branch); port read from
 #                                             charter.md if not given
-#   anchor [ship]                            multipass stop
-#   force-anchor [ship]                      multipass stop --force
-#   sail [ship]                              multipass start
-#   resail [ship]                            multipass restart
-#   suspend [ship]                           multipass suspend
+#   anchor [ship|all]                        multipass stop
+#   force-anchor [ship|all]                  multipass stop --force
+#   sail [ship|all]                          multipass start
+#   resail [ship|all]                        multipass restart
+#   suspend [ship|all]                       multipass suspend
 #   view [ship]                              multipass list (no ship) / info <ship>
-#   sink [ship]                              multipass delete --purge
+#   sink [ship|all]                          multipass delete --purge
 #                                             (asks to confirm; -y/--force skips)
 #
-# [ship] defaults to "ship" everywhere it's optional.
+# [ship] defaults to "ship" everywhere it's optional. Pass "all" to
+# anchor/force-anchor/sail/resail/suspend/sink to apply the same operation to
+# every ship multipass knows about, instead of just one.
 #
 # Before `erda` is a shell command, run this once by its full path:
 #   ./harbor/erda.sh install
@@ -56,6 +58,38 @@ ship_ip() {
   echo "$ip"
 }
 
+# every ship multipass currently knows about, one name per line -- backs the
+# "all" fleet-wide variant of anchor/force-anchor/sail/resail/suspend/sink,
+# not just what's currently running (e.g. `erda sail all` should start
+# stopped ships too).
+all_ship_names() {
+  "$MULTIPASS" list --format csv 2>/dev/null | tail -n +2 | cut -d, -f1
+}
+
+# run_fleetwide <multipass-subcommand> [extra args after the name...]
+# Applies one multipass subcommand to every known ship in turn. Best-effort:
+# one ship failing (e.g. already stopped) doesn't stop the rest, but the
+# overall exit status reflects whether anything failed.
+run_fleetwide() {
+  local subcmd="$1"; shift
+  local extra=("$@")
+  local names=()
+  mapfile -t names < <(all_ship_names)
+  if [[ "${#names[@]}" -eq 0 ]]; then
+    echo "erda: no ships found (multipass list is empty)" >&2
+    return 0
+  fi
+  local n failed=0
+  for n in "${names[@]}"; do
+    echo "-- $subcmd $n ${extra[*]:-} --"
+    if ! "$MULTIPASS" "$subcmd" "$n" "${extra[@]}"; then
+      echo "erda: $subcmd $n failed" >&2
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
 usage() {
   cat >&2 <<'USAGE'
 usage: erda <command> [ship] [args...]
@@ -71,14 +105,16 @@ usage: erda <command> [ship] [args...]
                                              age key if needed and unlocking the strongbox
   telescope <charter> [ship] [port]         SSH-tunnel to a charter's dev server (port
                                              read from charter.md if not given)
-  anchor [ship]                             stop
-  force-anchor [ship]                       stop --force
-  sail [ship]                               start
-  resail [ship]                             restart
-  suspend [ship]                            suspend
+  anchor [ship|all]                         stop
+  force-anchor [ship|all]                   stop --force
+  sail [ship|all]                           start
+  resail [ship|all]                         restart
+  suspend [ship|all]                        suspend
   view [ship]                               list (no ship) / info <ship>
-  sink [ship]                               delete --purge (asks to confirm; -y/--force skips)
-[ship] defaults to "ship" everywhere it's optional.
+  sink [ship|all]                           delete --purge (asks to confirm; -y/--force skips)
+[ship] defaults to "ship" everywhere it's optional. Pass "all" to
+anchor/force-anchor/sail/resail/suspend/sink to apply it to every ship
+multipass knows about.
 USAGE
 }
 
@@ -555,19 +591,24 @@ case "$CMD" in
     ;;
 
   anchor)
-    "$MULTIPASS" stop "${1:-ship}"
+    NAME="${1:-ship}"
+    if [[ "$NAME" == "all" ]]; then run_fleetwide stop; else "$MULTIPASS" stop "$NAME"; fi
     ;;
   force-anchor)
-    "$MULTIPASS" stop "${1:-ship}" --force
+    NAME="${1:-ship}"
+    if [[ "$NAME" == "all" ]]; then run_fleetwide stop --force; else "$MULTIPASS" stop "$NAME" --force; fi
     ;;
   sail)
-    "$MULTIPASS" start "${1:-ship}"
+    NAME="${1:-ship}"
+    if [[ "$NAME" == "all" ]]; then run_fleetwide start; else "$MULTIPASS" start "$NAME"; fi
     ;;
   resail)
-    "$MULTIPASS" restart "${1:-ship}"
+    NAME="${1:-ship}"
+    if [[ "$NAME" == "all" ]]; then run_fleetwide restart; else "$MULTIPASS" restart "$NAME"; fi
     ;;
   suspend)
-    "$MULTIPASS" suspend "${1:-ship}"
+    NAME="${1:-ship}"
+    if [[ "$NAME" == "all" ]]; then run_fleetwide suspend; else "$MULTIPASS" suspend "$NAME"; fi
     ;;
   view)
     if [[ -n "${1:-}" ]]; then
@@ -580,6 +621,25 @@ case "$CMD" in
     NAME="${1:-ship}"
     FORCE=0
     for a in "$@"; do [[ "$a" == "-y" || "$a" == "--force" ]] && FORCE=1; done
+    if [[ "$NAME" == "all" ]]; then
+      mapfile -t ALL_NAMES < <(all_ship_names)
+      if [[ "${#ALL_NAMES[@]}" -eq 0 ]]; then
+        echo "erda: no ships found (multipass list is empty)"
+        exit 0
+      fi
+      if [[ "$FORCE" -ne 1 ]]; then
+        echo "This will permanently destroy ALL ships and everything on them:"
+        printf '  %s\n' "${ALL_NAMES[@]}"
+        read -rp "Type 'all' to confirm: " CONFIRM
+        [[ "$CONFIRM" == "all" ]] || { echo "cancelled."; exit 1; }
+      fi
+      FAILED=0
+      for N in "${ALL_NAMES[@]}"; do
+        echo "-- sink $N --"
+        "$MULTIPASS" delete "$N" --purge || { echo "erda: delete $N failed" >&2; FAILED=1; }
+      done
+      exit "$FAILED"
+    fi
     if [[ "$FORCE" -ne 1 ]]; then
       read -rp "This will permanently destroy '$NAME' and everything on it. Type the ship name to confirm: " CONFIRM
       [[ "$CONFIRM" == "$NAME" ]] || { echo "cancelled."; exit 1; }

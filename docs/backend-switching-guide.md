@@ -6,7 +6,7 @@ Quartermaster): **DeepInfra/GLM-5.2** (the default), **Claude
 Code** (your Anthropic subscription or an API key), or **Codex** (your
 ChatGPT/OpenAI subscription). This is per-charter, per-role, and switchable
 any time. This guide is the short version — see `strongbox/README.md`'s
-"Backend-switching" section and `ship/backends.json`/`ship/bin/backend` for
+"Backend-switching" section and `ship/backends.json`/`ship/bin/ship` for
 the full mechanism.
 
 The Chartroom dashboard's **Trade Winds** section shows the current setting
@@ -30,18 +30,18 @@ Two commands, one on each side:
 
 ```
 # On the ship, in any window:
-backend doctor
+ship doctor
 
 # On your own machine (harbor/), no ship needed:
 erda doctor
 ```
 
-`backend doctor` tells you whether each backend can actually authenticate
+`ship doctor` tells you whether each backend can actually authenticate
 *right now* — it does a real (free) check, not just "is there a file here."
 Typical first-run output, before you've set anything up:
 
 ```
-backend doctor: checking auth for each registered backend...
+ship doctor: checking auth for each registered backend...
   FAIL  claude: no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in captain.env.age (see docs/backend-switching-guide.md)
   OK    codex: logged in
   OK    deepinfra: DEEPINFRA_API_KEY live
@@ -50,7 +50,7 @@ backend doctor: checking auth for each registered backend...
 Add a charter name to also see what each role is currently set to:
 
 ```
-backend doctor my-charter
+ship doctor my-charter
 ```
 
 ```
@@ -65,11 +65,11 @@ charter 'my-charter' -- active backend per role:
 point of view — useful if something looks wrong and you want to know
 whether the problem is a bad key vs. a ship-side issue. It can't see Codex's
 login state though (that lives only on the ship, under `~/.codex`) —
-`backend doctor` is the only place that shows the full picture.
+`ship doctor` is the only place that shows the full picture.
 
 ## Step 2 — one-time setup per backend (skip whichever you don't need)
 
-**Codex** — nothing to do if `backend doctor` already says `OK`. Otherwise,
+**Codex** — nothing to do if `ship doctor` already says `OK`. Otherwise,
 from the Shipwright CO window (or any ship window):
 
 ```
@@ -103,16 +103,16 @@ confirm on the ship:
 
 ```
 erda doctor        # host-side: confirms it decrypts
-backend doctor     # ship-side: confirms Anthropic actually accepts it
+ship doctor        # ship-side: confirms Anthropic actually accepts it
 ```
 
 (A note on that last check: `CLAUDE_CODE_OAUTH_TOKEN` itself can't be
 live-verified against a public endpoint — there's no confirmed API surface
-for it, unlike a plain `ANTHROPIC_API_KEY`. `backend doctor` will say
+for it, unlike a plain `ANTHROPIC_API_KEY`. `ship doctor` will say
 `~OK ... not live-verifiable` for it, which just means "present, we'll find
 out for sure on first real use" rather than "confirmed working." If you'd
 rather have a fully live-checked credential, use `ANTHROPIC_API_KEY`
-instead — same setup, pay-per-token billing, but `backend doctor` gives it a
+instead — same setup, pay-per-token billing, but `ship doctor` gives it a
 real thumbs-up or thumbs-down.)
 
 **DeepInfra** — already set up if you're reading this from a working ship;
@@ -121,22 +121,22 @@ nothing to do.
 ## Step 3 — actually switch a role's backend
 
 ```
-backend <charter-name> <role> <backend-name>
+ship <charter-name> <role> <backend-name>
 ```
 
 Example: put a charter's Captain on Claude:
 
 ```
-backend my-charter captain claude
+ship my-charter captain claude
 ```
 
 This does three things: writes the change, immediately runs the same live
-check `backend doctor` uses (so you find out *now* if auth isn't ready, not
+check `ship doctor` uses (so you find out *now* if auth isn't ready, not
 later when the window fails to start), and tells you how to restart:
 
 ```
-backend: my-charter/captain now claude (was deepinfra)
-backend: verifying claude auth...
+ship: my-charter/captain now claude (was deepinfra)
+ship: verifying claude auth...
   ~OK   claude: CLAUDE_CODE_OAUTH_TOKEN present -- not live-verifiable (no confirmed probe endpoint for this token type); a real Bridge/crew turn will surface an auth failure immediately if it's bad
 note: the Bridge window (0) is running under 'deepinfra' until restarted:
   tmux kill-window -t ship-my-charter:0 && sail my-charter
@@ -145,7 +145,7 @@ note: the Bridge window (0) is running under 'deepinfra' until restarted:
 Run that `tmux kill-window && sail` line and the Bridge window comes back up
 as a real Claude Code session.
 
-For Crew/First Mate/Quartermaster, same command shape (`backend my-charter
+For Crew/First Mate/Quartermaster, same command shape (`ship my-charter
 crew codex`, etc.) — no window to restart, it just takes effect the next
 time that role is spawned (next `muster`, next First Mate/Quartermaster
 invocation).
@@ -154,7 +154,7 @@ invocation).
 role name:
 
 ```
-backend my-charter all claude
+ship my-charter all claude
 ```
 
 This sets all four roles in one call, runs the auth check once, and prints
@@ -163,9 +163,9 @@ every role's restart/next-invocation note.
 ## Checking current state without changing anything
 
 ```
-backend <charter-name>              # all four roles at once
-backend <charter-name> <role>       # just one
-backend --list                      # every registered backend + its label
+ship <charter-name>              # all four roles at once
+ship <charter-name> <role>       # just one
+ship --list                      # every registered backend + its label
 ```
 
 ## Automatic fallback on rate limits
@@ -183,5 +183,5 @@ Run both doctors and read what they say — they're built to name the exact
 broken thing (missing key, expired credential, wrong file) rather than a
 generic failure. If a switch's live check fails but you're confident the
 credential is actually fine (e.g. a transient network blip), the switch
-still went through — just re-run `backend doctor` once things settle, or
+still went through — just re-run `ship doctor` once things settle, or
 retry the restart.

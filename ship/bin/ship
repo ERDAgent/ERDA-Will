@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# backend — show/set which backend (deepinfra/claude/codex) powers a ship role
-# usage: backend --list                            list registered backends
-#        backend doctor [charter]                  live auth-readiness check
-#        backend <charter>                         show all roles' active backend
-#        backend <charter> <role>                  show one role's active backend
-#        backend <charter> <role> <backend-name>   set it (validated against the registry)
-#        backend <charter> all <backend-name>      set every role at once
+# ship — show/set which backend (deepinfra/claude/codex) powers a ship role
+# usage: ship --list                            list registered backends
+#        ship doctor [charter]                  live auth-readiness check
+#        ship <charter>                         show all roles' active backend
+#        ship <charter> <role>                  show one role's active backend
+#        ship <charter> <role> <backend-name>   set it (validated against the registry)
+#        ship <charter> all <backend-name>      set every role at once
 #
 # Switching takes effect on next spawn only (a running Bridge/crew window
 # keeps running on its current backend until restarted) -- see
 # docs/backend-verification-notes.md and HANDOFF.md for why this isn't a
 # live hot-swap.
+#
+# Named `ship` (not `backend`) as the command word the Admiral types --
+# "backend" is still the concept/registry name throughout (ship/backends.json,
+# .ship/backend.json, backend_get/backend_field/etc. in backend-lib.sh) and
+# stays that way; only this CLI's own name changed.
 set -euo pipefail
 
 SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
@@ -18,8 +23,26 @@ SHIPYARD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pw
 source "$SHIPYARD_DIR/ship/bin/backend-lib.sh"
 
 FLEET="${FLEET:-$HOME/fleet}"
-USAGE="usage: backend --list | backend <charter> [role] [backend-name]"
 ROLES=(captain crew first-mate quartermaster)
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: ship <command> [args...]
+  --list                             list every registered backend + its label
+  doctor [charter]                   live auth-readiness check (adds a
+                                      per-role report when a charter is given)
+  <charter>                          show all roles' active backend
+  <charter> <role>                   show one role's active backend
+  <charter> <role> <backend-name>    set it (validated against the registry)
+  <charter> all <backend-name>       set every role at once
+roles: captain, crew, first-mate, quartermaster (or: all)
+USAGE
+}
+
+if [[ $# -eq 0 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 1
+fi
 
 if [[ "${1:-}" == "--list" ]]; then
   jq -r 'to_entries[] | "\(.key)\t\(.value.label)\t(delegate: \(.value.delegate))"' "$BACKENDS_REGISTRY" \
@@ -30,11 +53,11 @@ fi
 # doctor: live auth-readiness check, run ON the ship (complements host-side
 # `erda doctor`, which can't see codex login state or reach this ship at
 # all). Charter arg is optional and only adds a per-role report -- the
-# backends themselves aren't per-charter, so `backend doctor` alone already
+# backends themselves aren't per-charter, so `ship doctor` alone already
 # tells you everything about what's usable right now.
 if [[ "${1:-}" == "doctor" ]]; then
   shift
-  echo "backend doctor: checking auth for each registered backend..."
+  echo "ship doctor: checking auth for each registered backend..."
   ALL_OK=1
   while IFS= read -r b; do
     backend_check_auth "$b" || ALL_OK=0
@@ -50,20 +73,20 @@ if [[ "${1:-}" == "doctor" ]]; then
         printf '  %-14s %s\n' "$r" "$cb"
       done
     else
-      echo "backend doctor: no such charter: $CNAME (skipping per-role report)" >&2
+      echo "ship doctor: no such charter: $CNAME (skipping per-role report)" >&2
       ALL_OK=0
     fi
   fi
   echo
   if [[ "$ALL_OK" -eq 1 ]]; then
-    echo "backend doctor: all checks passed"
+    echo "ship doctor: all checks passed"
     exit 0
   else
     exit 1
   fi
 fi
 
-NAME="${1:?$USAGE}"
+NAME="$1"
 DIR="$FLEET/$NAME"
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
   echo "invalid charter name: '$NAME' (letters, digits, - and _ only)" >&2
@@ -116,7 +139,7 @@ for R in "${ROLE_LIST[@]}"; do
     jq --arg r "$R" --arg b "$NEWBACKEND" '.[$r] = $b' "$STATE" > "$TMPJ" && mv "$TMPJ" "$STATE"
   ) 9>"$DIR/.ship/.backend.lock"
   printf '%s\t%s\t%s\n' "$(date -Is)" "backend-switch" "$R $OLD -> $NEWBACKEND" >> "$DIR/.ship/log/events.log"
-  echo "backend: $NAME/$R now $NEWBACKEND (was $OLD)"
+  echo "ship: $NAME/$R now $NEWBACKEND (was $OLD)"
   [[ "$R" == "captain" ]] && CAPTAIN_OLD="$OLD"
 done
 
@@ -126,8 +149,8 @@ done
 # switched (same backend, same auth). Non-blocking on purpose: the switch
 # already happened (auth may get fixed after the fact, or a network blip
 # shouldn't undo a deliberate switch), this is a warning, not a gate.
-echo "backend: verifying $NEWBACKEND auth..."
-backend_check_auth "$NEWBACKEND" || echo "backend: switched anyway -- fix the above before the next spawn/restart of the affected role(s), or it'll fail there instead" >&2
+echo "ship: verifying $NEWBACKEND auth..."
+backend_check_auth "$NEWBACKEND" || echo "ship: switched anyway -- fix the above before the next spawn/restart of the affected role(s), or it'll fail there instead" >&2
 
 # Switching is next-spawn-only -- a live window keeps running its current
 # backend until restarted, since decision 2 (see HANDOFF.md) rules out a

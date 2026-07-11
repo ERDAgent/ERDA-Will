@@ -175,7 +175,7 @@ fi
 [[ -f .ship/roster.json ]] || echo "[]" > .ship/roster.json
 touch .ship/log/events.log .ship/log/ledger.tsv
 # Every role defaults to deepinfra -- a charter that never touches the
-# backend-switching feature (ship/bin/backend) behaves exactly as before it
+# backend-switching feature (ship/bin/ship) behaves exactly as before it
 # existed; backend-lib.sh's own lookup also defaults any missing file/role
 # key to "deepinfra", so this init is a convenience, not load-bearing.
 [[ -f .ship/backend.json ]] || printf '{"captain":"deepinfra","crew":"deepinfra","first-mate":"deepinfra","quartermaster":"deepinfra"}\n' > .ship/backend.json

@@ -3,6 +3,8 @@
 # usage: captain <command> [args...]
 #   captain charter <name> [git-url] [--local]   -- charter <name> [git-url] [--local]
 #   captain work <name>                          -- sail <name>
+#   captain down <name>                          -- take down a running charter's deck
+#   captain restart <name>                       -- take down then reopen a charter's deck
 #   captain list charters                        -- list existing charters
 set -euo pipefail
 
@@ -20,8 +22,35 @@ usage: captain <command> [args...]
                                         GitHub repo if no url given and none
                                         exists yet; --local skips that)
   work <name>                          open the deck for a charter
+  down <name>                          take down a running charter's deck
+  restart <name>                       take down then reopen a charter's deck
   list charters                        list existing charters and their status
 USAGE
+}
+
+# down_deck / restart_deck — tmux session lifecycle for a charter's deck.
+# Named after sail's own SES="ship-$NAME" convention so these stay in sync
+# with whatever sail actually creates, rather than re-deriving the pattern.
+down_deck() {
+  local name="${1:?usage: captain down <name>}"
+  local ses="ship-$name"
+  if tmux has-session -t "=$ses" 2>/dev/null; then
+    tmux kill-session -t "=$ses"
+    echo "captain: deck for '$name' is down"
+  else
+    echo "captain: no running deck for '$name'" >&2
+    exit 1
+  fi
+}
+
+restart_deck() {
+  local name="${1:?usage: captain restart <name>}"
+  local ses="ship-$name"
+  if tmux has-session -t "=$ses" 2>/dev/null; then
+    tmux kill-session -t "=$ses"
+    echo "captain: deck for '$name' is down, reopening..."
+  fi
+  exec "$SCRIPT_DIR/sail" "$name"
 }
 
 list_charters() {
@@ -58,6 +87,12 @@ case "$CMD" in
     ;;
   work)
     exec "$SCRIPT_DIR/sail" "$@"
+    ;;
+  down)
+    down_deck "$@"
+    ;;
+  restart)
+    restart_deck "$@"
     ;;
   list)
     SUB="${1:-}"
