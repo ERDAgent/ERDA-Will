@@ -3189,7 +3189,63 @@ The installed Fresh binary cannot start without a TTY in this command harness
 the change uses the same already-live-verified dashboard API and file/process calls
 as §4bg and introduces no provisioning-sensitive behavior. No Neptune drill needed.
 
+## 4bx. Fixed Quartermaster's SIGPIPE-on-large-diff crash (July 10, 2026)
+
+**From: Shipwright CC.** The Captain reported that Quartermaster was dying
+before ever reviewing T-001: any crew diff over 300 KB made it exit 141
+instead of producing a verdict. Root cause was exactly what the report
+described — `ship/bin/quartermaster`'s diff-capture line piped `git diff`
+straight into `head -c 300000` under `set -o pipefail`; `head` closes its
+end of the pipe once it has its 300 KB, `git diff` gets `SIGPIPE` writing
+into a closed pipe, and its non-zero exit tripped `pipefail` and killed the
+whole script before the LLM review agent ever ran. No project code had been
+merged as a result, per the report — this was blocking every Quartermaster
+run on any not-small diff, not just T-001's.
+
+**Fix:** capture the diff to a temp file first (`git diff ... > "$DIFF_TMP"
+|| true`), then `head -c 300000` *that file* rather than a live pipe from
+`git`. `git` now exits normally into a file no one is racing to close, so
+truncation past 300 KB is just truncation, not a killed process. Also found
+and fixed a latent bug while touching this: the script already had a
+second, unrelated `trap ... EXIT` further down (for `CTXFILE`/`REVIEW_LOG`/
+`QM_PROMPT_DIR`) — bash's `trap` replaces rather than accumulates, so
+setting a second one for the new `DIFF_TMP` would have silently dropped the
+first trap's cleanup on every exit path. Consolidated into one trap, set
+once right after `DIFF_TMP` is created, referencing all four temp
+resources via `${VAR:-}` (empty/unset-safe under `set -u` until the later
+variables are actually assigned).
+
+**Verified live, not just read-through:** built a throwaway git repo in the
+scratchpad with a >300 KB diff between two branches and reproduced the
+exact failure first (`head -c 300000` piped from `git diff` under
+`pipefail` → exit 141, confirming the report's diagnosis before touching
+any code); confirmed the fixed temp-file version succeeds and truncates to
+exactly 300000 bytes on the same repo; ran the full trap/variable sequence
+under `bash -u` standalone to confirm `CTXFILE`/`REVIEW_LOG` being unset
+at trap-registration time doesn't break under `nounset`, and confirmed all
+three temp files (`DIFF_TMP`, `CTXFILE`, `REVIEW_LOG`) are actually removed
+after the script exits (not just that the trap *looks* right). `bash -n`
+clean on the full script; no `shellcheck` binary on this ship to run its
+usual pass (noted, not blocking — same idiom as the rest of the script's
+existing traps).
+
+**Not done:** no Neptune drill requested — this is `ship/bin` runtime logic
+on an already-provisioned ship, nothing touching `fitout.sh` or first-boot
+ordering. The Captain can now rerun Quartermaster for T-001.
+
 ## 5. NEXT TASK
+
+**Per §4bx (July 10, 2026): Quartermaster's SIGPIPE-on-large-diff bug (exit
+141, killing the review before a verdict) is fixed and live-verified.** The
+Captain should rerun `quartermaster` for T-001 — no other known open items
+on this fix.
+
+**Per §4bw (July 10, 2026): Chartroom now has a Trade Winds section showing
+the live model/backend for each switchable role**, and the "Trade Wind"
+term/analogy is corrected throughout the active docs (a Trade Wind is the
+selected model/backend generically, not a synonym for GLM-5.2 specifically).
+No known open items.
+
 
 **Per §4bv (July 9, 2026): the multi-backend feature from §4bu now has a
 plain-language guide (`docs/backend-switching-guide.md`) and the doctor

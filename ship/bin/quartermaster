@@ -97,7 +97,24 @@ set_salvage() { "$SHIPYARD_DIR/ship/bin/roster-note" salvage "$NAME" "$TASK" "$1
 # include whatever earlier orders this mission already merged. Computed
 # up front, directly on the bare hold, independent of the merge attempt
 # below (three-dot: changes on $BRANCH since it diverged from main).
-DIFF="$(git -C "$HOLD" diff "main...$BRANCH" 2>/dev/null | head -c 300000)"
+#
+# Written to a temp file first rather than piped straight into `head -c`:
+# under `set -o pipefail`, a diff over 300 KB makes `head` close the pipe
+# early, `git diff` gets SIGPIPE, and its non-zero exit was killing this
+# script before the review ever ran. Truncation here is intentional, not
+# a failure.
+DIFF_TMP="$(mktemp)"
+# Single EXIT trap for every temp resource this script creates (CTXFILE/
+# REVIEW_LOG/QM_PROMPT_DIR are assigned later, below) -- trap replaces
+# rather than accumulates, so setting it again down there would silently
+# drop this cleanup on every exit path (including reject()/approve()'s
+# own `exit 0`).
+CTXFILE=""
+REVIEW_LOG=""
+QM_PROMPT_DIR=""
+trap 'rm -f "$DIFF_TMP" "${CTXFILE:-}" "${REVIEW_LOG:-}"; [[ -n "${QM_PROMPT_DIR:-}" ]] && rm -rf "$QM_PROMPT_DIR"' EXIT
+git -C "$HOLD" diff "main...$BRANCH" > "$DIFF_TMP" 2>/dev/null || true
+DIFF="$(head -c 300000 "$DIFF_TMP")"
 
 write_review() {
   local verdict="$1" reason="$2" extra="${3:-}"
@@ -238,7 +255,6 @@ fi
 # needs is already gathered above), same pick-model/SHIP_*_AGENT override
 # pattern as muster and sail's bridge. Backend-aware like muster/sail: reads
 # .ship/backend.json's `quartermaster` entry unless overridden. ---
-QM_PROMPT_DIR=""
 if [[ -n "${SHIP_QUARTERMASTER_AGENT:-}" ]]; then
   REVIEW_AGENT="$SHIP_QUARTERMASTER_AGENT"
   # shellcheck disable=SC2016  # single-quoted on purpose: this is a printf format string, not meant to expand here
@@ -261,7 +277,6 @@ fi
 
 CTXFILE="$(mktemp)"
 REVIEW_LOG="$(mktemp)"
-trap 'rm -f "$CTXFILE" "$REVIEW_LOG"; [[ -n "$QM_PROMPT_DIR" ]] && rm -rf "$QM_PROMPT_DIR"' EXIT
 {
   echo "# Work order"
   cat "$ORDER"
