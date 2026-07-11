@@ -3233,12 +3233,67 @@ existing traps).
 on an already-provisioned ship, nothing touching `fitout.sh` or first-boot
 ordering. The Captain can now rerun Quartermaster for T-001.
 
+## 4by. Quartermaster's 300 KB diff cap no longer lets a lockfile crowd out the real change (July 10, 2026)
+
+**From: Shipwright CC.** §4bx fixed the crash, but the Captain reported
+Quartermaster still couldn't review T-001 correctly: the fix made the
+script survive a >300 KB diff, but the 300 KB cap was still taken from
+byte zero of one combined `git diff`, and T-001's diff was dominated by a
+regenerated `package-lock.json`. The lockfile alone ate the entire budget,
+so the reviewer never saw a single byte of the application/test/storage/
+PWA/UI changes it was supposed to judge — an automatic REJECT for
+"missing evidence" that was never actually shown to it.
+
+**Fix, per the Captain's own suggested shape:** diff preparation now
+builds three things instead of one flat capped blob: (1) `git diff --stat`
+for the whole changeset, always included, never truncated — gives the
+reviewer a complete file list regardless of what else gets cut; (2) known
+lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`,
+`composer.lock`, `Gemfile.lock`, `Cargo.lock`, `poetry.lock`,
+`Pipfile.lock`, `go.sum`, `mix.lock`, `flake.lock`, `packages.lock.json`,
+`Podfile.lock`, and a generic `*-lock.json` catch-all) get their filename +
+new git blob hash instead of full content — a reviewer doesn't need
+lockfile bytes to judge acceptance criteria, just confirmation it changed;
+(3) every other file's diff is truncated *individually* against its own
+60 KB cap, with a combined 300 KB ceiling across all non-lockfile files as
+a last-resort safety net, so one huge non-lockfile can't crowd out the
+rest either. Also updated the CTXFILE heading the reviewer sees and added
+a line to `ship/prompts/quartermaster.md`'s hard rules explaining the
+lockfile-summarization convention, so the reviewer doesn't mistake
+intentional omission for hidden/missing evidence.
+
+**Verified live, not just read-through:** reproduced the exact reported
+failure first, in a scratch repo — a >300 KB lockfile diff alongside real
+`src/`/`tests/` changes, confirmed the *old* cap-from-zero code showed zero
+bytes of the source/test files (`grep -c` for either filename in the
+truncated output: 0 matches); ran the *new* assembly logic against the
+same repo and confirmed the stat block lists all three files, the lockfile
+is summarized to name + blob hash, and both `src/app.js` and
+`tests/app.test.js` appear with full unified-diff content; separately
+tested the per-file/combined-cap interaction with five 90 KB source files
+(no lockfiles involved) and confirmed each gets truncated individually at
+60 KB rather than the first file consuming the whole 300 KB budget, with
+all five still represented. `bash -n` clean on the full script; no
+`shellcheck` binary on this ship (same standing limitation as §4bx).
+
+**Not done:** no Neptune drill requested — same reasoning as §4bx, this is
+`ship/bin`/`ship/prompts` runtime logic on an already-provisioned ship,
+nothing touching `fitout.sh` or first-boot ordering. The Captain can now
+rerun Quartermaster for T-001 again.
+
 ## 5. NEXT TASK
 
+**Per §4by (July 10, 2026): Quartermaster's diff preparation no longer lets
+a single lockfile's regenerated content crowd out the real application/test
+changes** — `git diff --stat` is always shown in full, known lockfiles are
+summarized to filename + blob hash, and every other file gets its own
+truncation cap instead of one combined cap-from-byte-zero. The Captain
+should rerun `quartermaster` for T-001 again — no other known open items.
+
 **Per §4bx (July 10, 2026): Quartermaster's SIGPIPE-on-large-diff bug (exit
-141, killing the review before a verdict) is fixed and live-verified.** The
-Captain should rerun `quartermaster` for T-001 — no other known open items
-on this fix.
+141, killing the review before a verdict) is fixed and live-verified.**
+Superseded in practice by §4by's follow-up fix above (same command, same
+task), but the SIGPIPE crash itself is a separate, already-fixed issue.
 
 **Per §4bw (July 10, 2026): Chartroom now has a Trade Winds section showing
 the live model/backend for each switchable role**, and the "Trade Wind"

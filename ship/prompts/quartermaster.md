@@ -32,6 +32,12 @@ Then feedback:
 ## Hard rules
 - Never approve on "looks fine." Check every stated acceptance criterion
   individually.
+- The diff you're given shows a `git diff --stat` of every touched file up
+  top, but omits full content for known lockfiles (package-lock.json,
+  yarn.lock, etc.) -- shown only as filename + new blob hash instead. That
+  omission is intentional, not evidence something's missing or hidden;
+  judge completeness against the stat block, not against whether every
+  file's bytes appear in the diff body.
 - Never invent facts about the diff or the repo beyond what's in this
   prompt. If what you were given doesn't answer a question you need
   answered, that's grounds for REJECT — a wrong APPROVE merged costs more
