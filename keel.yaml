@@ -7,6 +7,14 @@
 # Fill in ssh_authorized_keys below with your own public key before launching
 # (cat ~/.ssh/id_ed25519.pub) — this is the one manual per-operator step, same
 # spirit as dropping an age key into the strongbox per-ship.
+#
+# The tailscale-authkey file below is the same kind of per-operator step, but
+# optional: leave its placeholder as-is (or blank) and fitout.sh just skips
+# joining a tailnet — the ship still works exactly as before, reachable only
+# from whichever host launched it. Fill it in (a reusable Tailscale auth key)
+# to make the ship reachable by its stable Tailscale address from any other
+# computer that's also on the same tailnet — not just the launching host. See
+# docs/vm-cheatsheet.md's "Boarding from more than one computer" section.
 
 users:
   - default   # keep the distro's default user so host tooling (e.g. Multipass) still works
@@ -41,7 +49,18 @@ write_files:
       chown -R eric:eric "$SHIPYARD_DIR"
       chmod +x "$SHIPYARD_DIR/fitout.sh"
       su - eric -c "$SHIPYARD_DIR/fitout.sh"
+  - path: /etc/shipyard/tailscale-authkey
+    # Substituted by erda.sh/erda.ps1's `christen` from a LOCAL file on the
+    # harbor machine (TAILSCALE_AUTHKEY_FILE, default
+    # ~/.config/tailscale/authkey) — never committed to git, same spirit as
+    # the SSH pubkey above. Root-only (chmod'd in runcmd below, same reason
+    # lay-the-keel.sh's own mode is set there instead of here — see its
+    # comment). fitout.sh treats a blank file or an un-substituted
+    # "REPLACE-ME" placeholder identically: skip joining a tailnet.
+    content: |
+      REPLACE-ME-with-your-tailscale-authkey-or-leave-blank
 
 runcmd:
   - chmod 0755 /usr/local/sbin/lay-the-keel.sh
+  - chmod 0600 /etc/shipyard/tailscale-authkey
   - bash -c 'set -o pipefail; /usr/local/sbin/lay-the-keel.sh 2>&1 | tee -a /var/log/fitout.log'

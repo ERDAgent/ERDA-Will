@@ -200,6 +200,37 @@ fi
 git config --global "credential.https://github.com.helper" '!gh auth git-credential'
 git config --global "credential.https://gist.github.com.helper" '!gh auth git-credential'
 
+# --- Tailscale: optional mesh network so this ship is reachable from more
+# than one computer, not just whichever host launched it. Multipass's own
+# network is host-scoped (e.g. a Mac's 192.168.64.x is invisible to a Windows
+# box on a different network), so `erda board` from a second harbor machine
+# has no path to the ship at all without this -- see
+# docs/vm-cheatsheet.md's "Boarding from more than one computer". Installing
+# the client is unconditional and harmless even if unused; joining the
+# tailnet only happens if keel.yaml's tailscale-authkey file was actually
+# filled in (christen substitutes it from a LOCAL file on the harbor
+# machine -- never the git-committed strongbox, same reasoning as the SSH
+# pubkey: this is per-operator infra, not a per-charter agent credential).
+if ! command -v tailscale >/dev/null 2>&1; then
+  log "installing Tailscale"
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+TAILSCALE_AUTHKEY_FILE="/etc/shipyard/tailscale-authkey"
+if [[ -f "$TAILSCALE_AUTHKEY_FILE" ]]; then
+  TAILSCALE_AUTHKEY="$(tr -d '[:space:]' < "$TAILSCALE_AUTHKEY_FILE")"
+  if [[ -z "$TAILSCALE_AUTHKEY" || "$TAILSCALE_AUTHKEY" == *"REPLACE-ME"* ]]; then
+    log "tailscale: no authkey configured -- skipping (docs/vm-cheatsheet.md)"
+  elif sudo tailscale ip -4 >/dev/null 2>&1; then
+    log "tailscale: already joined ($(sudo tailscale ip -4))"
+  else
+    log "tailscale: joining tailnet as '$(hostname)'"
+    sudo tailscale up --auth-key="$TAILSCALE_AUTHKEY" --hostname="$(hostname)" --accept-dns=false
+    log "tailscale: joined ($(sudo tailscale ip -4))"
+  fi
+else
+  log "tailscale: $TAILSCALE_AUTHKEY_FILE not present -- skipping (fine on a ship provisioned before this feature existed)"
+fi
+
 # --- headless browser for UI verification (Playwright + Chromium) ---
 # Real Captain feedback after the first live mission (a Vue app): install/
 # test/lint/build all green doesn't confirm a UI actually renders correctly
@@ -284,6 +315,9 @@ else
 fi
 
 log "fitout complete"
-for bin in pi opencode claude codex fresh gh tmux jq rg fd fzf age playwright; do
+for bin in pi opencode claude codex fresh gh tmux jq rg fd fzf age playwright tailscale; do
   printf '  %-8s %s\n' "$bin" "$(command -v "$bin" 2>/dev/null || echo 'NOT FOUND')"
 done
+if command -v tailscale >/dev/null 2>&1 && sudo tailscale ip -4 >/dev/null 2>&1; then
+  printf '  %-8s %s\n' "tailnet" "$(sudo tailscale ip -4)"
+fi

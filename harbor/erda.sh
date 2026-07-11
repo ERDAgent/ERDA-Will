@@ -44,6 +44,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SSH_PRIV="${SSH_PRIV:-$HOME/.ssh/id_ed25519}"
+TAILSCALE_AUTHKEY_FILE="${TAILSCALE_AUTHKEY_FILE:-$HOME/.config/tailscale/authkey}"
 
 MULTIPASS="multipass"
 if ! command -v multipass >/dev/null 2>&1; then
@@ -53,9 +54,26 @@ fi
 
 ship_ip() {
   local name="$1" ip
-  ip="$("$MULTIPASS" info "$name" | awk '/IPv4/{print $2; exit}')"
-  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "erda: couldn't get an IP for '$name' -- is it running? (erda sail $name)" >&2; exit 1; }
-  echo "$ip"
+  if ip="$("$MULTIPASS" info "$name" 2>/dev/null | awk '/IPv4/{print $2; exit}')" \
+      && [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$ip"
+    return
+  fi
+  # Not a local Multipass instance (stopped, or this harbor never launched
+  # it at all) -- fall back to Tailscale, which is how a SECOND harbor
+  # machine reaches a ship it never ran `multipass launch` for: any device
+  # on the same tailnet can resolve a peer by hostname, regardless of which
+  # host actually launched the VM (Multipass's own network is host-scoped).
+  # Requires Tailscale installed + logged in on *this* machine, and the
+  # ship actually joined one at provisioning time -- see
+  # docs/vm-cheatsheet.md's "Boarding from more than one computer".
+  if command -v tailscale >/dev/null 2>&1; then
+    ip="$(tailscale ip -4 "$name" 2>/dev/null)"
+    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && { echo "$ip"; return; }
+  fi
+  echo "erda: couldn't get an IP for '$name' -- is it running? (erda sail $name)" >&2
+  echo "erda: boarding from a different computer than the one that launched it? check Tailscale is installed and logged into the same tailnet here, and that the ship actually joined one (docs/vm-cheatsheet.md)" >&2
+  exit 1
 }
 
 # every ship multipass currently knows about, one name per line -- backs the
@@ -199,6 +217,15 @@ cmd_christen() {
   trap 'rm -f "$tmp_keel"' RETURN
   pubkey="$(cat "$ssh_pub")"
   sed "s|REPLACE-ME-with-your-ssh-public-key|$pubkey|" "$keel_src" > "$tmp_keel"
+
+  # Tailscale authkey: optional, from a LOCAL file on this harbor machine
+  # (never the git-committed strongbox -- see keel.yaml's own comment on
+  # why). Left blank, the placeholder gets replaced with an empty line and
+  # fitout.sh skips joining a tailnet, same as any ship provisioned before
+  # this feature existed.
+  local tailscale_authkey=""
+  [[ -f "$TAILSCALE_AUTHKEY_FILE" ]] && tailscale_authkey="$(tr -d '[:space:]' < "$TAILSCALE_AUTHKEY_FILE")"
+  sed -i "s|REPLACE-ME-with-your-tailscale-authkey-or-leave-blank|$tailscale_authkey|" "$tmp_keel"
 
   echo "christening '$name': $cpus cpu(s), $memory memory, $disk disk"
   "$MULTIPASS" launch 24.04 \

@@ -3425,7 +3425,29 @@ ship). `erda`'s new `all` commands are stub-tested only, per above — real
 verification needs the Admiral's own machine with Multipass installed and,
 ideally, more than one ship registered.
 
+## 4cb. Boarding a ship from more than one computer — Tailscale mesh (July 11, 2026)
+
+**From: Shipwright CC.** Added optional Tailscale mesh networking so a ship
+launched by one harbor can be boarded from another computer. `keel.yaml` carries
+a non-secret placeholder; `erda christen` substitutes a harbor-local reusable
+auth key; `fitout.sh` installs Tailscale and joins idempotently when a real key is
+present; and `erda board`/`erda telescope` fall back from Multipass addressing to
+the ship's Tailscale address. `docs/vm-cheatsheet.md` documents initial setup and
+retrofitting an existing ship.
+
+Verified by Shipwright CC with shellcheck/Bash syntax, YAML parsing, PowerShell
+parsing, stubbed address-resolution tests in both harbor implementations, and all
+four auth-key file shapes. Not live-tested against a real tailnet or from two real
+computers; the Admiral must supply a Tailscale auth key and perform that drill.
+
 ## 5. NEXT TASK
+
+**Per §4cb (July 11, 2026): cross-computer boarding through Tailscale is
+code-complete but not live-drilled against a real tailnet.** The Admiral must
+provide a reusable Tailscale auth key and confirm `erda board`/`erda telescope`
+from a second computer that did not launch the ship. Also noted during testing:
+`shellcheck` is not installed by `fitout.sh` even though the documented lint
+command assumes it is available.
 
 **Per §4ca (July 11, 2026): CLI cleanup batch is done and self-tested on
 this ship** (rate-limit window-rename removed, `erda … all` fleet-wide ops,
@@ -3463,7 +3485,6 @@ the live model/backend for each switchable role**, and the "Trade Wind"
 term/analogy is corrected throughout the active docs (a Trade Wind is the
 selected model/backend generically, not a synonym for GLM-5.2 specifically).
 No known open items.
-
 
 **Per §4bv (July 9, 2026): the multi-backend feature from §4bu now has a
 plain-language guide (`docs/backend-switching-guide.md`) and the doctor

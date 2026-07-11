@@ -55,19 +55,40 @@ if (-not (Get-Command multipass -ErrorAction SilentlyContinue)) {
   $MP = "C:\Program Files\Multipass\bin\multipass.exe"
 }
 
+$TS = "tailscale"
+if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) {
+  $TS = "C:\Program Files\Tailscale\tailscale.exe"
+}
+
+$TailscaleAuthkeyFile = if ($env:TAILSCALE_AUTHKEY_FILE) { $env:TAILSCALE_AUTHKEY_FILE } else { "$env:USERPROFILE\.tailscale\authkey" }
+
 function Get-Arg0([string]$Default = "ship") {
   if ($Rest.Count -ge 1 -and $Rest[0]) { return $Rest[0] }
   return $Default
 }
 
 function Get-ShipIp([string]$Name) {
-  $IpLine = & $MP info $Name | Select-String "IPv4"
+  $IpLine = & $MP info $Name 2>$null | Select-String "IPv4"
   $Ip = if ($IpLine) { ($IpLine -split '\s+')[1] } else { $null }
-  if (-not $Ip -or $Ip -notmatch '^\d+\.\d+\.\d+\.\d+$') {
-    Write-Error "erda: couldn't get an IP for '$Name' -- is it running? (erda sail $Name)"
-    exit 1
+  if ($Ip -and $Ip -match '^\d+\.\d+\.\d+\.\d+$') {
+    return $Ip
   }
-  return $Ip
+  # Not a local Multipass instance (stopped, or this harbor never launched
+  # it at all) -- fall back to Tailscale, the same way erda.sh's ship_ip
+  # does: any device on the same tailnet can resolve a peer by hostname,
+  # regardless of which host actually launched the VM (Multipass's own
+  # network is host-scoped). Requires Tailscale installed + logged in on
+  # *this* machine, and the ship actually joined one at provisioning time --
+  # see docs/vm-cheatsheet.md's "Boarding from more than one computer".
+  if (Get-Command $TS -ErrorAction SilentlyContinue) {
+    $TsIp = (& $TS ip -4 $Name 2>$null | Select-Object -First 1)
+    if ($TsIp -and $TsIp -match '^\d+\.\d+\.\d+\.\d+$') {
+      return $TsIp
+    }
+  }
+  Write-Error "erda: couldn't get an IP for '$Name' -- is it running? (erda sail $Name)"
+  Write-Error "erda: boarding from a different computer than the one that launched it? check Tailscale is installed and logged into the same tailnet here, and that the ship actually joined one (docs/vm-cheatsheet.md)"
+  exit 1
 }
 
 $Usage = @"
@@ -230,8 +251,21 @@ function Invoke-Christen {
   }
 
   $PubKey = (Get-Content $SshPub -Raw).Trim()
+
+  # Tailscale authkey: optional, from a LOCAL file on this harbor machine
+  # (never the git-committed strongbox -- see keel.yaml's own comment on
+  # why). Left blank, the placeholder becomes an empty line and fitout.sh
+  # skips joining a tailnet, same as any ship provisioned before this
+  # feature existed.
+  $TailscaleAuthkey = ""
+  if (Test-Path $TailscaleAuthkeyFile) {
+    $TailscaleAuthkey = (Get-Content $TailscaleAuthkeyFile -Raw).Trim()
+  }
+
   $TmpKeel = Join-Path $env:TEMP "keel-christen-$([guid]::NewGuid().ToString('N')).yaml"
-  (Get-Content $KeelSrc) -replace 'REPLACE-ME-with-your-ssh-public-key', $PubKey | Set-Content -Encoding utf8 $TmpKeel
+  (Get-Content $KeelSrc) -replace 'REPLACE-ME-with-your-ssh-public-key', $PubKey `
+    -replace 'REPLACE-ME-with-your-tailscale-authkey-or-leave-blank', $TailscaleAuthkey `
+    | Set-Content -Encoding utf8 $TmpKeel
 
   try {
     Write-Host "christening '$Name': $Cpus cpu(s), $Memory memory, $Disk disk"

@@ -222,6 +222,64 @@ the exact shape `muster`'s crew windows run in). `ssh host -tt 'bash -lc "cmd"'`
 something works one way and not the other, that's expected, not a bug — check which PATH
 you actually need.
 
+### Boarding from more than one computer
+
+`erda board`/`erda telescope` above only reach a ship over the network the
+launching host can see. For a Multipass-hosted ship that's a real, physical
+limit, not a config gap: Multipass puts the VM on a *host-scoped* private
+network (`192.168.64.x` on a Mac's hypervisor, an internal Hyper-V switch on
+Windows) that literally isn't routable from a different computer, even one
+on the same LAN. (An OVHcloud ship doesn't have this problem — it already
+has a real public IP any machine with the right SSH key can reach.)
+
+The fix is [Tailscale](https://tailscale.com): a private WireGuard mesh. Once
+a ship joins your tailnet, it gets a stable address any of your other
+devices can reach — over the open internet, without opening any inbound
+port on your home router — as long as that device is *also* logged into the
+same tailnet. tmux itself needs nothing extra: `sail`'s `tmux attach` has no
+`-d`, so two SSH sessions attached to the same deck simply share the view.
+
+**One-time setup (per operator, not per ship):**
+
+1. Create a free [Tailscale](https://tailscale.com) account if you don't have one.
+2. Admin console → Keys → **Generate auth key**. Make it **reusable** (so
+   every `erda christen` doesn't need a fresh one) with a real expiry (90
+   days is the practical max) — reusable keys are powerful if stolen, so
+   don't skip the expiry, and rotate it the same way `GH_TOKEN` gets
+   rotated (mint a new one, save it locally, re-run `erda christen` for any
+   *new* ship; existing ships that already joined don't need anything).
+3. Save the raw key value to a local file — **never git, never the
+   strongbox** (this is per-operator harbor infra, same category as your
+   SSH key, not a per-charter agent credential):
+   - macOS/Linux: `~/.config/tailscale/authkey`
+   - Windows: `%USERPROFILE%\.tailscale\authkey`
+
+   (Override the path with `TAILSCALE_AUTHKEY_FILE` if you want it
+   somewhere else.)
+4. Install the [Tailscale client](https://tailscale.com/download) and log
+   into the same tailnet on **every computer you want to board from** —
+   including ones that will never launch a ship themselves.
+
+With that in place, `erda christen` bakes the key into that ship's
+`keel.yaml` automatically and `fitout.sh` joins the tailnet at first boot
+(hostname = the ship's own name). Skip steps 2–3 entirely and everything
+still works exactly as before — `fitout.sh` just skips the join step,
+same as any ship provisioned before this feature existed.
+
+Once a ship has joined, `ship_ip` (used by both `erda board` and `erda
+telescope`) tries `multipass info` first and only falls back to `tailscale
+ip -4 <ship>` if that fails — so the *original* launching host still uses
+the fast local path, and a *second* computer (one that never ran `multipass
+launch` for this ship at all) transparently gets the Tailscale path instead,
+with no flag or extra step needed on either side.
+
+**A ship provisioned before this feature existed** doesn't have Tailscale
+joined and won't pick up a new `keel.yaml` on its own (cloud-init only runs
+once, at first boot). Board it the old way from its original host, drop a
+key into `/etc/shipyard/tailscale-authkey` by hand, then re-run
+`sudo tailscale up --auth-key=<key> --hostname=$(hostname)` — no need to
+re-run all of `fitout.sh` just for this.
+
 ## 3. Unlock the strongbox (every new ship)
 
 `fitout.sh` deliberately never does this step — it's the one thing that would put a
