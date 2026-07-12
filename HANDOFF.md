@@ -3527,21 +3527,31 @@ flagging it since it's a boundary this project cares about.
 an already-provisioned ship, same class as §4bx/§4by/§4bz, nothing touching
 `fitout.sh` or first-boot ordering.
 
+## 4cd. Confirmed §4cc's fix against the real WebMarks T-005 blocker (July 12, 2026)
+
+**From: Shipwright CC.** §4cc's NEXT TASK item asked for a `quartermaster`
+rerun against WebMarks T-005 to confirm the empty-verdict blocker was
+actually gone. It already had been, by the real Captain, before I even
+looked: `~/fleet/WebMarks/.ship/log/events.log` shows
+`2026-07-11T18:23:25 quartermaster-approve T-005` — after both landed
+fixes (`17f7611` at 17:22:08, `801a77c` at 11:43:22, same day) — and
+`.ship/reviews/T-005.review.md` holds a real, substantive `APPROVE` verdict
+(specific file/function references, not a fallback), with
+`.ship/reviews/T-005.stderr.log` empty (clean run, no crash). `roster.json`
+confirms `T-005: merged`. Read-only per the Shipwright/Neptune charter
+boundary — I inspected `~/fleet/WebMarks/.ship/` for evidence only, didn't
+touch anything under `~/fleet/`. No code change needed; this just closes
+the loop on §4cc's open item. WebMarks itself is mid-mission on `codex`
+backend (switched 2026-07-12T09:51, orders T-005B/T-006/T-007 still queued)
+— that's the Captain's own orchestration, not shipyard work.
+
 ## 5. NEXT TASK
 
-**Per §4cc (July 11, 2026): a per-file-diff SIGPIPE bug (same class as
-§4bx, recurring in §4by's per-file truncation loop) is fixed and
-live-verified, and Quartermaster now preserves reviewer stderr to
-`.ship/reviews/<TASK-ID>.stderr.log` for debugging empty-verdict cases.**
-The report that surfaced this (`~/fleet/WebMarks/.ship/shipwright-report.md`)
-describes a Quartermaster blocker on WebMarks T-005 (empty/no-parseable-
-verdict stdout from both the `codex` and `deepinfra` backends) that is
-**most likely already fixed by Shipwright CO's concurrent `801a77c`**
-(missing `eval` on `$REVIEW_AGENT`, landed in the same window — see §4cc's
-own body for why this matches the symptom), but that hasn't been confirmed
-against a real WebMarks rerun yet. The Captain should rerun `quartermaster`
-for WebMarks T-005; if it still fails, the newly-preserved stderr log is
-where to look first.
+**Per §4cd (July 12, 2026): §4cc's SIGPIPE/stderr-preservation fix is now
+confirmed against the real WebMarks T-005 blocker it was meant to fix** —
+a real Captain-driven `quartermaster` pass produced a genuine `APPROVE`
+with an empty (clean) stderr log, after both `17f7611` and `801a77c` had
+landed. No open items on this fix; nothing further to do here.
 
 **Per §4ca (July 11, 2026): CLI cleanup batch is done and self-tested on
 this ship** (rate-limit window-rename removed, `erda … all` fleet-wide ops,
