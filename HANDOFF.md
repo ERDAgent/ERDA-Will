@@ -3449,6 +3449,100 @@ from a second computer that did not launch the ship. Also noted during testing:
 `shellcheck` is not installed by `fitout.sh` even though the documented lint
 command assumes it is available.
 
+## 4cc. Landed a live hot-patch to Quartermaster found already sitting uncommitted on this ship (July 11, 2026)
+
+**From: Shipwright CC.** The Admiral pointed me at
+`~/fleet/WebMarks/.ship/shipwright-report.md` — a report left in charter
+territory describing a Quartermaster review-gate blocker on WebMarks T-005
+(`quartermaster` returning "no parseable verdict" — treated as REJECT — from
+*both* the `codex` and `deepinfra` backends, with no code feedback
+produced). Per the Shipwright/Neptune split, charter directories under
+`~/fleet/<name>/` are off-limits, so I read the report for context only and
+never touched anything under `~/fleet/WebMarks/`.
+
+While reading it I found `ship/bin/quartermaster` in *this* shipyard
+checkout already had two uncommitted local edits, made by something/someone
+outside the normal Shipwright loop (no self-test, no HANDOFF entry, no
+commit) — matching the report's own "diagnostics added" section exactly:
+
+1. `filediff="$(... | head -c "$PER_FILE_DIFF_CAP")"` → `... || true`. This
+   is the same SIGPIPE-under-`pipefail` bug §4bx already fixed for the
+   whole-diff capture, recurring in the *per-file* truncation loop §4by
+   introduced the day before — `head` closing the pipe early on a >60 KB
+   single-file diff sends `git diff` a `SIGPIPE`, and `pipefail` turned
+   that into a script-killing failure before any file's diff (let alone a
+   verdict) was produced.
+2. `cp "$REVIEW_LOG" "$BUS/reviews/$TASK.stderr.log"` added right after the
+   reviewer invocation, so the next time the reviewer agent returns empty
+   stdout, the stderr it wrote (previously deleted at exit via the script's
+   existing `trap`) survives for inspection instead.
+
+Since this is exactly the kind of runtime logic Shipwright owns, and the
+Admiral asked me to review/self-test/commit it rather than discard it, I
+verified both hunks instead of trusting them blind.
+
+**Verified live, not just read-through:** built a throwaway scratch git
+repo and reproduced the per-file SIGPIPE crash first — a single-file diff
+of ~155 KB (over the 60 KB `PER_FILE_DIFF_CAP`) piped through the *old*
+bare `head -c 60000` under `pipefail` exits 141 with zero bytes captured,
+confirming the bug; the same command with `|| true` captures exactly 60000
+bytes and exits 0. `bash -n` clean; `shellcheck -x` (apt-installed on this
+ship per §4ca's precedent) came back completely clean on the full script,
+zero findings — not even the usual `SC1091` info notice, since `-x` follows
+the sourced `backend-lib.sh`. The stderr-log hunk is a plain `cp` into a
+directory the script already `mkdir -p`s earlier (`$BUS/reviews`) — no new
+failure mode, and it doesn't change what's captured (`$REVIEW_LOG` already
+held the reviewer's raw stderr; this just keeps a copy past the script's
+exit instead of letting the `trap` delete it).
+
+**Likely resolves the report's actual blocker, via a concurrent fix, not
+this one:** while integrating this commit against `origin/main` I found
+Shipwright CO had pushed `801a77c` ("evaluate officer backend commands
+correctly") in the same window, fixing `quartermaster` (and `first-mate`)
+to `eval "$REVIEW_AGENT ..."` instead of running it as `$REVIEW_AGENT ...`
+directly. `backend_render` produces `REVIEW_AGENT` as a literal,
+unevaluated command string with embedded `$(cat ...)` substitutions
+(deliberately, per its own convention) — running it unevaluated only
+word-splits on whitespace, so `$(cat ...)` was passed to the reviewer
+process as garbled literal characters instead of its actual role-contract
+prompt file. A reviewer that never received its contract would plausibly
+go looking for tools instead of ever emitting a `VERDICT:` line — matching
+the report's "no parseable verdict... empty" symptom on both `codex` and
+`deepinfra` backends exactly. I did not independently verify this against
+WebMarks T-005 (out of scope per the charter boundary) — that's CO's fix,
+landed and self-described in its own commit, not mine to re-claim credit
+for. But the newly-preserved stderr log this entry adds is exactly the
+tool needed to confirm it: if Quartermaster still returns "no parseable
+verdict" after this, that log now survives to show why.
+
+**Process note:** whatever edited `ship/bin/quartermaster` directly on this
+ship reached outside its own charter into shared shipyard code without
+going through Shipwright — the file it left behind literally invited that
+review ("Please confirm this behavior is covered upstream..."), which is
+the right instinct, but the edit itself should have waited for it. Worth
+the Admiral being aware this can happen; nothing further to fix here, just
+flagging it since it's a boundary this project cares about.
+
+**Not done:** no Neptune drill requested — pure `ship/bin` runtime logic on
+an already-provisioned ship, same class as §4bx/§4by/§4bz, nothing touching
+`fitout.sh` or first-boot ordering.
+
+## 5. NEXT TASK
+
+**Per §4cc (July 11, 2026): a per-file-diff SIGPIPE bug (same class as
+§4bx, recurring in §4by's per-file truncation loop) is fixed and
+live-verified, and Quartermaster now preserves reviewer stderr to
+`.ship/reviews/<TASK-ID>.stderr.log` for debugging empty-verdict cases.**
+The report that surfaced this (`~/fleet/WebMarks/.ship/shipwright-report.md`)
+describes a Quartermaster blocker on WebMarks T-005 (empty/no-parseable-
+verdict stdout from both the `codex` and `deepinfra` backends) that is
+**most likely already fixed by Shipwright CO's concurrent `801a77c`**
+(missing `eval` on `$REVIEW_AGENT`, landed in the same window — see §4cc's
+own body for why this matches the symptom), but that hasn't been confirmed
+against a real WebMarks rerun yet. The Captain should rerun `quartermaster`
+for WebMarks T-005; if it still fails, the newly-preserved stderr log is
+where to look first.
+
 **Per §4ca (July 11, 2026): CLI cleanup batch is done and self-tested on
 this ship** (rate-limit window-rename removed, `erda … all` fleet-wide ops,
 `captain down`/`restart`, `backend`→`ship` rename, full command listings on

@@ -159,7 +159,7 @@ trap 'rm -f "$DIFF_TMP" "${CTXFILE:-}" "${REVIEW_LOG:-}"; [[ -n "${QM_PROMPT_DIR
       echo "[remaining changed files omitted -- combined non-lockfile diff budget of $TOTAL_DIFF_CAP bytes reached; see stat above for the full file list]"
       break
     fi
-    filediff="$(git -C "$HOLD" diff "$BASE_REF...$BRANCH" -- "$f" 2>/dev/null | head -c "$PER_FILE_DIFF_CAP")"
+    filediff="$(git -C "$HOLD" diff "$BASE_REF...$BRANCH" -- "$f" 2>/dev/null | head -c "$PER_FILE_DIFF_CAP" || true)"
     [[ ${#filediff} -eq $PER_FILE_DIFF_CAP ]] && filediff="$filediff
 [...diff for $f truncated at $PER_FILE_DIFF_CAP bytes...]"
     printf '%s\n\n' "$filediff"
@@ -365,6 +365,7 @@ eval "$QM_AUTH_SETUP"
 # syntax so the substitution actually runs, same pattern delegate-claude
 # already uses for its own literal AGENT_CMD.
 VERDICT_OUT="$(eval "$REVIEW_AGENT \"Decide APPROVE or REJECT for this crew work order, per your role contract.\"" < "$CTXFILE" 2>"$REVIEW_LOG" || true)"
+cp "$REVIEW_LOG" "$BUS/reviews/$TASK.stderr.log"
 
 FIRST_LINE="$(printf '%s\n' "$VERDICT_OUT" | grep -m1 -E '^VERDICT:' || true)"
 FEEDBACK="$(printf '%s\n' "$VERDICT_OUT" | sed -n '/^VERDICT:/,$p' | tail -n +2)"
