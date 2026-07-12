@@ -3545,7 +3545,53 @@ the loop on §4cc's open item. WebMarks itself is mid-mission on `codex`
 backend (switched 2026-07-12T09:51, orders T-005B/T-006/T-007 still queued)
 — that's the Captain's own orchestration, not shipyard work.
 
+## 4ce. `erda authorize` — §4cb's Tailscale mesh got you reachability, not SSH access (July 12, 2026)
+
+**From: Shipwright CC.** The Admiral hit this live: on Zagreus (a Windows
+harbor that never ran `christen`), `tailscale status` showed the ship fine
+but `ssh eric@<tailscale-ip>` failed with `Permission denied (publickey)`.
+Root cause: `keel.yaml`'s `ssh_authorized_keys` only ever bakes in the
+*launching* machine's key — §4cb's Tailscale mesh solved reachability but
+never touched `authorized_keys`, so a second computer's own key was never
+on the ship at all. I was running as Shipwright CC directly on the
+already-boarded ship (`the-sacramento`), confirmed the diagnosis by reading
+`~/.ssh/authorized_keys` and `tailscale status` directly, and unblocked the
+Admiral immediately by hand-appending Zagreus's pubkey.
+
+Then closed the actual gap so the next person hitting this doesn't need a
+live Shipwright session to fix it: added `erda authorize [ship]
+<pubkey-or-.pub-path>` to both `harbor/erda.sh` and `harbor/erda.ps1` —
+run from a computer that can already board the ship, it SSHes in and
+idempotently appends the given key (arg or `.pub` file contents, validated
+to start with `ssh-`/`ecdsa-`/`sk-`) to `~/.ssh/authorized_keys`, piping the
+key over stdin to the remote shell rather than interpolating it into the
+command string. `docs/vm-cheatsheet.md`'s "boarding from more than one
+computer" section now explains the reachability-vs-access distinction and
+documents the command.
+
+Verified: `bash -n`/`shellcheck` clean on `erda.sh`; `erda.ps1` parses clean
+via `[System.Management.Automation.Language.Parser]::ParseFile` (pwsh is
+installed on this ship); the remote append/idempotency logic itself
+live-tested on this ship (added a test key, re-ran to confirm the
+already-authorized skip path, restored the original `authorized_keys`);
+CLI usage/error paths (`erda authorize` with no args, with a
+doesn't-look-like-a-key arg) exercised directly. **Not done:** the
+PowerShell path (`erda.ps1`'s `authorize`) has no real Windows/OpenSSH
+live test — only parses clean, same caveat as the rest of §4cb's PowerShell
+side. No Neptune drill needed — nothing here touches `fitout.sh` or
+first-boot ordering, this is host-side `erda` tooling only.
+
 ## 5. NEXT TASK
+
+**Per §4ce (July 12, 2026): `erda authorize` is built and self-tested but
+not live-verified from real Windows OpenSSH** (`erda.ps1`'s new
+`authorize` command only parses clean; the actual live drill — Zagreus
+running `erda authorize` against a ship it doesn't own — hasn't happened,
+only the reverse direction: the ship-side append logic, tested locally on
+this ship). Confirm from Zagreus (or any second real computer) that `erda
+authorize <ship> <own-pubkey>` run from the *original* launching host,
+followed by plain `ssh`/`erda board` from the second computer, works
+end-to-end.
 
 **Per §4cd (July 12, 2026): §4cc's SIGPIPE/stderr-preservation fix is now
 confirmed against the real WebMarks T-005 blocker it was meant to fix** —

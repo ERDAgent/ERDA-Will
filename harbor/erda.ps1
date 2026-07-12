@@ -17,6 +17,8 @@
                                               the age key if needed and connecting with
                                               the strongbox already unlocked (captain
                                               scope: model keys + GH_TOKEN)
+    authorize [ship] <pubkey-or-.pub-path>   grant another computer's SSH key access (run
+                                              from a computer that already has access)
     telescope <charter> [ship] [port]        SSH-tunnel to a charter's dev server
                                               (integration branch); port read from
                                               charter.md if not given
@@ -103,6 +105,8 @@ usage: erda <command> [ship] [args...]
                                              and refuse to proceed if it fails
   board [ship]                              connect (multipass info + ssh), deploying the
                                              age key if needed and unlocking the strongbox
+  authorize [ship] <pubkey-or-.pub-path>    grant another computer's SSH key access (run
+                                             from a computer that already has access)
   telescope <charter> [ship] [port]         SSH-tunnel to a charter's dev server (port
                                              read from charter.md if not given)
   anchor [ship]                             stop
@@ -699,6 +703,40 @@ switch ($Command) {
       }
       ssh -i $SshPriv -t eric@$Ip 'eval "$(unlock captain)"; exec bash -l'
     }
+  }
+
+  "authorize" {
+    # Grants a SECOND computer's own SSH key access to a ship, from a
+    # machine that already has access (i.e. this machine's $SshPriv is
+    # already in the ship's authorized_keys -- typically the one that ran
+    # `christen`). keel.yaml only ever bakes in the *launching* machine's
+    # key, so Tailscale reachability (docs/vm-cheatsheet.md's "boarding
+    # from more than one computer") alone isn't enough -- a second
+    # computer's `ssh` still fails with Permission denied until its key is
+    # added here too.
+    if ($Rest.Count -eq 1) {
+      $Name = "ship"
+      $KeyArg = $Rest[0]
+    } elseif ($Rest.Count -ge 2) {
+      $Name = $Rest[0]
+      $KeyArg = $Rest[1]
+    } else {
+      Write-Error "usage: erda authorize [ship] <pubkey-or-path-to-pubkey.pub>`n  run on a computer that can already board the ship; the key is the OTHER computer's %USERPROFILE%\.ssh\id_ed25519.pub contents"
+      exit 1
+    }
+    if (Test-Path $KeyArg) {
+      $Pubkey = (Get-Content $KeyArg -Raw).Trim()
+    } else {
+      $Pubkey = $KeyArg.Trim()
+    }
+    if ($Pubkey -notmatch '^(ssh-|ecdsa-|sk-)') {
+      Write-Error "authorize: doesn't look like an SSH public key (expected it to start with ssh-/ecdsa-/sk-): $Pubkey"
+      exit 1
+    }
+    $Ip = Get-ShipIp $Name
+    Write-Host "authorizing key on '$Name' ($Ip)..."
+    $RemoteScript = 'key="$(cat)"; mkdir -p ~/.ssh && chmod 700 ~/.ssh; touch ~/.ssh/authorized_keys; if grep -qF "$key" ~/.ssh/authorized_keys; then echo "already authorized"; else echo "$key" >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys; echo "added"; fi'
+    $Pubkey | ssh -i $SshPriv -o LogLevel=ERROR eric@$Ip $RemoteScript
   }
 
   "telescope" {

@@ -280,6 +280,24 @@ key into `/etc/shipyard/tailscale-authkey` by hand, then re-run
 `sudo tailscale up --auth-key=<key> --hostname=$(hostname)` — no need to
 re-run all of `fitout.sh` just for this.
 
+**Tailscale gets you reachability, not SSH access — those are two separate
+things.** `keel.yaml`'s `ssh_authorized_keys` only ever bakes in the key of
+whichever computer ran `erda christen`. A second computer joining the same
+tailnet can now *reach* the ship's IP, but a plain `ssh eric@<tailscale-ip>`
+from it still fails with `Permission denied (publickey)` until its own key
+is added too — Tailscale doesn't do anything to `authorized_keys`. Fix it
+once, from a computer that can already board the ship:
+
+```
+erda authorize [ship] <path-to-the-other-computer's-id_ed25519.pub-or-the-key-itself>
+```
+
+This appends the key to `~/.ssh/authorized_keys` on the ship (idempotent —
+safe to re-run). After that, `erda board`/`erda telescope`/plain `ssh` all
+work from the second computer too. If that computer doesn't have a keypair
+yet, generate one first (`ssh-keygen -t ed25519`) and pass it the resulting
+`.pub` file's path or contents.
+
 ## 3. Unlock the strongbox (every new ship)
 
 `fitout.sh` deliberately never does this step — it's the one thing that would put a
